@@ -14,6 +14,36 @@ import nodemailer from 'nodemailer';
 // Load environment variables
 dotenv.config();
 
+// Helper to create nodemailer transporter based on env configs (supports Gmail & Custom SMTP like Bizfly)
+function createMailTransporter() {
+  const smtpUser = process.env.FEEDBACK_EMAIL;
+  const smtpPass = process.env.FEEDBACK_EMAIL_PASS;
+  const host = process.env.EMAIL_HOST;
+  const port = process.env.EMAIL_PORT ? parseInt(process.env.EMAIL_PORT, 10) : undefined;
+  const secure = process.env.EMAIL_SECURE === 'true';
+
+  if (!smtpUser || !smtpPass) {
+    return null;
+  }
+
+  if (host) {
+    return nodemailer.createTransport({
+      host,
+      port: port || 465,
+      secure: port === 465 || secure,
+      auth: { user: smtpUser, pass: smtpPass },
+      tls: {
+        rejectUnauthorized: false
+      }
+    });
+  }
+
+  return nodemailer.createTransport({
+    service: 'gmail',
+    auth: { user: smtpUser, pass: smtpPass }
+  });
+}
+
 const app = express();
 const PORT = process.env.PORT || 5000;
 
@@ -67,6 +97,7 @@ const userSchema = new mongoose.Schema({
   password: { type: String, required: true }, // SHA256 hashed
   role: { type: String, required: true, enum: ['admin', 'teacher'], default: 'admin' },
   displayName: { type: String, required: true },
+  email: { type: String, default: '' }, // Email nhận thông báo
   createdAt: { type: Date, default: Date.now }
 });
 const UserModel = mongoose.model('User', userSchema);
@@ -325,7 +356,7 @@ const storage = multer.diskStorage({
   }
 });
 
-const upload = multer({ 
+const upload = multer({
   storage,
   limits: { fileSize: 200 * 1024 * 1024 } // 200MB
 });
@@ -579,6 +610,7 @@ app.put('/api/auth/profile', adminOrTeacherAuth, async (req: Request, res: Respo
     const { username } = (req as any).user;
     const displayName = sanitize(req.body.displayName);
     const password = sanitize(req.body.password);
+    const email = sanitize(req.body.email);
 
     if (!useMongoDB) {
       return res.status(400).json({ error: 'Tính năng cập nhật hồ sơ không khả dụng ở chế độ offline.' });
@@ -597,6 +629,9 @@ app.put('/api/auth/profile', adminOrTeacherAuth, async (req: Request, res: Respo
     }
     if (password && password.trim() !== '') {
       user.password = hashPassword(password);
+    }
+    if (typeof email === 'string') {
+      user.email = email.trim().toLowerCase();
     }
 
     await user.save();
@@ -621,7 +656,8 @@ app.put('/api/auth/profile', adminOrTeacherAuth, async (req: Request, res: Respo
       user: {
         username: user.username,
         role: user.role,
-        displayName: user.displayName
+        displayName: user.displayName,
+        email: user.email
       }
     });
   } catch (err: any) {
@@ -645,6 +681,7 @@ app.post('/api/admin/users', adminAuth, async (req: Request, res: Response) => {
     const password = sanitize(req.body.password);
     const role = sanitize(req.body.role);
     const displayName = sanitize(req.body.displayName);
+    const email = sanitize(req.body.email) || '';
     if (!username || !password || !role || !displayName) {
       return res.status(400).json({ error: 'Vui lòng cung cấp đầy đủ thông tin tài khoản.' });
     }
@@ -656,7 +693,8 @@ app.post('/api/admin/users', adminAuth, async (req: Request, res: Response) => {
       username: username.trim().toLowerCase(),
       password: hashPassword(password),
       role,
-      displayName
+      displayName,
+      email: email.trim().toLowerCase()
     });
     await newUser.save();
 
@@ -669,7 +707,7 @@ app.post('/api/admin/users', adminAuth, async (req: Request, res: Response) => {
       }
     }
 
-    res.json({ message: 'Tạo tài khoản thành công.', user: { username: newUser.username, role: newUser.role, displayName: newUser.displayName } });
+    res.json({ message: 'Tạo tài khoản thành công.', user: { username: newUser.username, role: newUser.role, displayName: newUser.displayName, email: newUser.email } });
   } catch (err: any) {
     res.status(500).json({ error: 'Lỗi tạo tài khoản: ' + err.message });
   }
@@ -680,6 +718,7 @@ app.put('/api/admin/users/:id', adminAuth, async (req: Request, res: Response) =
     const password = sanitize(req.body.password);
     const role = sanitize(req.body.role);
     const displayName = sanitize(req.body.displayName);
+    const email = sanitize(req.body.email);
     const user = await UserModel.findById(req.params.id);
     if (!user) {
       return res.status(404).json({ error: 'Không tìm thấy tài khoản.' });
@@ -696,16 +735,15 @@ app.put('/api/admin/users/:id', adminAuth, async (req: Request, res: Response) =
     }
     if (role) user.role = role;
     if (displayName) user.displayName = displayName;
+    if (typeof email === 'string') user.email = email.trim().toLowerCase();
     await user.save();
 
     // Sync to Teacher collection
     if (oldRole === 'teacher' && user.role !== 'teacher') {
-      // Role changed from teacher, delete from teachers
       await TeacherModel.deleteOne({ name: oldDisplayName.trim() });
       await ClassModel.updateMany({ teacherName: oldDisplayName.trim() }, { teacherName: 'Chưa phân công' });
     } else if (user.role === 'teacher') {
       if (oldRole === 'teacher' && oldDisplayName !== user.displayName) {
-        // Name changed
         const teacher = await TeacherModel.findOne({ name: oldDisplayName.trim() });
         if (teacher) {
           teacher.name = user.displayName.trim();
@@ -714,7 +752,6 @@ app.put('/api/admin/users/:id', adminAuth, async (req: Request, res: Response) =
           const newTeacher = new TeacherModel({ name: user.displayName.trim() });
           await newTeacher.save();
         }
-        // Also update classes that use this teacher name
         await ClassModel.updateMany({ teacherName: oldDisplayName.trim() }, { teacherName: user.displayName.trim() });
       } else {
         const teacherExisting = await TeacherModel.findOne({ name: user.displayName.trim() });
@@ -1462,6 +1499,114 @@ app.post('/api/upload', (req: Request, res: Response, next: any) => {
       fs.writeFileSync(submissionsFile, JSON.stringify(submissions, null, 2), 'utf8');
     }
 
+    // Gửi email thông báo cho giáo viên (bất đồng bộ - fire and forget)
+    if (useMongoDB) {
+      (async () => {
+        try {
+          // 1. Tìm lớp để lấy teacherName
+          const classDoc = await ClassModel.findOne({ name: className });
+          const targetTeacherName = classDoc ? classDoc.teacherName : teacher;
+
+          if (targetTeacherName && targetTeacherName !== 'Chưa phân công' && targetTeacherName !== 'N/A') {
+            // 2. Tìm giáo viên theo displayName
+            const teacherUser = await UserModel.findOne({ displayName: targetTeacherName });
+            if (teacherUser && teacherUser.email && teacherUser.email.trim() !== '') {
+              // 3. Cấu hình gửi mail qua SMTP
+              const transporter = createMailTransporter();
+              if (transporter) {
+                const smtpUser = process.env.FEEDBACK_EMAIL;
+                const fileLinksHtml = fileDetails.map(f => `<li><a href="${f.fileUrl}" style="color: #6366f1; text-decoration: underline; font-weight: 500;">${f.fileName}</a></li>`).join('');
+
+                await transporter.sendMail({
+                  from: `"NA MindX Hub" <${smtpUser}>`,
+                  to: teacherUser.email,
+                  subject: `[NA MindX Hub] Học viên ${fullName} vừa nộp bài mới — Lớp ${className}`,
+                  html: `
+                    <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 560px; margin: 0 auto; background: #0f172a; border-radius: 16px; overflow: hidden; color: #f1f5f9;">
+                      <div style="background: linear-gradient(135deg, #6366f1, #a855f7); padding: 24px 28px;">
+                        <h2 style="margin: 0; font-size: 20px; color: #fff;">Thông báo nộp bài mới</h2>
+                        <p style="margin: 4px 0 0; font-size: 13px; color: rgba(255,255,255,0.8);">Học viên vừa nộp bài thành công trên NA MindX Hub</p>
+                      </div>
+                      <div style="padding: 28px;">
+                        <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+                          <tr>
+                            <td style="padding: 8px 0; color: #94a3b8; width: 120px; vertical-align: top;">Họ tên học viên:</td>
+                            <td style="padding: 8px 0; font-weight: 600; color: #f1f5f9;">${fullName}</td>
+                          </tr>
+                          <tr>
+                            <td style="padding: 8px 0; color: #94a3b8; vertical-align: top;">Lớp học:</td>
+                            <td style="padding: 8px 0; font-weight: 600; color: #f1f5f9;">${className}</td>
+                          </tr>
+                          <tr>
+                            <td style="padding: 8px 0; color: #94a3b8; vertical-align: top;">Giai đoạn:</td>
+                            <td style="padding: 8px 0; color: #f1f5f9;">${stage}</td>
+                          </tr>
+                          <tr>
+                            <td style="padding: 8px 0; color: #94a3b8; vertical-align: top;">Buổi học:</td>
+                            <td style="padding: 8px 0; color: #f1f5f9;">${session}</td>
+                          </tr>
+                          <tr>
+                            <td style="padding: 8px 0; color: #94a3b8; vertical-align: top;">Lần nộp:</td>
+                            <td style="padding: 8px 0; color: #f1f5f9;">Lần ${attemptNumber}</td>
+                          </tr>
+                          <tr>
+                            <td style="padding: 8px 0; color: #94a3b8; vertical-align: top;">Thời gian nộp:</td>
+                            <td style="padding: 8px 0; color: #f1f5f9;">${new Date().toLocaleString('vi-VN')}</td>
+                          </tr>
+                        </table>
+                        <div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid rgba(255,255,255,0.07);">
+                          <p style="margin: 0 0 10px 0; font-size: 14px; font-weight: 600; color: #f1f5f9;">Danh sách tệp tin:</p>
+                          <ul style="margin: 0; padding-left: 20px; font-size: 14px; line-height: 1.6; color: #e2e8f0;">
+                            ${fileLinksHtml}
+                          </ul>
+                        </div>
+                        
+                        <!-- Chữ ký mặc định -->
+                        <div style="border-top: 1px dashed rgba(255,255,255,0.15); margin-top: 28px; padding-top: 20px; font-family: Arial, sans-serif; font-size: 13px; line-height: 1.5; color: #f1f5f9; text-align: left;">
+                          <div style="margin-bottom: 4px; font-weight: bold; font-size: 14px; letter-spacing: 0.5px; color: #ffffff;">HUỲNH NHẬT ANH</div>
+                          <div style="margin-bottom: 8px; color: #cbd5e1; font-weight: 500;">Mentor HCM4 - Team Teaching - MindX School</div>
+                          <div style="margin-bottom: 16px; color: #94a3b8; font-size: 12px;">
+                            <span style="color: #e31f26; font-weight: bold; margin-right: 4px;">T</span> +84 778909082
+                            <span style="color: #94a3b8; margin: 0 8px;">|</span>
+                            <span style="color: #e31f26; font-weight: bold; margin-right: 4px;">E</span> <a href="mailto:huynhnhatanh@mindx.net.vn" style="color: #38bdf8; text-decoration: underline;">huynhnhatanh@mindx.net.vn</a>
+                          </div>
+                          
+                          <div style="background-color: #ffffff; padding: 6px 12px; border-radius: 6px; display: inline-block; margin-bottom: 12px;">
+                            <img src="data:image/png;base64,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" alt="MindX Technology School" style="height: 22px; display: block; border: 0;" />
+                          </div>
+                          
+                          <div style="font-weight: bold; color: #ffffff; font-size: 13px; margin-bottom: 4px;">Trường học Công nghệ MindX</div>
+                          <div style="font-style: italic; color: #94a3b8; font-size: 12px; margin-bottom: 8px;">Be extraordinary</div>
+                          
+                          <div style="color: #64748b; font-size: 11px; line-height: 1.4;">
+                            <span style="color: #e31f26; font-weight: bold; margin-right: 4px;">HO</span> Hanoi: 5th fl., 71 Nguyen Chi Thanh st, Dong Da<br>
+                            &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;HCMC: 9th fl., International Plaza Building, 343 Pham Ngu Lao, Dist. 1
+                          </div>
+                          <div style="margin-top: 8px; color: #64748b; font-size: 11px;">
+                            <span style="color: #e31f26; font-weight: bold; margin-right: 4px;">T</span> +84 287717789
+                            <span style="color: #64748b; margin: 0 6px;">|</span>
+                            <span style="color: #e31f26; font-weight: bold; margin-right: 4px;">E</span> <a href="mailto:contact@mindx.edu.vn" style="color: #64748b; text-decoration: none;">contact@mindx.edu.vn</a>
+                            <span style="color: #64748b; margin: 0 6px;">|</span>
+                            <span style="color: #e31f26; font-weight: bold; margin-right: 4px;">W</span> <a href="https://mindx.edu.vn" style="color: #6366f1; text-decoration: none;" target="_blank">mindx.edu.vn</a>
+                          </div>
+                        </div>
+                      </div>
+                      <div style="padding: 16px 28px; border-top: 1px solid rgba(255,255,255,0.07); font-size: 12px; color: #475569; text-align: center;">
+                        Email này được gửi tự động từ hệ thống NA MindX Hub.
+                      </div>
+                    </div>
+                  `
+                });
+                console.log(`[Notification Email]: Sent submission notification for ${fullName} to teacher ${targetTeacherName} (${teacherUser.email}).`);
+              }
+            }
+          }
+        } catch (mailErr: any) {
+          console.error('[Notification Email Error]: Failed to send notification email.', mailErr.message);
+        }
+      })();
+    }
+
     let successMessage = 'Đã lưu bài nộp thành công!';
     if (storageProvider === 'mega') {
       successMessage = 'Đã tải bài lên MEGA thành công!';
@@ -1509,30 +1654,33 @@ app.post('/api/feedback', async (req: Request, res: Response) => {
     }
 
     const adminEmail = process.env.FEEDBACK_EMAIL;
-    const smtpUser   = process.env.FEEDBACK_EMAIL;
-    const smtpPass   = process.env.FEEDBACK_EMAIL_PASS;
+    const smtpUser = process.env.FEEDBACK_EMAIL;
 
-    if (!adminEmail || !smtpPass) {
-      console.warn('[Feedback]: FEEDBACK_EMAIL hoặc FEEDBACK_EMAIL_PASS chưa được cấu hình.');
+    const transporter = createMailTransporter();
+    if (!transporter) {
+      console.warn('[Feedback]: Email hoặc mật khẩu chưa được cấu hình.');
       return res.status(503).json({ error: 'Chức năng gửi góp ý chưa được cấu hình.' });
     }
 
     const typeLabel: Record<string, string> = {
-      bug:   '🐛 Báo lỗi',
-      idea:  '💡 Đề xuất cải tiến',
+      bug: '🐛 Báo lỗi',
+      idea: '💡 Đề xuất cải tiến',
       other: '💬 Ý kiến khác',
     };
     const typeStr = typeLabel[type] || '💬 Góp ý';
 
-    const transporter = nodemailer.createTransport({
-      service: 'gmail',
-      auth: { user: smtpUser, pass: smtpPass },
-    });
+    // Nhãn loại không có icon cho Tiêu đề Mail tránh spam filter
+    const typeLabelNoIcon: Record<string, string> = {
+      bug: 'Báo lỗi',
+      idea: 'Đề xuất cải tiến',
+      other: 'Ý kiến khác',
+    };
+    const typeStrNoIcon = typeLabelNoIcon[type] || 'Góp ý';
 
     await transporter.sendMail({
       from: `"NA MindX Hub \u2014 Góp ý" <${smtpUser}>`,
       to: adminEmail,
-      subject: `[Góp ý] ${typeStr} — NA MindX Hub`,
+      subject: `[Gop y] ${typeStrNoIcon} — NA MindX Hub`,
       html: `
         <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 560px; margin: 0 auto; background: #0f172a; border-radius: 16px; overflow: hidden; color: #f1f5f9;">
           <div style="background: linear-gradient(135deg, #6366f1, #a855f7); padding: 24px 28px;">
@@ -1551,6 +1699,36 @@ app.post('/api/feedback', async (req: Request, res: Response) => {
               </tr>
             </table>
             <div style="background: rgba(255,255,255,0.05); border-left: 3px solid #6366f1; border-radius: 0 8px 8px 0; padding: 16px 20px; margin-top: 4px; font-size: 15px; line-height: 1.7; white-space: pre-wrap; color: #e2e8f0;">${message.trim()}</div>
+            
+            <!-- Chữ ký mặc định -->
+            <div style="border-top: 1px dashed rgba(255,255,255,0.15); margin-top: 28px; padding-top: 20px; font-family: Arial, sans-serif; font-size: 13px; line-height: 1.5; color: #f1f5f9; text-align: left;">
+              <div style="margin-bottom: 4px; font-weight: bold; font-size: 14px; letter-spacing: 0.5px; color: #ffffff;">HUỲNH NHẬT ANH</div>
+              <div style="margin-bottom: 8px; color: #cbd5e1; font-weight: 500;">Mentor HCM4 - Team Teaching - MindX School</div>
+              <div style="margin-bottom: 16px; color: #94a3b8; font-size: 12px;">
+                <span style="color: #e31f26; font-weight: bold; margin-right: 4px;">T</span> +84 778909082
+                <span style="color: #94a3b8; margin: 0 8px;">|</span>
+                <span style="color: #e31f26; font-weight: bold; margin-right: 4px;">E</span> <a href="mailto:huynhnhatanh@mindx.net.vn" style="color: #38bdf8; text-decoration: underline;">huynhnhatanh@mindx.net.vn</a>
+              </div>
+              
+              <div style="background-color: #ffffff; padding: 6px 12px; border-radius: 6px; display: inline-block; margin-bottom: 12px;">
+                <img src="data:image/png;base64,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" alt="MindX Technology School" style="height: 22px; display: block; border: 0;" />
+              </div>
+              
+              <div style="font-weight: bold; color: #ffffff; font-size: 13px; margin-bottom: 4px;">Trường học Công nghệ MindX</div>
+              <div style="font-style: italic; color: #94a3b8; font-size: 12px; margin-bottom: 8px;">Be extraordinary</div>
+              
+              <div style="color: #64748b; font-size: 11px; line-height: 1.4;">
+                <span style="color: #e31f26; font-weight: bold; margin-right: 4px;">HO</span> Hanoi: 5th fl., 71 Nguyen Chi Thanh st, Dong Da<br>
+                &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;HCMC: 9th fl., International Plaza Building, 343 Pham Ngu Lao, Dist. 1
+              </div>
+              <div style="margin-top: 8px; color: #64748b; font-size: 11px;">
+                <span style="color: #e31f26; font-weight: bold; margin-right: 4px;">T</span> +84 287717789
+                <span style="color: #64748b; margin: 0 6px;">|</span>
+                <span style="color: #e31f26; font-weight: bold; margin-right: 4px;">E</span> <a href="mailto:contact@mindx.edu.vn" style="color: #64748b; text-decoration: none;">contact@mindx.edu.vn</a>
+                <span style="color: #64748b; margin: 0 6px;">|</span>
+                <span style="color: #e31f26; font-weight: bold; margin-right: 4px;">W</span> <a href="https://mindx.edu.vn" style="color: #6366f1; text-decoration: none;" target="_blank">mindx.edu.vn</a>
+              </div>
+            </div>
           </div>
           <div style="padding: 16px 28px; border-top: 1px solid rgba(255,255,255,0.07); font-size: 12px; color: #475569; text-align: center;">
             Email này được gửi tự động từ hệ thống NA MindX Hub. Không cần phản hồi lại email này.
