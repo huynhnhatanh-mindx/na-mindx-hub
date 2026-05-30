@@ -45,11 +45,24 @@ function Upload() {
 
 
   // State for metadata fields
-  const [teacher, setTeacher] = useState<string>('Huỳnh Nhật Anh');
-  const [className, setClassName] = useState<string>('HCM4');
+  const [teacher, setTeacher] = useState<string>('');
+  const [className, setClassName] = useState<string>('');
   const [fullName, setFullName] = useState<string>('');
   const [stage, setStage] = useState<string>('');
   const [session, setSession] = useState<string>('');
+
+  // Handle teacher change to reset dependent fields
+  const handleTeacherChange = (newTeacher: string) => {
+    setTeacher(newTeacher);
+    setClassName('');
+    setFullName('');
+  };
+
+  // Handle class change to reset dependent fields
+  const handleClassNameChange = (newClass: string) => {
+    setClassName(newClass);
+    setFullName('');
+  };
 
   // Handle stage change and adjust session selection
   const handleStageChange = (newStage: string) => {
@@ -248,7 +261,7 @@ function Upload() {
                 label="Giáo viên"
                 options={teachersList}
                 value={teacher}
-                onChange={setTeacher}
+                onChange={handleTeacherChange}
                 placeholder="Chọn hoặc nhập tên giáo viên..."
                 required
               />
@@ -256,17 +269,19 @@ function Upload() {
                 label="Lớp học"
                 options={classesList}
                 value={className}
-                onChange={setClassName}
-                placeholder="Chọn hoặc nhập mã lớp..."
+                onChange={handleClassNameChange}
+                placeholder={teacher ? "Chọn hoặc nhập mã lớp..." : "Vui lòng chọn giáo viên trước..."}
                 required
+                disabled={!teacher}
               />
               <ComboBox
                 label="Họ tên học viên"
                 options={studentsList}
                 value={fullName}
                 onChange={setFullName}
-                placeholder="Chọn hoặc nhập họ tên của bạn..."
+                placeholder={className ? "Chọn hoặc nhập họ tên của bạn..." : "Vui lòng chọn lớp học trước..."}
                 required
+                disabled={!className}
               />
             </div>
 
