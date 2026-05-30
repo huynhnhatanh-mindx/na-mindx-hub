@@ -9,6 +9,7 @@ import { Storage } from 'megajs';
 import mongoose from 'mongoose';
 import sanitize from 'mongo-sanitize';
 import crypto from 'crypto';
+import nodemailer from 'nodemailer';
 
 // Load environment variables
 dotenv.config();
@@ -1494,6 +1495,75 @@ app.post('/api/upload', (req: Request, res: Response, next: any) => {
     } else {
       res.status(500).json({ error: error.message || 'Internal server error during upload.' });
     }
+  }
+});
+
+// --- GỬi GÓP Ý QUA EMAIL ---
+app.post('/api/feedback', async (req: Request, res: Response) => {
+  try {
+    const type = sanitize(req.body.type) || 'other';
+    const message = sanitize(req.body.message);
+
+    if (!message || typeof message !== 'string' || message.trim().length === 0) {
+      return res.status(400).json({ error: 'Nội dung góp ý không được để trống.' });
+    }
+
+    const adminEmail = process.env.FEEDBACK_EMAIL;
+    const smtpUser   = process.env.FEEDBACK_EMAIL;
+    const smtpPass   = process.env.FEEDBACK_EMAIL_PASS;
+
+    if (!adminEmail || !smtpPass) {
+      console.warn('[Feedback]: FEEDBACK_EMAIL hoặc FEEDBACK_EMAIL_PASS chưa được cấu hình.');
+      return res.status(503).json({ error: 'Chức năng gửi góp ý chưa được cấu hình.' });
+    }
+
+    const typeLabel: Record<string, string> = {
+      bug:   '🐛 Báo lỗi',
+      idea:  '💡 Đề xuất cải tiến',
+      other: '💬 Ý kiến khác',
+    };
+    const typeStr = typeLabel[type] || '💬 Góp ý';
+
+    const transporter = nodemailer.createTransport({
+      service: 'gmail',
+      auth: { user: smtpUser, pass: smtpPass },
+    });
+
+    await transporter.sendMail({
+      from: `"NA MindX Hub \u2014 Góp ý" <${smtpUser}>`,
+      to: adminEmail,
+      subject: `[Góp ý] ${typeStr} — NA MindX Hub`,
+      html: `
+        <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 560px; margin: 0 auto; background: #0f172a; border-radius: 16px; overflow: hidden; color: #f1f5f9;">
+          <div style="background: linear-gradient(135deg, #6366f1, #a855f7); padding: 24px 28px;">
+            <h2 style="margin: 0; font-size: 20px; color: #fff;">NA MindX Hub — Góp ý mới</h2>
+            <p style="margin: 4px 0 0; font-size: 13px; color: rgba(255,255,255,0.8);">Bản gửi lúc ${new Date().toLocaleString('vi-VN')}</p>
+          </div>
+          <div style="padding: 28px;">
+            <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+              <tr>
+                <td style="padding: 10px 0; color: #94a3b8; width: 120px; vertical-align: top;">Loại:</td>
+                <td style="padding: 10px 0; font-weight: 600; color: #f1f5f9;">${typeStr}</td>
+              </tr>
+              <tr>
+                <td style="padding: 10px 0; color: #94a3b8; vertical-align: top;">Nội dung:</td>
+                <td style="padding: 10px 0;"></td>
+              </tr>
+            </table>
+            <div style="background: rgba(255,255,255,0.05); border-left: 3px solid #6366f1; border-radius: 0 8px 8px 0; padding: 16px 20px; margin-top: 4px; font-size: 15px; line-height: 1.7; white-space: pre-wrap; color: #e2e8f0;">${message.trim()}</div>
+          </div>
+          <div style="padding: 16px 28px; border-top: 1px solid rgba(255,255,255,0.07); font-size: 12px; color: #475569; text-align: center;">
+            Email này được gửi tự động từ hệ thống NA MindX Hub. Không cần phản hồi lại email này.
+          </div>
+        </div>
+      `,
+    });
+
+    console.log(`[Feedback]: Đã gửi góp ý loại "${type}" tới ${adminEmail}.`);
+    res.json({ message: 'Góp ý đã được gửi thành công. Cảm ơn bạn!' });
+  } catch (err: any) {
+    console.error('[Feedback Error]:', err.message);
+    res.status(500).json({ error: 'Gửi góp ý thất bại. Vui lòng thử lại sau.' });
   }
 });
 
