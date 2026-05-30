@@ -189,6 +189,8 @@ function Upload() {
     setIsDragging(false);
   };
 
+  const MAX_FILE_SIZE = 200 * 1024 * 1024; // 200MB
+
   // Drop handler
   const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
@@ -196,8 +198,15 @@ function Upload() {
 
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       const filesArray = Array.from(e.dataTransfer.files);
+      const oversizedFiles = filesArray.filter(f => f.size > MAX_FILE_SIZE);
+      if (oversizedFiles.length > 0) {
+        setUploadStatus('error');
+        setErrorMessage(`Tệp tin "${oversizedFiles[0].name}" vượt quá kích thước cho phép (tối đa 200MB).`);
+        return;
+      }
       setSelectedFiles((prevFiles) => [...prevFiles, ...filesArray]);
       setUploadStatus('idle');
+      setErrorMessage('');
     }
   };
 
@@ -210,8 +219,16 @@ function Upload() {
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       const filesArray = Array.from(e.target.files);
+      const oversizedFiles = filesArray.filter(f => f.size > MAX_FILE_SIZE);
+      if (oversizedFiles.length > 0) {
+        setUploadStatus('error');
+        setErrorMessage(`Tệp tin "${oversizedFiles[0].name}" vượt quá kích thước cho phép (tối đa 200MB).`);
+        if (fileInputRef.current) fileInputRef.current.value = '';
+        return;
+      }
       setSelectedFiles((prevFiles) => [...prevFiles, ...filesArray]);
       setUploadStatus('idle');
+      setErrorMessage('');
     }
   };
 
@@ -339,7 +356,7 @@ function Upload() {
           fontWeight: '700',
           marginBottom: '0.5rem',
           fontFamily: 'var(--font-heading)',
-          background: 'linear-gradient(135deg, #ffffff 0%, #c7d2fe 50%, #818cf8 100%)',
+          background: 'var(--title-gradient)',
           WebkitBackgroundClip: 'text',
           WebkitTextFillColor: 'transparent'
         }}>
@@ -637,10 +654,6 @@ function Upload() {
               className="btn btn-primary"
               disabled={selectedFiles.length === 0 || isUploading}
               style={{
-                background: selectedFiles.length === 0 ? 'rgba(255,255,255,0.05)' : 'var(--primary)',
-                color: selectedFiles.length === 0 ? 'var(--text-muted)' : '#fff',
-                cursor: selectedFiles.length === 0 ? 'not-allowed' : 'pointer',
-                boxShadow: selectedFiles.length === 0 ? 'none' : '0 4px 14px var(--primary-glow)',
                 height: '3rem',
                 fontSize: '1rem'
               }}

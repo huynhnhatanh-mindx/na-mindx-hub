@@ -324,7 +324,10 @@ const storage = multer.diskStorage({
   }
 });
 
-const upload = multer({ storage });
+const upload = multer({ 
+  storage,
+  limits: { fileSize: 200 * 1024 * 1024 } // 200MB
+});
 
 // Middleware - CORS bảo mật
 const allowedOrigins = [
@@ -440,6 +443,39 @@ app.get('/api/students', async (req: Request, res: Response) => {
 
 // --- MIDDLEWARE VÀ ENDPOINTS QUẢN TRỊ ---
 
+// Khóa bí mật dùng để ký số Token chống giả mạo
+const JWT_SECRET = process.env.JWT_SECRET || crypto.randomBytes(32).toString('hex');
+
+// Hàm tạo Token bảo mật kèm chữ ký HMAC
+function generateSecureToken(username: string, role: string): string {
+  const payload = `${username.trim()}:${role.trim()}:${Date.now()}`;
+  const signature = crypto.createHmac('sha256', JWT_SECRET).update(payload).digest('hex');
+  return Buffer.from(`${payload}|${signature}`).toString('base64');
+}
+
+// Hàm xác minh Token và trả về thông tin payload nếu hợp lệ
+function verifySecureToken(token: string): { username: string; role: string } | null {
+  try {
+    const decoded = Buffer.from(token, 'base64').toString('utf8');
+    const index = decoded.lastIndexOf('|');
+    if (index === -1) return null;
+
+    const payload = decoded.substring(0, index);
+    const signature = decoded.substring(index + 1);
+
+    const expectedSignature = crypto.createHmac('sha256', JWT_SECRET).update(payload).digest('hex');
+    if (signature !== expectedSignature) {
+      return null;
+    }
+
+    const parts = payload.split(':');
+    if (parts.length < 2) return null;
+    return { username: parts[0], role: parts[1] };
+  } catch (e) {
+    return null;
+  }
+}
+
 // Middleware xác thực quyền Admin
 const adminAuth = async (req: Request, res: Response, next: any) => {
   try {
@@ -448,15 +484,39 @@ const adminAuth = async (req: Request, res: Response, next: any) => {
       return res.status(401).json({ error: 'Vui lòng đăng nhập để thực hiện thao tác này.' });
     }
     const token = authHeader.split(' ')[1];
-    const decoded = Buffer.from(token, 'base64').toString('utf8');
-    const parts = decoded.split(':');
-    if (parts.length < 2) {
-      return res.status(401).json({ error: 'Mã phiên đăng nhập không hợp lệ.' });
+    const verified = verifySecureToken(token);
+    if (!verified) {
+      return res.status(401).json({ error: 'Phiên đăng nhập đã hết hạn hoặc không hợp lệ. Vui lòng đăng nhập lại.' });
     }
-    const [username, role] = parts;
+    const { username, role } = verified;
     if (role !== 'admin') {
       return res.status(403).json({ error: 'Bạn không có quyền truy cập chức năng này.' });
     }
+    (req as any).user = { username, role };
+    next();
+  } catch (e) {
+    return res.status(401).json({ error: 'Mã xác thực không hợp lệ.' });
+  }
+};
+
+// Middleware xác thực quyền Admin hoặc Giáo viên
+const adminOrTeacherAuth = async (req: Request, res: Response, next: any) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'Vui lòng đăng nhập để thực hiện thao tác này.' });
+    }
+    const token = authHeader.split(' ')[1];
+    const verified = verifySecureToken(token);
+    if (!verified) {
+      return res.status(401).json({ error: 'Phiên đăng nhập đã hết hạn hoặc không hợp lệ. Vui lòng đăng nhập lại.' });
+    }
+    const { username, role } = verified;
+    if (role !== 'admin' && role !== 'teacher') {
+      return res.status(403).json({ error: 'Bạn không có quyền truy cập chức năng này.' });
+    }
+    // Lưu thông tin người dùng vào request để sử dụng trong các API
+    (req as any).user = { username, role };
     next();
   } catch (e) {
     return res.status(401).json({ error: 'Mã xác thực không hợp lệ.' });
@@ -466,7 +526,8 @@ const adminAuth = async (req: Request, res: Response, next: any) => {
 // API Đăng nhập
 app.post('/api/auth/login', async (req: Request, res: Response) => {
   try {
-    const { username, password } = req.body;
+    const username = sanitize(req.body.username);
+    const password = sanitize(req.body.password);
     if (!username || !password) {
       return res.status(400).json({ error: 'Vui lòng nhập đầy đủ tên đăng nhập và mật khẩu.' });
     }
@@ -477,7 +538,7 @@ app.post('/api/auth/login', async (req: Request, res: Response) => {
     if (!useMongoDB) {
       const configAdminPasscode = process.env.ADMIN_PASSCODE || 'admin123';
       if (username.trim() === 'admin' && password === configAdminPasscode) {
-        const token = Buffer.from('admin:admin:offline').toString('base64');
+        const token = generateSecureToken('admin', 'admin');
         return res.json({
           message: 'Đăng nhập thành công (Chế độ offline).',
           token,
@@ -495,8 +556,7 @@ app.post('/api/auth/login', async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'Tên đăng nhập hoặc mật khẩu không chính xác.' });
     }
 
-    const tokenPayload = `${user.username}:${user.role}:${Date.now()}`;
-    const token = Buffer.from(tokenPayload).toString('base64');
+    const token = generateSecureToken(user.username, user.role);
 
     res.json({
       message: 'Đăng nhập thành công.',
@@ -512,6 +572,62 @@ app.post('/api/auth/login', async (req: Request, res: Response) => {
   }
 });
 
+// API Cập nhật Thông tin Cá nhân
+app.put('/api/auth/profile', adminOrTeacherAuth, async (req: Request, res: Response) => {
+  try {
+    const { username } = (req as any).user;
+    const displayName = sanitize(req.body.displayName);
+    const password = sanitize(req.body.password);
+
+    if (!useMongoDB) {
+      return res.status(400).json({ error: 'Tính năng cập nhật hồ sơ không khả dụng ở chế độ offline.' });
+    }
+
+    const user = await UserModel.findOne({ username });
+    if (!user) {
+      return res.status(404).json({ error: 'Không tìm thấy thông tin tài khoản.' });
+    }
+
+    const oldDisplayName = user.displayName;
+    const oldRole = user.role;
+
+    if (displayName && displayName.trim() !== '') {
+      user.displayName = displayName.trim();
+    }
+    if (password && password.trim() !== '') {
+      user.password = hashPassword(password);
+    }
+
+    await user.save();
+
+    // Đồng bộ nếu là Giáo viên
+    if (oldRole === 'teacher' && displayName && displayName.trim() !== oldDisplayName) {
+      const newName = displayName.trim();
+      const teacher = await TeacherModel.findOne({ name: oldDisplayName.trim() });
+      if (teacher) {
+        teacher.name = newName;
+        await teacher.save();
+      } else {
+        const newTeacher = new TeacherModel({ name: newName });
+        await newTeacher.save();
+      }
+      // Cập nhật các lớp học do giáo viên phụ trách
+      await ClassModel.updateMany({ teacherName: oldDisplayName.trim() }, { teacherName: newName });
+    }
+
+    res.json({
+      message: 'Cập nhật thông tin cá nhân thành công.',
+      user: {
+        username: user.username,
+        role: user.role,
+        displayName: user.displayName
+      }
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Lỗi cập nhật hồ sơ: ' + err.message });
+  }
+});
+
 // API CRUD TÀI KHOẢN (Users)
 app.get('/api/admin/users', adminAuth, async (req: Request, res: Response) => {
   try {
@@ -524,7 +640,10 @@ app.get('/api/admin/users', adminAuth, async (req: Request, res: Response) => {
 
 app.post('/api/admin/users', adminAuth, async (req: Request, res: Response) => {
   try {
-    const { username, password, role, displayName } = req.body;
+    const username = sanitize(req.body.username);
+    const password = sanitize(req.body.password);
+    const role = sanitize(req.body.role);
+    const displayName = sanitize(req.body.displayName);
     if (!username || !password || !role || !displayName) {
       return res.status(400).json({ error: 'Vui lòng cung cấp đầy đủ thông tin tài khoản.' });
     }
@@ -557,7 +676,9 @@ app.post('/api/admin/users', adminAuth, async (req: Request, res: Response) => {
 
 app.put('/api/admin/users/:id', adminAuth, async (req: Request, res: Response) => {
   try {
-    const { password, role, displayName } = req.body;
+    const password = sanitize(req.body.password);
+    const role = sanitize(req.body.role);
+    const displayName = sanitize(req.body.displayName);
     const user = await UserModel.findById(req.params.id);
     if (!user) {
       return res.status(404).json({ error: 'Không tìm thấy tài khoản.' });
@@ -637,18 +758,28 @@ app.delete('/api/admin/users/:id', adminAuth, async (req: Request, res: Response
 });
 
 // API CRUD LỚP HỌC (Classes)
-app.get('/api/admin/classes', adminAuth, async (req: Request, res: Response) => {
+app.get('/api/admin/classes', adminOrTeacherAuth, async (req: Request, res: Response) => {
   try {
-    const classes = await ClassModel.find({});
+    const { role, username } = (req as any).user;
+    let query = {};
+    if (role === 'teacher') {
+      const user = await UserModel.findOne({ username });
+      const teacherName = user ? user.displayName : '';
+      query = { teacherName };
+    }
+    const classes = await ClassModel.find(query);
     res.json(classes);
   } catch (err: any) {
     res.status(500).json({ error: 'Lỗi tải danh sách lớp học: ' + err.message });
   }
 });
 
-app.post('/api/admin/classes', adminAuth, async (req: Request, res: Response) => {
+app.post('/api/admin/classes', adminOrTeacherAuth, async (req: Request, res: Response) => {
   try {
-    const { name, teacherName, newTeacherUsername, newTeacherPassword } = req.body;
+    const name = sanitize(req.body.name);
+    const teacherName = sanitize(req.body.teacherName);
+    const newTeacherUsername = sanitize(req.body.newTeacherUsername);
+    const newTeacherPassword = sanitize(req.body.newTeacherPassword);
     if (!name || !teacherName) {
       return res.status(400).json({ error: 'Vui lòng cung cấp tên lớp và tên giáo viên.' });
     }
@@ -670,9 +801,12 @@ app.post('/api/admin/classes', adminAuth, async (req: Request, res: Response) =>
   }
 });
 
-app.put('/api/admin/classes/:id', adminAuth, async (req: Request, res: Response) => {
+app.put('/api/admin/classes/:id', adminOrTeacherAuth, async (req: Request, res: Response) => {
   try {
-    const { name, teacherName, newTeacherUsername, newTeacherPassword } = req.body;
+    const name = sanitize(req.body.name);
+    const teacherName = sanitize(req.body.teacherName);
+    const newTeacherUsername = sanitize(req.body.newTeacherUsername);
+    const newTeacherPassword = sanitize(req.body.newTeacherPassword);
     const cls = await ClassModel.findById(req.params.id);
     if (!cls) {
       return res.status(404).json({ error: 'Không tìm thấy lớp học.' });
@@ -696,7 +830,7 @@ app.put('/api/admin/classes/:id', adminAuth, async (req: Request, res: Response)
   }
 });
 
-app.delete('/api/admin/classes/:id', adminAuth, async (req: Request, res: Response) => {
+app.delete('/api/admin/classes/:id', adminOrTeacherAuth, async (req: Request, res: Response) => {
   try {
     const cls = await ClassModel.findByIdAndDelete(req.params.id);
     if (!cls) {
@@ -720,7 +854,9 @@ app.get('/api/admin/teachers', adminAuth, async (req: Request, res: Response) =>
 
 app.post('/api/admin/teachers', adminAuth, async (req: Request, res: Response) => {
   try {
-    const { name, username, password } = req.body;
+    const name = sanitize(req.body.name);
+    const username = sanitize(req.body.username);
+    const password = sanitize(req.body.password);
     if (!name || !name.trim()) {
       return res.status(400).json({ error: 'Vui lòng cung cấp tên giáo viên.' });
     }
@@ -747,7 +883,8 @@ app.post('/api/admin/teachers', adminAuth, async (req: Request, res: Response) =
 
 app.put('/api/admin/teachers/:id', adminAuth, async (req: Request, res: Response) => {
   try {
-    const { name, password } = req.body;
+    const name = sanitize(req.body.name);
+    const password = sanitize(req.body.password);
     const teacher = await TeacherModel.findById(req.params.id);
     if (!teacher) {
       return res.status(404).json({ error: 'Không tìm thấy giáo viên.' });
@@ -818,18 +955,29 @@ app.delete('/api/admin/teachers/:id', adminAuth, async (req: Request, res: Respo
 });
 
 // API CRUD HỌC VIÊN (Students)
-app.get('/api/admin/students', adminAuth, async (req: Request, res: Response) => {
+app.get('/api/admin/students', adminOrTeacherAuth, async (req: Request, res: Response) => {
   try {
-    const students = await StudentModel.find({});
+    const { role, username } = (req as any).user;
+    let query = {};
+    if (role === 'teacher') {
+      const user = await UserModel.findOne({ username });
+      const teacherName = user ? user.displayName : '';
+      const teacherClasses = await ClassModel.find({ teacherName });
+      const classNames = teacherClasses.map(c => c.name);
+      query = { className: { $in: classNames } };
+    }
+    const students = await StudentModel.find(query);
     res.json(students);
   } catch (err: any) {
     res.status(500).json({ error: 'Lỗi tải danh sách học viên: ' + err.message });
   }
 });
 
-app.post('/api/admin/students', adminAuth, async (req: Request, res: Response) => {
+app.post('/api/admin/students', adminOrTeacherAuth, async (req: Request, res: Response) => {
   try {
-    const { name, className, studentCode } = req.body;
+    const name = sanitize(req.body.name);
+    const className = sanitize(req.body.className);
+    const studentCode = sanitize(req.body.studentCode);
     if (!name || !className || !studentCode) {
       return res.status(400).json({ error: 'Vui lòng nhập đầy đủ tên học viên, lớp học và mã tra cứu.' });
     }
@@ -862,9 +1010,11 @@ app.post('/api/admin/students', adminAuth, async (req: Request, res: Response) =
   }
 });
 
-app.put('/api/admin/students/:id', adminAuth, async (req: Request, res: Response) => {
+app.put('/api/admin/students/:id', adminOrTeacherAuth, async (req: Request, res: Response) => {
   try {
-    const { name, className, studentCode } = req.body;
+    const name = sanitize(req.body.name);
+    const className = sanitize(req.body.className);
+    const studentCode = sanitize(req.body.studentCode);
     const student = await StudentModel.findById(req.params.id);
     if (!student) {
       return res.status(404).json({ error: 'Không tìm thấy học viên.' });
@@ -899,7 +1049,7 @@ app.put('/api/admin/students/:id', adminAuth, async (req: Request, res: Response
   }
 });
 
-app.delete('/api/admin/students/:id', adminAuth, async (req: Request, res: Response) => {
+app.delete('/api/admin/students/:id', adminOrTeacherAuth, async (req: Request, res: Response) => {
   try {
     const student = await StudentModel.findByIdAndDelete(req.params.id);
     if (!student) {
@@ -912,9 +1062,18 @@ app.delete('/api/admin/students/:id', adminAuth, async (req: Request, res: Respo
 });
 
 // API CRUD BÀI NỘP (Submissions)
-app.get('/api/admin/submissions', adminAuth, async (req: Request, res: Response) => {
+app.get('/api/admin/submissions', adminOrTeacherAuth, async (req: Request, res: Response) => {
   try {
-    const submissions = await SubmissionModel.find({}).sort({ createdAt: -1 });
+    const { role, username } = (req as any).user;
+    let query = {};
+    if (role === 'teacher') {
+      const user = await UserModel.findOne({ username });
+      const teacherName = user ? user.displayName : '';
+      const teacherClasses = await ClassModel.find({ teacherName });
+      const classNames = teacherClasses.map(c => c.name);
+      query = { className: { $in: classNames } };
+    }
+    const submissions = await SubmissionModel.find(query).sort({ createdAt: -1 });
     res.json(submissions);
   } catch (err: any) {
     res.status(500).json({ error: 'Lỗi tải danh sách bài nộp: ' + err.message });
@@ -923,10 +1082,49 @@ app.get('/api/admin/submissions', adminAuth, async (req: Request, res: Response)
 
 app.delete('/api/admin/submissions/:id', adminAuth, async (req: Request, res: Response) => {
   try {
-    const submission = await SubmissionModel.findByIdAndDelete(req.params.id);
+    let submission: any = null;
+    if (useMongoDB) {
+      submission = await SubmissionModel.findByIdAndDelete(req.params.id);
+    } else {
+      const submissionsFile = path.join(uploadDir, 'submissions.json');
+      if (fs.existsSync(submissionsFile)) {
+        const data = JSON.parse(fs.readFileSync(submissionsFile, 'utf8'));
+        const index = data.findIndex((s: any) => s.id === req.params.id || s._id === req.params.id);
+        if (index !== -1) {
+          [submission] = data.splice(index, 1);
+          fs.writeFileSync(submissionsFile, JSON.stringify(data, null, 2));
+        }
+      }
+    }
+
     if (!submission) {
       return res.status(404).json({ error: 'Không tìm thấy bài nộp.' });
     }
+
+    // Delete corresponding file from MEGA
+    if (storageProvider === 'mega') {
+      try {
+        if (megaInitPromise) {
+          await megaInitPromise;
+        }
+        let fileToDelete = null;
+        if (megaFolder && megaFolder.children) {
+          fileToDelete = megaFolder.children.find((f: any) => f.name === submission.fileName);
+        }
+        if (!fileToDelete && megaStorage && megaStorage.files) {
+          fileToDelete = Object.values(megaStorage.files).find((f: any) => f.name === submission.fileName);
+        }
+        if (fileToDelete) {
+          await (fileToDelete as any).delete(true);
+          console.log(`[MEGA]: Đã xóa tệp tin "${submission.fileName}" trên MEGA storage.`);
+        } else {
+          console.warn(`[MEGA Warning]: Không tìm thấy tệp tin "${submission.fileName}" trên MEGA để xóa.`);
+        }
+      } catch (megaErr: any) {
+        console.error(`[MEGA Error]: Không thể xóa tệp tin trên MEGA: ${megaErr.message}`);
+      }
+    }
+
     res.json({ message: 'Xóa bài nộp thành công.' });
   } catch (err: any) {
     res.status(500).json({ error: 'Lỗi xóa bài nộp: ' + err.message });
@@ -947,27 +1145,24 @@ app.get('/api/submissions', async (req: Request, res: Response) => {
     let authUserDisplayName = '';
     if (authHeader && authHeader.startsWith('Bearer ')) {
       const token = authHeader.split(' ')[1];
-      try {
-        const decoded = Buffer.from(token, 'base64').toString('utf8');
-        const parts = decoded.split(':');
-        if (parts.length >= 2) {
-          const [username, role] = parts;
-          if (role === 'admin' || role === 'teacher') {
-            isUserAuthenticated = true;
-            authUserRole = role;
+      const verified = verifySecureToken(token);
+      if (verified) {
+        const { username, role } = verified;
+        if (role === 'admin' || role === 'teacher') {
+          isUserAuthenticated = true;
+          authUserRole = role;
 
-            // Resolve display name for the user
-            if (useMongoDB) {
-              const userDb = await UserModel.findOne({ username });
-              if (userDb) {
-                authUserDisplayName = userDb.displayName;
-              }
-            } else {
-              authUserDisplayName = username;
+          // Resolve display name for the user
+          if (useMongoDB) {
+            const userDb = await UserModel.findOne({ username });
+            if (userDb) {
+              authUserDisplayName = userDb.displayName;
             }
+          } else {
+            authUserDisplayName = username;
           }
         }
-      } catch (e) { }
+      }
     }
 
     const hasStudentCode = studentCode && typeof studentCode === 'string' && studentCode.trim() !== '';
@@ -1053,7 +1248,18 @@ app.get('/api/submissions', async (req: Request, res: Response) => {
 });
 
 // File Upload Endpoint
-app.post('/api/upload', upload.array('files', 10), async (req: Request, res: Response) => {
+const uploadArray = upload.array('files', 10);
+app.post('/api/upload', (req: Request, res: Response, next: any) => {
+  uploadArray(req, res, (err: any) => {
+    if (err) {
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(400).json({ error: 'Tệp tin vượt quá kích thước giới hạn cho phép (tối đa 200MB).' });
+      }
+      return res.status(400).json({ error: err.message || 'Lỗi xảy ra trong quá trình tải tệp tin.' });
+    }
+    next();
+  });
+}, async (req: Request, res: Response) => {
   try {
     const files = req.files as Express.Multer.File[];
     if (!files || files.length === 0) {

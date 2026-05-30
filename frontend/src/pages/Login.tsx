@@ -42,7 +42,7 @@ export default function Login() {
       window.dispatchEvent(new Event('storage'));
 
       // Redirect to Admin dashboard or home
-      if (data.user.role === 'admin') {
+      if (data.user.role === 'admin' || data.user.role === 'teacher') {
         navigate('/admin');
       } else {
         navigate('/');
@@ -62,7 +62,7 @@ export default function Login() {
           fontWeight: '700',
           marginBottom: '0.5rem',
           fontFamily: 'var(--font-heading)',
-          background: 'linear-gradient(135deg, #ffffff 0%, #c7d2fe 50%, #818cf8 100%)',
+          background: 'var(--title-gradient)',
           WebkitBackgroundClip: 'text',
           WebkitTextFillColor: 'transparent'
         }}>
@@ -82,18 +82,7 @@ export default function Login() {
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 placeholder="Nhập tài khoản admin..."
-                style={{
-                  width: '100%',
-                  padding: '0.75rem 1rem',
-                  background: 'rgba(15, 23, 42, 0.4)',
-                  border: '1px solid var(--card-border)',
-                  borderRadius: '8px',
-                  color: 'var(--text-primary)',
-                  fontSize: '0.95rem',
-                  outline: 'none',
-                  transition: 'var(--transition-fast)'
-                }}
-                className="combobox-input"
+                className="form-input-field"
                 required
                 disabled={isLoading}
               />
@@ -106,18 +95,7 @@ export default function Login() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="Nhập mật khẩu..."
-                style={{
-                  width: '100%',
-                  padding: '0.75rem 1rem',
-                  background: 'rgba(15, 23, 42, 0.4)',
-                  border: '1px solid var(--card-border)',
-                  borderRadius: '8px',
-                  color: 'var(--text-primary)',
-                  fontSize: '0.95rem',
-                  outline: 'none',
-                  transition: 'var(--transition-fast)'
-                }}
-                className="combobox-input"
+                className="form-input-field"
                 required
                 disabled={isLoading}
               />
@@ -152,7 +130,20 @@ export default function Login() {
               {isLoading ? 'Đang xác thực...' : 'Đăng nhập'}
             </button>
           </form>
-
+          
+          <div style={{
+            marginTop: '1.5rem',
+            padding: '1rem',
+            background: 'rgba(255, 255, 255, 0.02)',
+            border: '1px dashed rgba(255, 255, 255, 0.1)',
+            borderRadius: '8px',
+            fontSize: '0.85rem',
+            color: 'var(--text-secondary)',
+            textAlign: 'center',
+            lineHeight: '1.4'
+          }}>
+            💡 <strong>Lưu ý:</strong> Trang đăng nhập chỉ dành riêng cho <strong>Quản trị viên</strong> và <strong>Giáo viên</strong>. Tài khoản đăng nhập sẽ do Quản trị viên hệ thống (Admin) khởi tạo và cấp phát.
+          </div>
         </div>
       </main>
     </>

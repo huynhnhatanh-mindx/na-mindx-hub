@@ -37,7 +37,7 @@ function Home() {
           fontWeight: '800', 
           marginBottom: '0.75rem', 
           fontFamily: 'var(--font-heading)',
-          background: 'linear-gradient(135deg, #ffffff 0%, #c7d2fe 50%, #6366f1 100%)',
+          background: 'var(--title-gradient)',
           WebkitBackgroundClip: 'text',
           WebkitTextFillColor: 'transparent',
           letterSpacing: '-0.02em'

@@ -45,6 +45,7 @@ export default function AdminDashboard() {
   const [activeTab, setActiveTab] = useState<'users' | 'teachers' | 'classes' | 'students' | 'submissions'>('users');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+  const [currentUser, setCurrentUser] = useState<any>(null);
 
   // Data lists
   const [users, setUsers] = useState<UserData[]>([]);
@@ -90,9 +91,18 @@ export default function AdminDashboard() {
       navigate('/login');
       return;
     }
-    const user = JSON.parse(userStr);
-    if (user.role !== 'admin') {
-      navigate('/');
+    try {
+      const user = JSON.parse(userStr);
+      if (user.role !== 'admin' && user.role !== 'teacher') {
+        navigate('/');
+        return;
+      }
+      setCurrentUser(user);
+      if (user.role === 'teacher') {
+        setActiveTab('classes');
+      }
+    } catch (e) {
+      navigate('/login');
     }
   }, [navigate]);
 
@@ -385,7 +395,7 @@ export default function AdminDashboard() {
           fontWeight: '700',
           marginBottom: '0.5rem',
           fontFamily: 'var(--font-heading)',
-          background: 'linear-gradient(135deg, #ffffff 0%, #c7d2fe 50%, #818cf8 100%)',
+          background: 'var(--title-gradient)',
           WebkitBackgroundClip: 'text',
           WebkitTextFillColor: 'transparent'
         }}>
@@ -411,13 +421,14 @@ export default function AdminDashboard() {
             { id: 'classes', label: 'Quản lý Lớp học' },
             { id: 'students', label: 'Quản lý Học viên' },
             { id: 'submissions', label: 'Quản lý Bài nộp' }
-          ].map((tab) => (
+          ].filter(tab => currentUser?.role === 'admin' || (tab.id !== 'users' && tab.id !== 'submissions')).map((tab) => (
             <button
               key={tab.id}
               onClick={() => {
                 setActiveTab(tab.id as any);
                 setError('');
               }}
+              className="admin-tab-btn"
               style={{
                 background: 'none',
                 border: 'none',
@@ -491,9 +502,9 @@ export default function AdminDashboard() {
                   <tbody>
                     {users.map((item) => (
                       <tr key={item._id} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)', fontSize: '0.875rem' }}>
-                        <td style={{ padding: '1rem', color: 'var(--text-primary)', fontWeight: '600' }}>{item.username}</td>
-                        <td style={{ padding: '1rem' }}>{item.displayName}</td>
-                        <td style={{ padding: '1rem' }}>
+                        <td data-label="Tên đăng nhập" style={{ padding: '1rem', color: 'var(--text-primary)', fontWeight: '600' }}>{item.username}</td>
+                        <td data-label="Tên hiển thị" style={{ padding: '1rem' }}>{item.displayName}</td>
+                        <td data-label="Quyền hạn" style={{ padding: '1rem' }}>
                           <span style={{
                             background: item.role === 'admin' ? 'rgba(168, 85, 247, 0.15)' : 'rgba(99, 102, 241, 0.15)',
                             color: item.role === 'admin' ? 'var(--secondary)' : 'var(--primary)',
@@ -502,11 +513,11 @@ export default function AdminDashboard() {
                             {item.role === 'admin' ? 'Quản trị viên' : 'Giáo viên'}
                           </span>
                         </td>
-                        <td style={{ padding: '1rem' }}>{formatDate(item.createdAt)}</td>
-                        <td style={{ padding: '1rem', display: 'flex', gap: '0.5rem', justifyContent: 'center' }}>
-                          <button className="btn" style={{ padding: '4px 10px', height: 'auto', background: 'rgba(255, 255, 255, 0.05)', fontSize: '0.8rem' }} onClick={() => handleOpenEditModal(item)}>Sửa</button>
+                        <td data-label="Ngày tạo" style={{ padding: '1rem' }}>{formatDate(item.createdAt)}</td>
+                        <td data-label="Thao tác" style={{ padding: '1rem', display: 'flex', gap: '0.5rem', justifyContent: 'center' }}>
+                          <button className="btn btn-neutral" style={{ padding: '4px 10px', height: 'auto', fontSize: '0.8rem' }} onClick={() => handleOpenEditModal(item)}>Sửa</button>
                           {item.username !== 'admin' && (
-                            <button className="btn" style={{ padding: '4px 10px', height: 'auto', background: 'rgba(239, 68, 68, 0.2)', color: '#ff8a8a', fontSize: '0.8rem' }} onClick={() => handleDeleteItem(item._id)}>Xóa</button>
+                            <button className="btn btn-danger" style={{ padding: '4px 10px', height: 'auto', fontSize: '0.8rem' }} onClick={() => handleDeleteItem(item._id)}>Xóa</button>
                           )}
                         </td>
                       </tr>
@@ -528,11 +539,11 @@ export default function AdminDashboard() {
                   <tbody>
                     {classes.map((item) => (
                       <tr key={item._id} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)', fontSize: '0.875rem' }}>
-                        <td style={{ padding: '1rem', color: 'var(--text-primary)', fontWeight: '600' }}>{item.name}</td>
-                        <td style={{ padding: '1rem' }}>{item.teacherName}</td>
-                        <td style={{ padding: '1rem', display: 'flex', gap: '0.5rem', justifyContent: 'center' }}>
-                          <button className="btn" style={{ padding: '4px 10px', height: 'auto', background: 'rgba(255, 255, 255, 0.05)', fontSize: '0.8rem' }} onClick={() => handleOpenEditModal(item)}>Sửa</button>
-                          <button className="btn" style={{ padding: '4px 10px', height: 'auto', background: 'rgba(239, 68, 68, 0.2)', color: '#ff8a8a', fontSize: '0.8rem' }} onClick={() => handleDeleteItem(item._id)}>Xóa</button>
+                        <td data-label="Tên lớp học" style={{ padding: '1rem', color: 'var(--text-primary)', fontWeight: '600' }}>{item.name}</td>
+                        <td data-label="Giáo viên phụ trách" style={{ padding: '1rem' }}>{item.teacherName}</td>
+                        <td data-label="Thao tác" style={{ padding: '1rem', display: 'flex', gap: '0.5rem', justifyContent: 'center' }}>
+                          <button className="btn btn-neutral" style={{ padding: '4px 10px', height: 'auto', fontSize: '0.8rem' }} onClick={() => handleOpenEditModal(item)}>Sửa</button>
+                          <button className="btn btn-danger" style={{ padding: '4px 10px', height: 'auto', fontSize: '0.8rem' }} onClick={() => handleDeleteItem(item._id)}>Xóa</button>
                         </td>
                       </tr>
                     ))}
@@ -554,16 +565,16 @@ export default function AdminDashboard() {
                   <tbody>
                     {students.map((item) => (
                       <tr key={item._id} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)', fontSize: '0.875rem' }}>
-                        <td style={{ padding: '1rem', color: 'var(--text-primary)', fontWeight: '600' }}>{item.name}</td>
-                        <td style={{ padding: '1rem' }}>
+                        <td data-label="Tên học viên" style={{ padding: '1rem', color: 'var(--text-primary)', fontWeight: '600' }}>{item.name}</td>
+                        <td data-label="Mã lớp học" style={{ padding: '1rem' }}>
                           <span style={{ background: 'rgba(99, 102, 241, 0.1)', color: 'var(--primary)', padding: '2px 8px', borderRadius: '4px', fontSize: '0.8rem', fontWeight: '600' }}>
                             {item.className}
                           </span>
                         </td>
-                        <td style={{ padding: '1rem', color: 'var(--success)', fontWeight: '600' }}>{item.studentCode}</td>
-                        <td style={{ padding: '1rem', display: 'flex', gap: '0.5rem', justifyContent: 'center' }}>
-                          <button className="btn" style={{ padding: '4px 10px', height: 'auto', background: 'rgba(255, 255, 255, 0.05)', fontSize: '0.8rem' }} onClick={() => handleOpenEditModal(item)}>Sửa</button>
-                          <button className="btn" style={{ padding: '4px 10px', height: 'auto', background: 'rgba(239, 68, 68, 0.2)', color: '#ff8a8a', fontSize: '0.8rem' }} onClick={() => handleDeleteItem(item._id)}>Xóa</button>
+                        <td data-label="Mã tra cứu" style={{ padding: '1rem', color: 'var(--success)', fontWeight: '600' }}>{item.studentCode}</td>
+                        <td data-label="Thao tác" style={{ padding: '1rem', display: 'flex', gap: '0.5rem', justifyContent: 'center' }}>
+                          <button className="btn btn-neutral" style={{ padding: '4px 10px', height: 'auto', fontSize: '0.8rem' }} onClick={() => handleOpenEditModal(item)}>Sửa</button>
+                          <button className="btn btn-danger" style={{ padding: '4px 10px', height: 'auto', fontSize: '0.8rem' }} onClick={() => handleDeleteItem(item._id)}>Xóa</button>
                         </td>
                       </tr>
                     ))}
@@ -587,17 +598,21 @@ export default function AdminDashboard() {
                   <tbody>
                     {submissions.map((item) => (
                       <tr key={item._id} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)', fontSize: '0.875rem' }}>
-                        <td style={{ padding: '1rem', color: 'var(--text-primary)', fontWeight: '600' }}>{item.fullName}</td>
-                        <td style={{ padding: '1rem' }}>{item.className}</td>
-                        <td style={{ padding: '1rem' }}>{item.stage} ({item.session})</td>
-                        <td style={{ padding: '1rem' }}>
+                        <td data-label="Học viên" style={{ padding: '1rem', color: 'var(--text-primary)', fontWeight: '600' }}>{item.fullName}</td>
+                        <td data-label="Lớp" style={{ padding: '1rem' }}>{item.className}</td>
+                        <td data-label="Giai đoạn/Buổi" style={{ padding: '1rem' }}>{item.stage} ({item.session})</td>
+                        <td data-label="File" style={{ padding: '1rem' }}>
                           <a href={item.fileUrl} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--secondary)', textDecoration: 'none' }}>
                             {item.fileName}
                           </a>
                         </td>
-                        <td style={{ padding: '1rem' }}>{formatDate(item.createdAt)}</td>
-                        <td style={{ padding: '1rem', textAlign: 'center' }}>
-                          <button className="btn" style={{ padding: '4px 10px', height: 'auto', background: 'rgba(239, 68, 68, 0.2)', color: '#ff8a8a', fontSize: '0.8rem' }} onClick={() => handleDeleteItem(item._id)}>Xóa</button>
+                        <td data-label="Ngày nộp" style={{ padding: '1rem' }}>{formatDate(item.createdAt)}</td>
+                        <td data-label="Thao tác" style={{ padding: '1rem', textAlign: 'center' }}>
+                          {currentUser?.role === 'admin' ? (
+                            <button className="btn btn-danger" style={{ padding: '4px 10px', height: 'auto', fontSize: '0.8rem' }} onClick={() => handleDeleteItem(item._id)}>Xóa</button>
+                          ) : (
+                            <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem', fontStyle: 'italic' }}>Không có quyền xóa</span>
+                          )}
                         </td>
                       </tr>
                     ))}
@@ -656,8 +671,8 @@ export default function AdminDashboard() {
                       type="text"
                       value={userUsername}
                       onChange={(e) => setUserUsername(e.target.value)}
-                      placeholder="Ví dụ: nhatanh"
-                      style={{ padding: '0.65rem 1rem', background: 'rgba(15, 23, 42, 0.4)', border: '1px solid var(--card-border)', borderRadius: '8px', color: '#fff', outline: 'none' }}
+                      placeholder="Ví dụ: giaovien1"
+                      className="form-input-field"
                       required
                       disabled={!!editingId}
                       autoComplete="off"
@@ -670,7 +685,7 @@ export default function AdminDashboard() {
                       value={userPassword}
                       onChange={(e) => setUserPassword(e.target.value)}
                       placeholder="Mật khẩu bí mật..."
-                      style={{ padding: '0.65rem 1rem', background: 'rgba(15, 23, 42, 0.4)', border: '1px solid var(--card-border)', borderRadius: '8px', color: '#fff', outline: 'none' }}
+                      className="form-input-field"
                       required={!editingId}
                       autoComplete="new-password"
                     />
@@ -681,8 +696,8 @@ export default function AdminDashboard() {
                       type="text"
                       value={userDisplayName}
                       onChange={(e) => setUserDisplayName(e.target.value)}
-                      placeholder="Ví dụ: Huỳnh Nhật Anh"
-                      style={{ padding: '0.65rem 1rem', background: 'rgba(15, 23, 42, 0.4)', border: '1px solid var(--card-border)', borderRadius: '8px', color: '#fff', outline: 'none' }}
+                      placeholder="Ví dụ: Nguyễn Văn A"
+                      className="form-input-field"
                       required
                       autoComplete="off"
                     />
@@ -692,7 +707,7 @@ export default function AdminDashboard() {
                     <select
                       value={userRole}
                       onChange={(e) => setUserRole(e.target.value)}
-                      style={{ padding: '0.65rem 1rem', background: '#0f172a', border: '1px solid var(--card-border)', borderRadius: '8px', color: '#fff', outline: 'none', cursor: 'pointer' }}
+                      className="form-select-field"
                       required
                     >
                       <option value="admin">Quản trị viên</option>
@@ -712,7 +727,7 @@ export default function AdminDashboard() {
                       value={className}
                       onChange={(e) => setClassName(e.target.value)}
                       placeholder="Ví dụ: HCM4"
-                      style={{ padding: '0.65rem 1rem', background: 'rgba(15, 23, 42, 0.4)', border: '1px solid var(--card-border)', borderRadius: '8px', color: '#fff', outline: 'none' }}
+                      className="form-input-field"
                       required
                       autoComplete="off"
                     />
@@ -730,7 +745,7 @@ export default function AdminDashboard() {
                           setIsNewTeacher(false);
                         }
                       }}
-                      style={{ padding: '0.65rem 1rem', background: '#0f172a', border: '1px solid var(--card-border)', borderRadius: '8px', color: '#fff', outline: 'none', cursor: 'pointer', fontSize: '0.95rem' }}
+                      className="form-select-field"
                       required
                     >
                       <option value="">-- Chọn giáo viên --</option>
@@ -750,8 +765,8 @@ export default function AdminDashboard() {
                           type="text"
                           value={newTeacherName}
                           onChange={(e) => setNewTeacherName(e.target.value)}
-                          placeholder="Ví dụ: Huỳnh Nhật Anh"
-                          style={{ padding: '0.65rem 1rem', background: 'rgba(15, 23, 42, 0.4)', border: '1px solid var(--card-border)', borderRadius: '8px', color: '#fff', outline: 'none' }}
+                          placeholder="Ví dụ: Nguyễn Văn A"
+                          className="form-input-field"
                           required
                           autoComplete="off"
                         />
@@ -762,8 +777,8 @@ export default function AdminDashboard() {
                           type="text"
                           value={newTeacherUsername}
                           onChange={(e) => setNewTeacherUsername(e.target.value)}
-                          placeholder="Ví dụ: nhatanh"
-                          style={{ padding: '0.65rem 1rem', background: 'rgba(15, 23, 42, 0.4)', border: '1px solid var(--card-border)', borderRadius: '8px', color: '#fff', outline: 'none' }}
+                          placeholder="Ví dụ: giaovien1"
+                          className="form-input-field"
                           required
                           autoComplete="off"
                         />
@@ -775,7 +790,7 @@ export default function AdminDashboard() {
                           value={newTeacherPassword}
                           onChange={(e) => setNewTeacherPassword(e.target.value)}
                           placeholder="Để trống nếu lấy mặc định là 123456..."
-                          style={{ padding: '0.65rem 1rem', background: 'rgba(15, 23, 42, 0.4)', border: '1px solid var(--card-border)', borderRadius: '8px', color: '#fff', outline: 'none' }}
+                          className="form-input-field"
                           autoComplete="new-password"
                         />
                       </div>
@@ -794,7 +809,7 @@ export default function AdminDashboard() {
                       value={studentName}
                       onChange={(e) => setStudentName(e.target.value)}
                       placeholder="Ví dụ: Nguyễn Văn Nam"
-                      style={{ padding: '0.65rem 1rem', background: 'rgba(15, 23, 42, 0.4)', border: '1px solid var(--card-border)', borderRadius: '8px', color: '#fff', outline: 'none' }}
+                      className="form-input-field"
                       required
                       autoComplete="off"
                     />
@@ -812,7 +827,7 @@ export default function AdminDashboard() {
                           setIsNewClass(false);
                         }
                       }}
-                      style={{ padding: '0.65rem 1rem', background: '#0f172a', border: '1px solid var(--card-border)', borderRadius: '8px', color: '#fff', outline: 'none', cursor: 'pointer', fontSize: '0.95rem' }}
+                      className="form-select-field"
                       required
                     >
                       <option value="">-- Chọn lớp học --</option>
@@ -832,7 +847,7 @@ export default function AdminDashboard() {
                         value={newClassName}
                         onChange={(e) => setNewClassName(e.target.value)}
                         placeholder="Ví dụ: HCM4"
-                        style={{ padding: '0.65rem 1rem', background: 'rgba(15, 23, 42, 0.4)', border: '1px solid var(--card-border)', borderRadius: '8px', color: '#fff', outline: 'none' }}
+                        className="form-input-field"
                         required
                         autoComplete="off"
                       />
@@ -845,7 +860,7 @@ export default function AdminDashboard() {
                       value={studentCode}
                       onChange={(e) => setStudentCode(e.target.value)}
                       placeholder="Ví dụ: HV001"
-                      style={{ padding: '0.65rem 1rem', background: 'rgba(15, 23, 42, 0.4)', border: '1px solid var(--card-border)', borderRadius: '8px', color: '#fff', outline: 'none' }}
+                      className="form-input-field"
                       required
                       autoComplete="off"
                     />
@@ -872,9 +887,9 @@ export default function AdminDashboard() {
               <div style={{ display: 'flex', gap: '1rem', marginTop: '1rem' }}>
                 <button
                   type="button"
-                  className="btn"
+                  className="btn btn-neutral"
                   onClick={() => setShowModal(false)}
-                  style={{ flex: 1, background: 'rgba(255, 255, 255, 0.05)', color: 'var(--text-secondary)' }}
+                  style={{ flex: 1 }}
                 >
                   Hủy
                 </button>

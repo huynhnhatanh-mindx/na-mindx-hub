@@ -23,11 +23,25 @@
   --error-glow: rgba(239, 68, 68, 0.15);
   
   --text-primary: #f8fafc;
-  --text-secondary: #94a3b8;
-  --text-muted: #64748b;
+  --text-secondary: #cbd5e1;
+  --text-muted: #94a3b8;
+
+  /* Form input placeholders styling */
+  ::placeholder {
+    color: var(--text-muted) !important;
+    opacity: 0.8;
+  }
   
   --transition-smooth: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
   --transition-fast: all 0.2s ease;
+
+  --input-bg: rgba(15, 23, 42, 0.4);
+  --input-border: rgba(255, 255, 255, 0.08);
+  --select-bg: #0f172a;
+  --title-gradient: linear-gradient(135deg, #ffffff 0%, #c7d2fe 50%, #818cf8 100%);
+
+  --btn-neutral-bg: rgba(255, 255, 255, 0.05);
+  --btn-neutral-border: rgba(255, 255, 255, 0.08);
 }
 
 * {
@@ -267,7 +281,18 @@ h1 {
   cursor: pointer;
   border: none;
   transition: var(--transition-smooth);
+  color: var(--text-primary);
   width: 100%;
+}
+
+.btn:disabled {
+  background: var(--btn-neutral-bg) !important;
+  color: var(--text-muted) !important;
+  cursor: not-allowed !important;
+  border: 1px solid var(--btn-neutral-border) !important;
+  box-shadow: none !important;
+  transform: none !important;
+  opacity: 0.6;
 }
 
 .btn-primary {
@@ -295,6 +320,37 @@ h1 {
 .btn-outline:hover {
   background: rgba(255, 255, 255, 0.05);
   border-color: rgba(255, 255, 255, 0.2);
+}
+
+.btn-neutral {
+  background: var(--btn-neutral-bg) !important;
+  color: var(--text-primary) !important;
+  border: 1px solid var(--btn-neutral-border) !important;
+}
+
+.btn-neutral:hover {
+  background: rgba(255, 255, 255, 0.1) !important;
+}
+
+:root[data-theme='light'] .btn-neutral:hover {
+  background: rgba(15, 23, 42, 0.1) !important;
+}
+
+.btn-danger {
+  background: rgba(239, 68, 68, 0.15) !important;
+  color: #ef4444 !important;
+  border: 1px solid rgba(239, 68, 68, 0.3) !important;
+}
+
+:root[data-theme='light'] .btn-danger {
+  background: rgba(220, 38, 38, 0.1) !important;
+  color: #dc2626 !important;
+  border: 1px solid rgba(220, 38, 38, 0.2) !important;
+}
+
+.btn-danger:hover {
+  background: var(--error) !important;
+  color: #ffffff !important;
 }
 
 .actions-row {
@@ -691,6 +747,388 @@ h1 {
 @keyframes fadeInFast {
   from { opacity: 0; transform: translateY(-4px); }
   to { opacity: 1; transform: translateY(0); }
+}
+
+/* ==========================================================================
+   LIGHT THEME OVERRIDES
+   ========================================================================== */
+:root[data-theme='light'] {
+  --bg-gradient: radial-gradient(circle at 50% 0%, #cbd5e1 0%, #e2e8f0 50%, #f1f5f9 100%);
+  --card-bg: rgba(255, 255, 255, 0.7);
+  --card-border: rgba(15, 23, 42, 0.08);
+  --card-hover-border: rgba(99, 102, 241, 0.5);
+  
+  --primary: #4f46e5;
+  --primary-hover: #3730a3;
+  --primary-glow: rgba(79, 70, 229, 0.15);
+  
+  --secondary: #9333ea;
+  --secondary-glow: rgba(147, 51, 234, 0.1);
+
+  --success: #059669;
+  --success-glow: rgba(5, 150, 105, 0.15);
+  
+  --error: #dc2626;
+  --error-glow: rgba(220, 38, 38, 0.15);
+  
+  --text-primary: #0f172a;
+  --text-secondary: #334155;
+  --text-muted: #475569;
+
+  --input-bg: rgba(255, 255, 255, 0.9);
+  --input-border: rgba(15, 23, 42, 0.12);
+  --select-bg: #ffffff;
+  --title-gradient: linear-gradient(135deg, #0f172a 0%, #334155 50%, #475569 100%);
+
+  --btn-neutral-bg: rgba(15, 23, 42, 0.05);
+  --btn-neutral-border: rgba(15, 23, 42, 0.08);
+}
+
+:root[data-theme='light'] body {
+  background-color: #f1f5f9;
+  color: var(--text-primary);
+}
+
+:root[data-theme='light'] .navbar {
+  background: rgba(255, 255, 255, 0.7);
+  border-bottom: 1px solid rgba(15, 23, 42, 0.06);
+}
+
+:root[data-theme='light'] .app-footer {
+  background: rgba(241, 245, 249, 0.9);
+  border-top: 1px solid rgba(15, 23, 42, 0.06);
+}
+
+:root[data-theme='light'] .combobox-dropdown {
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1);
+  border: 1px solid rgba(15, 23, 42, 0.08);
+}
+
+:root[data-theme='light'] .combobox-option:hover {
+  background: rgba(99, 102, 241, 0.1);
+  color: var(--primary);
+}
+
+:root[data-theme='light'] .combobox-input {
+  background: rgba(255, 255, 255, 0.9);
+  border-color: rgba(15, 23, 42, 0.12);
+  color: var(--text-primary);
+}
+
+:root[data-theme='light'] .combobox-input:focus {
+  background: #ffffff;
+  border-color: var(--primary);
+}
+
+:root[data-theme='light'] input,
+:root[data-theme='light'] select,
+:root[data-theme='light'] textarea {
+  color: var(--text-primary) !important;
+}
+
+:root[data-theme='light'] h2,
+:root[data-theme='light'] h3 {
+  background: linear-gradient(135deg, #0f172a 0%, #334155 50%, #475569 100%) !important;
+  -webkit-background-clip: text !important;
+  -webkit-text-fill-color: transparent !important;
+}
+
+:root[data-theme='light'] .subtitle {
+  color: var(--text-secondary) !important;
+}
+
+:root[data-theme='light'] .response-box {
+  background: rgba(255, 255, 255, 0.6);
+}
+
+:root[data-theme='light'] .dropzone {
+  background-color: rgba(255, 255, 255, 0.4) !important;
+}
+
+:root[data-theme='light'] .btn-login {
+  color: var(--primary) !important;
+}
+
+:root[data-theme='light'] .btn-login:hover {
+  color: #ffffff !important;
+}
+
+:root[data-theme='light'] a {
+  color: var(--primary) !important;
+}
+
+:root[data-theme='light'] a:hover {
+  color: var(--primary-hover) !important;
+}
+
+/* ==========================================================================
+   RESPONSIVE HAMBURGER MENU & NAV BAR
+   ========================================================================== */
+.menu-toggle {
+  display: none;
+  background: none;
+  border: none;
+  color: var(--text-primary);
+  cursor: pointer;
+  padding: 0.5rem;
+  z-index: 101;
+  transition: var(--transition-fast);
+}
+
+.menu-toggle:hover {
+  color: var(--primary);
+}
+
+@media (max-width: 768px) {
+  .menu-toggle {
+    display: block;
+  }
+  
+  .nav-menu {
+    display: none;
+  }
+  
+  .nav-menu.open {
+    display: flex;
+    flex-direction: column;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    width: 100%;
+    background: var(--card-bg);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    padding: 1.5rem;
+    border-bottom: 1px solid var(--card-border);
+    gap: 1.25rem;
+    align-items: flex-start;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+    animation: fadeInFast 0.2s ease-out;
+  }
+  
+  .nav-menu.open li {
+    width: 100%;
+  }
+  
+  .nav-menu.open .nav-link {
+    display: block;
+    width: 100%;
+    padding: 0.5rem 0;
+  }
+  
+  /* Adjust layout for user actions area on mobile inside container */
+  .nav-container {
+    position: relative;
+  }
+}
+
+/* ==========================================================================
+   RESPONSIVE TABLES AS CARDS
+   ========================================================================== */
+@media (max-width: 768px) {
+  table, thead, tbody, th, td, tr {
+    display: block !important;
+    width: 100% !important;
+  }
+  
+  thead tr {
+    position: absolute !important;
+    top: -9999px !important;
+    left: -9999px !important;
+  }
+  
+  tr {
+    background: var(--card-bg) !important;
+    border: 1px solid var(--card-border) !important;
+    border-radius: 12px !important;
+    margin-bottom: 1.25rem !important;
+    padding: 1rem !important;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15) !important;
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 0.5rem !important;
+  }
+  
+  td {
+    border: none !important;
+    position: relative !important;
+    padding: 0.5rem 0 0.5rem 45% !important;
+    text-align: right !important;
+    border-bottom: 1px dashed rgba(255, 255, 255, 0.05) !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: flex-end !important;
+    min-height: 2.75rem !important;
+  }
+  
+  :root[data-theme='light'] td {
+    border-bottom: 1px dashed rgba(15, 23, 42, 0.06) !important;
+  }
+  
+  td:last-child {
+    border-bottom: none !important;
+  }
+  
+  td::before {
+    position: absolute !important;
+    top: 50% !important;
+    left: 0.5rem !important;
+    transform: translateY(-50%) !important;
+    width: 40% !important;
+    padding-right: 10px !important;
+    white-space: nowrap !important;
+    text-align: left !important;
+    font-weight: 700 !important;
+    color: var(--text-secondary) !important;
+    font-size: 0.75rem !important;
+    text-transform: uppercase !important;
+    content: attr(data-label) !important;
+  }
+  
+  td > button, td > a {
+    display: inline-flex !important;
+    margin: 0 !important;
+  }
+}
+
+/* ==========================================================================
+   FORM INPUT FIELD & SELECT FIELD UTILITY CLASSES
+   ========================================================================== */
+.form-input-field {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
+  border-radius: 8px;
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  font-size: 0.95rem;
+  outline: none;
+  transition: var(--transition-fast);
+}
+
+.form-input-field:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+}
+
+.form-input-field:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.form-select-field {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
+  border-radius: 8px;
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  font-size: 0.95rem;
+  outline: none;
+  transition: var(--transition-fast);
+  cursor: pointer;
+}
+
+.form-select-field:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+}
+
+.form-select-field option {
+  background: var(--select-bg);
+  color: var(--text-primary);
+}
+
+/* ==========================================================================
+   MOBILE SCREEN ADJUSTMENTS (< 480px & 320px baseline)
+   ========================================================================== */
+@media (max-width: 480px) {
+  .glass-card {
+    padding: 1.25rem !important;
+    border-radius: 12px !important;
+  }
+
+  .main-content {
+    padding: 1.5rem 0.75rem !important;
+  }
+
+  h1 {
+    font-size: 2.25rem !important;
+  }
+
+  h2 {
+    font-size: 1.8rem !important;
+  }
+
+  .logo {
+    height: 3.5rem !important;
+  }
+
+  /* Submission page filter spacing */
+  .submissions-filters {
+    flex-direction: column !important;
+    gap: 0.75rem !important;
+  }
+
+  .submissions-filters > * {
+    width: 100% !important;
+  }
+}
+
+@media (max-width: 360px) {
+  /* Extreme small mobile viewport adjustments (320px baseline) */
+  .glass-card {
+    padding: 1rem !important;
+    border-radius: 8px !important;
+  }
+
+  .main-content {
+    padding: 1rem 0.5rem !important;
+  }
+
+  h1 {
+    font-size: 1.8rem !important;
+  }
+
+  h2 {
+    font-size: 1.5rem !important;
+  }
+
+  .logo {
+    height: 3rem !important;
+  }
+
+  .btn {
+    padding: 0.6rem 1rem !important;
+    font-size: 0.9rem !important;
+  }
+
+  /* Admin Dashboard specific mobile tab buttons spacing */
+  .admin-tab-btn {
+    font-size: 0.85rem !important;
+    padding: 0.4rem 0.6rem !important;
+  }
+
+  /* Stacking table card labels clean on smallest screens */
+  td {
+    padding: 0.5rem 0 0.5rem 40% !important;
+    font-size: 0.8rem !important;
+  }
+  
+  td::before {
+    left: 0.4rem !important;
+    width: 35% !important;
+    font-size: 0.75rem !important;
+  }
+  
+  /* Form grids extra compact spacing */
+  .form-grid, .form-grid-2 {
+    gap: 0.75rem !important;
+  }
 }
 
 

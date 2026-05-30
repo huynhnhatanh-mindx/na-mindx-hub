@@ -1,11 +1,32 @@
-import { Routes, Route } from 'react-router-dom';
+import { Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import Layout from './components/Layout';
 import Home from './pages/Home';
 import Upload from './pages/Upload';
 import Submissions from './pages/Submissions';
 import Login from './pages/Login';
 import AdminDashboard from './pages/AdminDashboard';
+import Settings from './pages/Settings';
 import './App.css';
+
+// Route Guard component to prevent unauthorized direct URL navigation
+const ProtectedRoute = ({ allowedRoles }: { allowedRoles: string[] }) => {
+  const token = localStorage.getItem('token');
+  const userStr = localStorage.getItem('user');
+
+  if (!token || !userStr) {
+    return <Navigate to="/login" replace />;
+  }
+
+  try {
+    const user = JSON.parse(userStr);
+    if (!allowedRoles.includes(user.role)) {
+      return <Navigate to="/" replace />;
+    }
+    return <Outlet />;
+  } catch (e) {
+    return <Navigate to="/login" replace />;
+  }
+};
 
 function App() {
   return (
@@ -15,7 +36,12 @@ function App() {
         <Route path="upload" element={<Upload />} />
         <Route path="submissions" element={<Submissions />} />
         <Route path="login" element={<Login />} />
-        <Route path="admin" element={<AdminDashboard />} />
+        
+        {/* Protected Admin & Teacher Routes */}
+        <Route element={<ProtectedRoute allowedRoles={['admin', 'teacher']} />}>
+          <Route path="admin" element={<AdminDashboard />} />
+          <Route path="settings" element={<Settings />} />
+        </Route>
       </Route>
     </Routes>
   );

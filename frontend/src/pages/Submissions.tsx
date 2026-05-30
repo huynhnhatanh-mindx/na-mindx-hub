@@ -21,6 +21,11 @@ export default function Submissions() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [user, setUser] = useState<any>(null);
+  
+  // Filter dropdown states
+  const [selectedClass, setSelectedClass] = useState('');
+  const [selectedStage, setSelectedStage] = useState('');
+  const [classOptions, setClassOptions] = useState<string[]>([]);
 
   const fetchLoggedSubmissions = async () => {
     setError('');
@@ -94,9 +99,7 @@ export default function Submissions() {
   }, []);
 
   // Form query states
-  const [activeTab, setActiveTab] = useState<'student' | 'admin'>('student');
   const [studentCode, setStudentCode] = useState('');
-  const [adminKey, setAdminKey] = useState('');
   const [hasQueried, setHasQueried] = useState(false);
 
   const handleQuery = async (e: React.FormEvent) => {
@@ -107,22 +110,12 @@ export default function Submissions() {
 
     try {
       const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
-      let url = `${API_BASE_URL}/api/submissions`;
-      if (activeTab === 'admin') {
-        if (!adminKey.trim()) {
-          setError('Vui lòng nhập Mã quản trị.');
-          setIsLoading(false);
-          return;
-        }
-        url += `?adminKey=${encodeURIComponent(adminKey.trim())}`;
-      } else {
-        if (!studentCode.trim()) {
-          setError('Vui lòng nhập Mã tra cứu học viên.');
-          setIsLoading(false);
-          return;
-        }
-        url += `?studentCode=${encodeURIComponent(studentCode.trim())}`;
+      if (!studentCode.trim()) {
+        setError('Vui lòng nhập Mã tra cứu học viên.');
+        setIsLoading(false);
+        return;
       }
+      const url = `${API_BASE_URL}/api/submissions?studentCode=${encodeURIComponent(studentCode.trim())}`;
 
       const response = await fetch(url);
       if (!response.ok) {
@@ -146,23 +139,44 @@ export default function Submissions() {
     }
   };
 
-  // Filter submissions when search term changes
+  // Dynamically extract class list from fetched submissions
   useEffect(() => {
+    const classes = Array.from(new Set(submissions.map((sub) => sub.className).filter(Boolean)));
+    setClassOptions(classes);
+  }, [submissions]);
+
+  // Filter submissions when search term, class, or stage changes
+  useEffect(() => {
+    let filtered = submissions;
+
+    // Search term filter
     const term = searchTerm.toLowerCase().trim();
-    if (!term) {
-      setFilteredSubmissions(submissions);
-      return;
+    if (term) {
+      filtered = filtered.filter(
+        (sub) =>
+          sub.fullName.toLowerCase().includes(term) ||
+          sub.className.toLowerCase().includes(term) ||
+          sub.teacher.toLowerCase().includes(term) ||
+          sub.fileName.toLowerCase().includes(term)
+      );
     }
 
-    const filtered = submissions.filter(
-      (sub) =>
-        sub.fullName.toLowerCase().includes(term) ||
-        sub.className.toLowerCase().includes(term) ||
-        sub.teacher.toLowerCase().includes(term) ||
-        sub.fileName.toLowerCase().includes(term)
-    );
+    // Class filter
+    if (selectedClass) {
+      filtered = filtered.filter(
+        (sub) => sub.className === selectedClass
+      );
+    }
+
+    // Stage filter
+    if (selectedStage) {
+      filtered = filtered.filter(
+        (sub) => sub.stage.toLowerCase() === selectedStage.toLowerCase()
+      );
+    }
+
     setFilteredSubmissions(filtered);
-  }, [searchTerm, submissions]);
+  }, [searchTerm, selectedClass, selectedStage, submissions]);
 
   const formatDate = (dateStr: string) => {
     try {
@@ -187,7 +201,7 @@ export default function Submissions() {
           fontWeight: '700',
           marginBottom: '0.5rem',
           fontFamily: 'var(--font-heading)',
-          background: 'linear-gradient(135deg, #ffffff 0%, #c7d2fe 50%, #818cf8 100%)',
+          background: 'var(--title-gradient)',
           WebkitBackgroundClip: 'text',
           WebkitTextFillColor: 'transparent'
         }}>
@@ -227,39 +241,71 @@ export default function Submissions() {
               Quay lại trang chủ
             </Link>
 
-            {/* Search Input - only visible when results are loaded */}
-            {hasQueried && filteredSubmissions.length > 0 && (
-              <div style={{ position: 'relative', width: '300px', maxWidth: '100%' }}>
-                <input
-                  type="text"
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  placeholder="Tìm kiếm trong kết quả..."
-                  style={{
-                    width: '100%',
-                    padding: '0.65rem 1rem 0.65rem 2.5rem',
-                    background: 'rgba(15, 23, 42, 0.4)',
-                    border: '1px solid var(--card-border)',
-                    borderRadius: '8px',
-                    color: 'var(--text-primary)',
-                    fontSize: '0.9rem',
-                    outline: 'none',
-                    transition: 'var(--transition-fast)'
-                  }}
-                  className="combobox-input"
-                />
-                <svg 
-                  width="16" 
-                  height="16" 
-                  viewBox="0 0 24 24" 
-                  fill="none" 
-                  stroke="var(--text-secondary)" 
-                  strokeWidth="2"
-                  style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)' }}
-                >
-                  <circle cx="11" cy="11" r="8" />
-                  <line x1="21" y1="21" x2="16.65" y2="16.65" />
-                </svg>
+            {/* Search & Filter Controls Row - visible when results are loaded */}
+            {hasQueried && submissions.length > 0 && (
+              <div 
+                className="submissions-filters"
+                style={{
+                  display: 'flex',
+                  gap: '1rem',
+                  flexWrap: 'wrap',
+                  alignItems: 'center',
+                  width: '100%',
+                  justifyContent: 'flex-start',
+                  marginTop: '1rem'
+                }}
+              >
+                {/* Search Text input */}
+                <div style={{ position: 'relative', flex: '1 1 250px', maxWidth: '350px' }}>
+                  <input
+                    type="text"
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    placeholder="Tìm học viên, tên tệp..."
+                    className="form-input-field"
+                    style={{ paddingLeft: '2.5rem' }}
+                  />
+                  <svg 
+                    width="16" 
+                    height="16" 
+                    viewBox="0 0 24 24" 
+                    fill="none" 
+                    stroke="var(--text-secondary)" 
+                    strokeWidth="2"
+                    style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)' }}
+                  >
+                    <circle cx="11" cy="11" r="8" />
+                    <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                  </svg>
+                </div>
+
+                {/* Class Filter Dropdown */}
+                <div style={{ flex: '1 1 150px', maxWidth: '200px' }}>
+                  <select
+                    value={selectedClass}
+                    onChange={(e) => setSelectedClass(e.target.value)}
+                    className="form-select-field"
+                  >
+                    <option value="">Tất cả lớp học</option>
+                    {classOptions.map((cls) => (
+                      <option key={cls} value={cls}>{cls}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Stage Filter Dropdown */}
+                <div style={{ flex: '1 1 180px', maxWidth: '220px' }}>
+                  <select
+                    value={selectedStage}
+                    onChange={(e) => setSelectedStage(e.target.value)}
+                    className="form-select-field"
+                  >
+                    <option value="">Tất cả giai đoạn</option>
+                    <option value="checkpoint 1">Checkpoint 1</option>
+                    <option value="checkpoint 2">Checkpoint 2</option>
+                    <option value="sản phẩm cuối khóa">Sản phẩm cuối khóa</option>
+                  </select>
+                </div>
               </div>
             )}
           </div>
@@ -292,9 +338,8 @@ export default function Submissions() {
                 </span>
                 <button 
                   onClick={fetchLoggedSubmissions}
-                  className="btn"
+                  className="btn btn-neutral"
                   style={{
-                    background: 'rgba(255, 255, 255, 0.05)',
                     padding: '0.4rem 1rem',
                     height: '2.2rem',
                     fontSize: '0.85rem',
@@ -314,106 +359,20 @@ export default function Submissions() {
               padding: '2rem',
               marginBottom: '2.5rem'
             }}>
-              <div style={{ display: 'flex', gap: '1.5rem', marginBottom: '1.5rem', borderBottom: '1px solid rgba(255, 255, 255, 0.05)', paddingBottom: '0.75rem' }}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setActiveTab('student');
-                    setError('');
-                  }}
-                  style={{
-                    background: 'none',
-                    border: 'none',
-                    color: activeTab === 'student' ? 'var(--primary)' : 'var(--text-secondary)',
-                    fontSize: '1rem',
-                    fontWeight: '600',
-                    cursor: 'pointer',
-                    padding: '0.25rem 0.5rem',
-                    position: 'relative',
-                    transition: 'var(--transition-fast)'
-                  }}
-                >
-                  Học viên tra cứu
-                  {activeTab === 'student' && (
-                    <div style={{ position: 'absolute', bottom: '-13px', left: 0, right: 0, height: '2px', background: 'var(--primary)' }}></div>
-                  )}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setActiveTab('admin');
-                    setError('');
-                  }}
-                  style={{
-                    background: 'none',
-                    border: 'none',
-                    color: activeTab === 'admin' ? 'var(--primary)' : 'var(--text-secondary)',
-                    fontSize: '1rem',
-                    fontWeight: '600',
-                    cursor: 'pointer',
-                    padding: '0.25rem 0.5rem',
-                    position: 'relative',
-                    transition: 'var(--transition-fast)'
-                  }}
-                >
-                  Giáo viên / Quản trị
-                  {activeTab === 'admin' && (
-                    <div style={{ position: 'absolute', bottom: '-13px', left: 0, right: 0, height: '2px', background: 'var(--primary)' }}></div>
-                  )}
-                </button>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginBottom: '1.5rem', maxWidth: '400px' }}>
+                <label className="form-label" style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', fontWeight: '500', fontSize: '0.95rem' }}>
+                  Mã tra cứu học viên (Student Lookup Code)
+                  <input
+                    type="text"
+                    value={studentCode}
+                    onChange={(e) => setStudentCode(e.target.value)}
+                    placeholder="Nhập mã học viên của bạn (ví dụ: HV001)..."
+                    className="form-input-field"
+                    style={{ marginTop: '0.25rem' }}
+                    required
+                  />
+                </label>
               </div>
-
-              {activeTab === 'student' ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginBottom: '1.5rem', maxWidth: '400px' }}>
-                  <label className="form-label" style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', fontWeight: '500', fontSize: '0.95rem' }}>
-                    Mã tra cứu học viên (Student Lookup Code)
-                    <input
-                      type="text"
-                      value={studentCode}
-                      onChange={(e) => setStudentCode(e.target.value)}
-                      placeholder="Nhập mã học viên của bạn (ví dụ: HV001)..."
-                      style={{
-                        padding: '0.75rem 1rem',
-                        background: 'rgba(15, 23, 42, 0.4)',
-                        border: '1px solid var(--card-border)',
-                        borderRadius: '8px',
-                        color: 'var(--text-primary)',
-                        fontSize: '0.95rem',
-                        outline: 'none',
-                        transition: 'var(--transition-fast)',
-                        marginTop: '0.25rem'
-                      }}
-                      className="combobox-input"
-                      required
-                    />
-                  </label>
-                </div>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginBottom: '1.5rem', maxWidth: '400px' }}>
-                  <label className="form-label" style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', fontWeight: '500', fontSize: '0.95rem' }}>
-                    Mã quản trị (Admin Passcode)
-                    <input
-                      type="password"
-                      value={adminKey}
-                      onChange={(e) => setAdminKey(e.target.value)}
-                      placeholder="Nhập mã quản trị..."
-                      style={{
-                        padding: '0.75rem 1rem',
-                        background: 'rgba(15, 23, 42, 0.4)',
-                        border: '1px solid var(--card-border)',
-                        borderRadius: '8px',
-                        color: 'var(--text-primary)',
-                        fontSize: '0.95rem',
-                        outline: 'none',
-                        transition: 'var(--transition-fast)',
-                        marginTop: '0.25rem'
-                      }}
-                      className="combobox-input"
-                      required
-                    />
-                  </label>
-                </div>
-              )}
 
               <button
                 type="submit"
@@ -490,15 +449,15 @@ export default function Submissions() {
                         onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.01)')}
                         onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
                       >
-                        <td style={{ padding: '1rem', color: 'var(--text-primary)', fontWeight: '600' }}>{sub.fullName}</td>
-                        <td style={{ padding: '1rem' }}>
+                        <td data-label="Học Viên" style={{ padding: '1rem', color: 'var(--text-primary)', fontWeight: '600' }}>{sub.fullName}</td>
+                        <td data-label="Lớp" style={{ padding: '1rem' }}>
                           <span style={{ background: 'rgba(99, 102, 241, 0.1)', color: 'var(--primary)', padding: '2px 8px', borderRadius: '4px', fontSize: '0.8rem', fontWeight: '600' }}>
                             {sub.className}
                           </span>
                         </td>
-                        <td style={{ padding: '1rem' }}>{sub.teacher}</td>
-                        <td style={{ padding: '1rem' }}>{sub.stage} ({sub.session})</td>
-                        <td style={{ padding: '1rem' }}>
+                        <td data-label="Giáo Viên" style={{ padding: '1rem' }}>{sub.teacher}</td>
+                        <td data-label="Bài Học" style={{ padding: '1rem' }}>{sub.stage} ({sub.session})</td>
+                        <td data-label="Tên Tệp Tin" style={{ padding: '1rem' }}>
                           <a 
                             href={sub.fileUrl} 
                             target="_blank" 
@@ -523,7 +482,7 @@ export default function Submissions() {
                             </span>
                           </a>
                         </td>
-                        <td style={{ padding: '1rem' }}>{formatDate(sub.createdAt)}</td>
+                        <td data-label="Ngày Nộp" style={{ padding: '1rem' }}>{formatDate(sub.createdAt)}</td>
                       </tr>
                     ))}
                   </tbody>
