@@ -6,6 +6,8 @@ import path from 'path';
 import fs from 'fs';
 import { google } from 'googleapis';
 import { Storage } from 'megajs';
+import mongoose from 'mongoose';
+import sanitize from 'mongo-sanitize';
 
 // Load environment variables
 dotenv.config();
@@ -17,6 +19,39 @@ const PORT = process.env.PORT || 5000;
 const uploadDir = path.join(__dirname, '../uploads');
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
+}
+
+// --- CẤU HÌNH CƠ SỞ DỮ LIỆU MONGODB ---
+const submissionSchema = new mongoose.Schema({
+  teacher: { type: String, required: true },
+  className: { type: String, required: true },
+  fullName: { type: String, required: true },
+  stage: { type: String, required: true },
+  session: { type: String, required: true },
+  attemptNumber: { type: Number, required: true },
+  fileName: { type: String, required: true },
+  fileUrl: { type: String, required: true },
+  createdAt: { type: Date, default: Date.now }
+});
+
+const SubmissionModel = mongoose.model('Submission', submissionSchema);
+
+let useMongoDB = false;
+
+if (process.env.MONGODB_URI) {
+  console.log('[Database]: Đang kết nối tới cơ sở dữ liệu MongoDB Atlas...');
+  mongoose.connect(process.env.MONGODB_URI)
+    .then(() => {
+      useMongoDB = true;
+      console.log('[Database]: Kết nối cơ sở dữ liệu MongoDB thành công!');
+    })
+    .catch((err: any) => {
+      console.error('[Database Error]: Kết nối MongoDB thất bại! Chi tiết:', err.message);
+      console.warn('[Database]: Hệ thống chuyển sang lưu trữ cục bộ (local JSON file fallback).');
+    });
+} else {
+  console.warn('[Database Warning]: Không tìm thấy MONGODB_URI trong file .env.');
+  console.warn('[Database]: Hệ thống sẽ lưu trữ cục bộ (local JSON file fallback).');
 }
 
 // --- CẤU HÌNH LƯU TRỮ ---
@@ -175,72 +210,44 @@ function getSessionAbbreviation(session: string): string {
 }
 
 // Multer Storage Configuration
+// Lưu tệp tạm thời với tên duy nhất để tránh xung đột
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     cb(null, uploadDir);
   },
   filename: (req, file, cb) => {
     const ext = path.extname(file.originalname);
-    const basename = path.basename(file.originalname, ext);
-
-    const className = req.body.className ? req.body.className.trim() : 'N-A';
-    const fullName = req.body.fullName ? req.body.fullName.trim() : 'N-A';
-    const stage = req.body.stage ? req.body.stage.trim() : 'N-A';
-    const session = req.body.session ? req.body.session.trim() : 'N-A';
-
-    // Calculate submission attempt number once per request
-    if (!(req as any).submissionAttemptNumber) {
-      const submissionsFile = path.join(uploadDir, 'submissions.json');
-      let count = 0;
-      if (fs.existsSync(submissionsFile)) {
-        try {
-          const data = fs.readFileSync(submissionsFile, 'utf8');
-          const submissions = JSON.parse(data);
-          // Count submissions matching Name, Class, Stage, Session
-          count = submissions.filter((s: any) => 
-            s.fullName?.trim().toLowerCase() === fullName.toLowerCase() &&
-            s.className?.trim().toLowerCase() === className.toLowerCase() &&
-            s.stage?.trim().toLowerCase() === stage.toLowerCase() &&
-            s.session?.trim().toLowerCase() === session.toLowerCase()
-          ).length;
-        } catch (err) {
-          console.error('Error reading submissions file:', err);
-        }
-      }
-      (req as any).submissionAttemptNumber = count + 1;
-    }
-
-    const attemptNumber = (req as any).submissionAttemptNumber;
-
-    const abbrevStage = getStageAbbreviation(stage);
-    const abbrevSession = getSessionAbbreviation(session);
-
-    // Build filename components
-    const finalFullName = sanitizeForFilename(fullName);
-    const finalClassName = sanitizeForFilename(className);
-    const finalStage = sanitizeForFilename(abbrevStage);
-    const finalSession = sanitizeForFilename(abbrevSession);
-    const finalBasename = sanitizeForFilename(basename);
-
-    // Format: Họ tên - Lớp - Giai đoạn (Viết tắt) - Buổi (Viết tắt) - Lần nộp
-    // Example: Nguyen Van Nam - HCM4 - CP2 - B9 - Lan 1.zip
-    const baseOutputName = `${finalFullName} - ${finalClassName} - ${finalStage} - ${finalSession} - Lan ${attemptNumber}`;
-    
-    let outputFilename = `${baseOutputName}${ext}`;
-    let fileCounter = 1;
-    while (fs.existsSync(path.join(uploadDir, outputFilename))) {
-      outputFilename = `${baseOutputName} (${fileCounter})${ext}`;
-      fileCounter++;
-    }
-
-    cb(null, outputFilename);
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+    cb(null, `${file.fieldname}-${uniqueSuffix}${ext}`);
   }
 });
 
 const upload = multer({ storage });
 
-// Middleware
-app.use(cors());
+// Middleware - CORS bảo mật
+const allowedOrigins = [
+  'http://localhost:5173', // Local React frontend
+  process.env.FRONTEND_URL  // Deployed React frontend
+].filter(Boolean) as string[];
+
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin) return callback(null, true);
+    
+    // Ở môi trường dev, cho phép mọi client kết nối
+    if (process.env.NODE_ENV !== 'production') {
+      return callback(null, true);
+    }
+
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    } else {
+      return callback(new Error('Chính sách CORS ngăn chặn truy cập từ nguồn này.'));
+    }
+  },
+  credentials: true
+}));
+
 app.use(express.json());
 
 // API Health Check
@@ -267,12 +274,59 @@ app.post('/api/upload', upload.array('files', 10), async (req: Request, res: Res
       return res.status(400).json({ error: 'No files selected for upload.' });
     }
 
-    const fileDetails = [];
+    // Áp dụng mongo-sanitize để tránh NoSQL Injection
+    const teacher = sanitize(req.body.teacher || 'N/A').trim();
+    const className = sanitize(req.body.className || 'N/A').trim();
+    const fullName = sanitize(req.body.fullName || 'N/A').trim();
+    const stage = sanitize(req.body.stage || 'N/A').trim();
+    const session = sanitize(req.body.session || 'N/A').trim();
+
+    const fileDetails: any[] = [];
+
+    // Tính toán số lần nộp bài (attemptNumber)
+    let attemptNumber = 1;
+    if (useMongoDB) {
+      const count = await SubmissionModel.countDocuments({
+        fullName,
+        className,
+        stage,
+        session
+      });
+      attemptNumber = count + 1;
+    } else {
+      const submissionsFile = path.join(uploadDir, 'submissions.json');
+      if (fs.existsSync(submissionsFile)) {
+        try {
+          const data = fs.readFileSync(submissionsFile, 'utf8');
+          const submissions = JSON.parse(data);
+          const count = submissions.filter((s: any) => 
+            s.fullName?.trim().toLowerCase() === fullName.toLowerCase() &&
+            s.className?.trim().toLowerCase() === className.toLowerCase() &&
+            s.stage?.trim().toLowerCase() === stage.toLowerCase() &&
+            s.session?.trim().toLowerCase() === session.toLowerCase()
+          ).length;
+          attemptNumber = count + 1;
+        } catch (err) {
+          console.error('Error reading submissions file:', err);
+        }
+      }
+    }
+
+    const abbrevStage = getStageAbbreviation(stage);
+    const abbrevSession = getSessionAbbreviation(session);
 
     // Lặp qua từng file để xử lý tải lên
-    for (const file of files) {
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
       const localPath = file.path;
-      const targetFileName = file.filename;
+      const ext = path.extname(file.originalname);
+
+      // Định dạng tên tệp tin chuẩn hóa trên MEGA/Drive
+      const suffix = files.length > 1 ? `_${i + 1}` : '';
+      const baseOutputName = `${sanitizeForFilename(fullName)} - ${sanitizeForFilename(className)} - ${sanitizeForFilename(abbrevStage)} - ${sanitizeForFilename(abbrevSession)} - Lan ${attemptNumber}${suffix}`;
+      const targetFileName = `${baseOutputName}${ext}`;
+
+      let fileUrl = '';
 
       if (storageProvider === 'mega') {
         try {
@@ -291,16 +345,9 @@ app.post('/api/upload', upload.array('files', 10), async (req: Request, res: Res
 
           fs.createReadStream(localPath).pipe(uploadStream);
           const megaFile = await uploadStream.complete;
-          const megaUrl = await megaFile.link();
+          fileUrl = await megaFile.link();
           
-          console.log(`[MEGA]: Tải lên thành công! Link MEGA: ${megaUrl}`);
-
-          fileDetails.push({
-            originalName: file.originalname,
-            filename: targetFileName,
-            size: file.size,
-            path: megaUrl
-          });
+          console.log(`[MEGA]: Tải lên thành công! Link MEGA: ${fileUrl}`);
 
           // Xóa file tạm thời trên ổ đĩa local sau khi đã upload lên MEGA thành công
           if (fs.existsSync(localPath)) {
@@ -316,15 +363,8 @@ app.post('/api/upload', upload.array('files', 10), async (req: Request, res: Res
       } else if (storageProvider === 'google-drive' && drive) {
         try {
           console.log(`[Google Drive]: Đang tải lên tệp tin: ${targetFileName}...`);
-          const driveUrl = await uploadToGoogleDrive(localPath, targetFileName, file.mimetype);
-          console.log(`[Google Drive]: Tải lên thành công! Link Drive: ${driveUrl}`);
-
-          fileDetails.push({
-            originalName: file.originalname,
-            filename: targetFileName,
-            size: file.size,
-            path: driveUrl // Lưu link Google Drive vào registry
-          });
+          fileUrl = await uploadToGoogleDrive(localPath, targetFileName, file.mimetype);
+          console.log(`[Google Drive]: Tải lên thành công! Link Drive: ${fileUrl}`);
 
           // Xóa file tạm thời trên ổ đĩa local sau khi đã upload lên Drive thành công
           if (fs.existsSync(localPath)) {
@@ -344,37 +384,60 @@ app.post('/api/upload', upload.array('files', 10), async (req: Request, res: Res
         }
         throw new Error(`Chế độ lưu trữ cục bộ (local storage) đã bị vô hiệu hóa trên môi trường cloud. Hiện tại đang cấu hình lưu trữ là: ${storageProvider.toUpperCase()}`);
       }
+
+      fileDetails.push({
+        fileName: targetFileName,
+        fileUrl: fileUrl
+      });
     }
 
-    // Log the submission metadata to submissions.json
-    const submissionsFile = path.join(uploadDir, 'submissions.json');
-    let submissions: any[] = [];
-    
-    if (fs.existsSync(submissionsFile)) {
-      try {
-        const data = fs.readFileSync(submissionsFile, 'utf8');
-        submissions = JSON.parse(data);
-      } catch (err) {
-        console.error('Error reading submissions file:', err);
+    // Ghi nhận lịch sử nộp bài vào Cơ sở dữ liệu (MongoDB hoặc JSON file)
+    if (useMongoDB) {
+      for (const detail of fileDetails) {
+        const submissionDoc = new SubmissionModel({
+          teacher,
+          className,
+          fullName,
+          stage,
+          session,
+          attemptNumber,
+          fileName: detail.fileName,
+          fileUrl: detail.fileUrl
+        });
+        await submissionDoc.save();
       }
+    } else {
+      const submissionsFile = path.join(uploadDir, 'submissions.json');
+      let submissions: any[] = [];
+      
+      if (fs.existsSync(submissionsFile)) {
+        try {
+          const data = fs.readFileSync(submissionsFile, 'utf8');
+          submissions = JSON.parse(data);
+        } catch (err) {
+          console.error('Error reading submissions file:', err);
+        }
+      }
+
+      for (const detail of fileDetails) {
+        const newSubmission = {
+          id: Date.now().toString() + '-' + Math.round(Math.random() * 1e9),
+          teacher,
+          className,
+          fullName,
+          stage,
+          session,
+          attemptNumber,
+          fileName: detail.fileName,
+          fileUrl: detail.fileUrl,
+          createdAt: new Date().toISOString()
+        };
+        submissions.push(newSubmission);
+      }
+      fs.writeFileSync(submissionsFile, JSON.stringify(submissions, null, 2), 'utf8');
     }
 
-    const newSubmission = {
-      id: Date.now().toString() + '-' + Math.round(Math.random() * 1e9),
-      teacher: req.body.teacher || 'N/A',
-      className: req.body.className || 'N/A',
-      fullName: req.body.fullName || 'N/A',
-      stage: req.body.stage || 'N/A',
-      session: req.body.session || 'N/A',
-      attemptNumber: (req as any).submissionAttemptNumber || 1,
-      files: fileDetails,
-      createdAt: new Date().toISOString()
-    };
-
-    submissions.push(newSubmission);
-    fs.writeFileSync(submissionsFile, JSON.stringify(submissions, null, 2), 'utf8');
-
-    let successMessage = 'Đã lưu bài cục bộ thành công!';
+    let successMessage = 'Đã lưu bài nộp thành công!';
     if (storageProvider === 'mega') {
       successMessage = 'Đã tải bài lên MEGA thành công!';
     } else if (storageProvider === 'google-drive') {
@@ -385,6 +448,7 @@ app.post('/api/upload', upload.array('files', 10), async (req: Request, res: Res
       message: successMessage,
       files: fileDetails
     });
+
   } catch (error: any) {
     console.error('Error handling upload:', error);
     res.status(500).json({ error: error.message || 'Internal server error during upload.' });
