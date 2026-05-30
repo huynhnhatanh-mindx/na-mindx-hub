@@ -47,7 +47,6 @@ export default function Settings() {
 
   // Revert theme to saved value when leaving settings without saving
   useEffect(() => {
-    const savedTheme = (localStorage.getItem('theme') as 'dark' | 'light') || 'dark';
     return () => {
       // On unmount, revert to saved theme if user didn't save
       const currentSaved = (localStorage.getItem('theme') as 'dark' | 'light') || 'dark';
