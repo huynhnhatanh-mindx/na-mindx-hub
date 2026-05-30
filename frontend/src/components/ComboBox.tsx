@@ -21,6 +21,7 @@ export default function ComboBox({
 }: ComboBoxProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState(value);
+  const [isTyping, setIsTyping] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Synchronize internal state when the value prop changes from parent
@@ -28,9 +29,8 @@ export default function ComboBox({
     setSearchTerm(value);
   }, [value]);
 
-  // Filter options based on typed input. Only filter if the user has typed something different from the selected value.
-  const isFiltering = searchTerm !== value;
-  const filteredOptions = isFiltering
+  // Filter options based on typed input. Only filter if the user is actively typing.
+  const filteredOptions = isTyping && searchTerm.trim() !== ''
     ? options.filter(option => option.toLowerCase().includes(searchTerm.toLowerCase()))
     : options;
 
@@ -40,6 +40,7 @@ export default function ComboBox({
       if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
         if (isOpen) {
           setIsOpen(false);
+          setIsTyping(false);
           // Save the typed value when user clicks outside
           onChange(searchTerm);
         }
@@ -54,16 +55,19 @@ export default function ComboBox({
     setSearchTerm(val);
     onChange(val);
     setIsOpen(true);
+    setIsTyping(true);
   };
 
   const handleSelectOption = (option: string) => {
     onChange(option);
     setSearchTerm(option);
     setIsOpen(false);
+    setIsTyping(false);
   };
 
   const handleFocus = () => {
     setIsOpen(true);
+    setIsTyping(false);
   };
 
   return (
@@ -87,7 +91,12 @@ export default function ComboBox({
         
         <button
           type="button"
-          onClick={() => !disabled && setIsOpen(!isOpen)}
+          onClick={() => {
+            if (!disabled) {
+              setIsOpen(!isOpen);
+              setIsTyping(false);
+            }
+          }}
           disabled={disabled}
           style={{
             position: 'absolute',
@@ -126,7 +135,10 @@ export default function ComboBox({
               <div
                 key={idx}
                 className={`combobox-option ${option === value ? 'selected' : ''}`}
-                onClick={() => handleSelectOption(option)}
+                onMouseDown={(e) => {
+                  e.preventDefault(); // Prevent input blur / click outside triggers
+                  handleSelectOption(option);
+                }}
               >
                 {option}
               </div>
@@ -136,7 +148,10 @@ export default function ComboBox({
             searchTerm.trim() !== '' && (
               <div 
                 className="combobox-option" 
-                onClick={() => handleSelectOption(searchTerm)}
+                onMouseDown={(e) => {
+                  e.preventDefault(); // Prevent input blur / click outside triggers
+                  handleSelectOption(searchTerm);
+                }}
                 style={{ fontStyle: 'italic' }}
               >
                 Sử dụng "{searchTerm}"
@@ -153,3 +168,4 @@ export default function ComboBox({
     </div>
   );
 }
+

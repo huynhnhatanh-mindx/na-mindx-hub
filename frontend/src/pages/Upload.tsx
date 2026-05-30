@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import ComboBox from '../components/ComboBox';
 
@@ -14,6 +14,22 @@ interface UploadResponse {
   files: UploadResponseFile[];
 }
 
+// Fallback static data for offline/disconnected database scenarios
+const TEACHERS_FALLBACK = ['Huỳnh Nhật Anh', 'Nguyễn Văn A', 'Trần Thị B'];
+
+const TEACHER_CLASSES_MAP_FALLBACK: Record<string, string[]> = {
+  'Huỳnh Nhật Anh': ['HCM4', 'HCM1'],
+  'Nguyễn Văn A': ['HCM2'],
+  'Trần Thị B': ['HCM3']
+};
+
+const CLASS_STUDENTS_MAP_FALLBACK: Record<string, string[]> = {
+  'HCM4': ['Nguyễn Văn Nam', 'Trần Thị Mai'],
+  'HCM1': ['Lê Hoàng Long', 'Phạm Minh Đức'],
+  'HCM2': ['Hoàng Văn C', 'Trần Thị D'],
+  'HCM3': ['Phan Văn E', 'Đỗ Thị F']
+};
+
 function Upload() {
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [isDragging, setIsDragging] = useState<boolean>(false);
@@ -25,10 +41,10 @@ function Upload() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Metadata combo box option lists
-  const teachersList = ['Huỳnh Nhật Anh', 'Nguyễn Văn A', 'Trần Thị B'];
-  const classesList = ['HCM4', 'HCM1', 'HCM2', 'HCM3'];
-  const studentsList = ['Nguyễn Văn Nam', 'Trần Thị Mai', 'Lê Hoàng Long', 'Phạm Minh Đức'];
+  // States for metadata dropdown options, dynamically loaded from backend/database
+  const [teachersList, setTeachersList] = useState<string[]>([]);
+  const [classesList, setClassesList] = useState<string[]>([]);
+  const [studentsList, setStudentsList] = useState<string[]>([]);
   const stagesList = ['Checkpoint 1', 'Checkpoint 2', 'Sản phẩm cuối khóa'];
 
   const sessionsMap: Record<string, string[]> = {
@@ -43,13 +59,75 @@ function Upload() {
     ]
   };
 
-
   // State for metadata fields
   const [teacher, setTeacher] = useState<string>('');
   const [className, setClassName] = useState<string>('');
   const [fullName, setFullName] = useState<string>('');
   const [stage, setStage] = useState<string>('');
   const [session, setSession] = useState<string>('');
+
+  // Fetch teachers on component mount
+  useEffect(() => {
+    const fetchTeachers = async () => {
+      try {
+        const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+        const res = await fetch(`${API_BASE_URL}/api/teachers`);
+        if (!res.ok) throw new Error('Failed to fetch teachers');
+        const data = await res.json();
+        setTeachersList(data);
+      } catch (err) {
+        console.warn('Using offline fallback for teachers list due to error:', err);
+        setTeachersList(TEACHERS_FALLBACK);
+      }
+    };
+    fetchTeachers();
+  }, []);
+
+  // Fetch classes when selected teacher changes
+  useEffect(() => {
+    if (!teacher.trim()) {
+      setClassesList([]);
+      return;
+    }
+    const fetchClasses = async () => {
+      try {
+        const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+        const res = await fetch(`${API_BASE_URL}/api/classes?teacherName=${encodeURIComponent(teacher.trim())}`);
+        if (!res.ok) throw new Error('Failed to fetch classes');
+        const data = await res.json();
+        setClassesList(data);
+      } catch (err) {
+        console.warn('Using offline fallback for classes list due to error:', err);
+        const trimmedTeacher = teacher.trim();
+        const fallbackClasses = TEACHER_CLASSES_MAP_FALLBACK[trimmedTeacher] || [];
+        setClassesList(fallbackClasses);
+      }
+    };
+    fetchClasses();
+  }, [teacher]);
+
+  // Fetch students when selected class changes
+  useEffect(() => {
+    if (!className.trim()) {
+      setStudentsList([]);
+      return;
+    }
+    const fetchStudents = async () => {
+      try {
+        const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+        const res = await fetch(`${API_BASE_URL}/api/students?className=${encodeURIComponent(className.trim())}`);
+        if (!res.ok) throw new Error('Failed to fetch students');
+        const data = await res.json();
+        setStudentsList(data);
+      } catch (err) {
+        console.warn('Using offline fallback for students list due to error:', err);
+        const trimmedClass = className.trim();
+        const fallbackStudents = CLASS_STUDENTS_MAP_FALLBACK[trimmedClass] || [];
+        setStudentsList(fallbackStudents);
+      }
+    };
+    fetchStudents();
+  }, [className]);
 
   // Handle teacher change to reset dependent fields
   const handleTeacherChange = (newTeacher: string) => {
@@ -154,7 +232,7 @@ function Upload() {
     }
 
     setIsUploading(true);
-    setUploadProgress(10);
+    setUploadProgress(5); // Bắt đầu ở mức 5% để hiển thị tiến trình đang chạy
     setUploadStatus('idle');
     setErrorMessage('');
 
@@ -170,17 +248,6 @@ function Upload() {
       formData.append('files', file);
     });
 
-    // Simulate progress animation for premium experience
-    const progressInterval = setInterval(() => {
-      setUploadProgress((prev) => {
-        if (prev >= 85) {
-          clearInterval(progressInterval);
-          return prev;
-        }
-        return prev + 15;
-      });
-    }, 150);
-
     try {
       const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
       const response = await fetch(`${API_BASE_URL}/api/upload`, {
@@ -188,23 +255,76 @@ function Upload() {
         body: formData,
       });
 
-      clearInterval(progressInterval);
-      setUploadProgress(100);
+      if (!response.ok) {
+        let errMsg = 'Đã xảy ra lỗi trong quá trình tải lên.';
+        try {
+          const errData = await response.json();
+          errMsg = errData.error || errMsg;
+        } catch (e) {}
+        setUploadStatus('error');
+        setErrorMessage(errMsg);
+        return;
+      }
 
-      if (response.ok) {
+      // Đọc luồng dữ liệu Server-Sent Events (SSE) để theo dõi tiến trình thực tế
+      const contentType = response.headers.get('Content-Type');
+      if (contentType && contentType.includes('text/event-stream')) {
+        const reader = response.body?.getReader();
+        const decoder = new TextDecoder();
+
+        if (!reader) {
+          throw new Error('Không thể đọc luồng phản hồi từ máy chủ.');
+        }
+
+        let buffer = '';
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          // Giữ lại dòng chưa hoàn chỉnh cuối cùng vào bộ đệm
+          buffer = lines.pop() || '';
+
+          for (const line of lines) {
+            const cleanLine = line.trim();
+            if (cleanLine.startsWith('data: ')) {
+              try {
+                const sseData = JSON.parse(cleanLine.slice(6));
+                if (sseData.status === 'uploading') {
+                  setUploadProgress(sseData.progress);
+                } else if (sseData.status === 'success') {
+                  setUploadProgress(100);
+                  setUploadStatus('success');
+                  setUploadedFiles(sseData.files);
+                  setSelectedFiles([]); // Reset danh sách chọn
+                  if (fileInputRef.current) {
+                    fileInputRef.current.value = '';
+                  }
+                } else if (sseData.status === 'error') {
+                  setUploadStatus('error');
+                  setErrorMessage(sseData.error || 'Lỗi tải lên từ máy chủ.');
+                }
+              } catch (err) {
+                console.error('Lỗi phân tích cú pháp dữ liệu SSE:', err);
+              }
+            }
+          }
+        }
+      } else {
+        // Fallback trong trường hợp phản hồi không phải là stream
         const data: UploadResponse = await response.json();
+        setUploadProgress(100);
         setUploadStatus('success');
         setUploadedFiles(data.files);
-        setSelectedFiles([]); // Reset selection
-      } else {
-        const errData = await response.json();
-        setUploadStatus('error');
-        setErrorMessage(errData.error || 'Đã xảy ra lỗi trong quá trình tải lên.');
+        setSelectedFiles([]);
+        if (fileInputRef.current) {
+          fileInputRef.current.value = '';
+        }
       }
-    } catch (error) {
-      clearInterval(progressInterval);
+    } catch (error: any) {
       setUploadStatus('error');
-      setErrorMessage('Không thể kết nối đến server backend. Vui lòng kiểm tra xem server đã chạy chưa.');
+      setErrorMessage(error.message || 'Không thể kết nối đến server backend. Vui lòng kiểm tra xem server đã chạy chưa.');
       console.error('Upload error:', error);
     } finally {
       setIsUploading(false);
