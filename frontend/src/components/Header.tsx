@@ -49,8 +49,9 @@ function Header() {
     <nav className="navbar">
       <div className="nav-container">
         {/* Logo */}
-        <div className="logo-placeholder" onClick={() => navigate('/')} style={{ cursor: 'pointer' }}>
-          <span>NA-MINDX-HUB</span>
+        <div className="nav-logo" onClick={() => navigate('/')} style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.6rem', flexShrink: 0 }}>
+          <img src="/logo.png" alt="NA MindX Hub Logo" className="nav-logo-img" />
+          <span className="nav-logo-text">NA MindX Hub</span>
         </div>
 
         {/* Hamburger Toggle Button (mobile only) */}

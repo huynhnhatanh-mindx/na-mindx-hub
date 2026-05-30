@@ -38,10 +38,22 @@ export default function Settings() {
     setTheme(savedTheme);
   }, [navigate]);
 
-  // Handle theme change (local state only, applied on save)
+  // Handle theme change — live preview immediately, revert if not saved
   const handleThemeChange = (newTheme: 'dark' | 'light') => {
     setTheme(newTheme);
+    // Apply live preview to DOM
+    document.documentElement.setAttribute('data-theme', newTheme);
   };
+
+  // Revert theme to saved value when leaving settings without saving
+  useEffect(() => {
+    const savedTheme = (localStorage.getItem('theme') as 'dark' | 'light') || 'dark';
+    return () => {
+      // On unmount, revert to saved theme if user didn't save
+      const currentSaved = (localStorage.getItem('theme') as 'dark' | 'light') || 'dark';
+      document.documentElement.setAttribute('data-theme', currentSaved);
+    };
+  }, []);
 
   // Handle Profile save
   const handleSaveProfile = async (e: React.FormEvent) => {
@@ -211,61 +223,107 @@ export default function Settings() {
             {/* Theme Selector */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginTop: '0.5rem' }}>
               <label className="form-label">Chọn Giao Diện (Theme)</label>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1.25rem' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem' }}>
+                
                 {/* Dark Theme Card */}
                 <div 
                   onClick={() => handleThemeChange('dark')}
                   style={{
-                    padding: '1.5rem',
-                    borderRadius: '12px',
+                    borderRadius: '14px',
                     cursor: 'pointer',
-                    background: 'rgba(15, 23, 42, 0.65)',
                     border: `2px solid ${theme === 'dark' ? 'var(--primary)' : 'var(--card-border)'}`,
-                    boxShadow: theme === 'dark' ? '0 0 15px rgba(99, 102, 241, 0.2)' : 'none',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    gap: '0.75rem',
-                    transition: 'var(--transition-smooth)'
+                    boxShadow: theme === 'dark' ? '0 0 0 3px rgba(99, 102, 241, 0.15)' : 'none',
+                    overflow: 'hidden',
+                    transition: 'all 0.25s ease',
+                    transform: theme === 'dark' ? 'scale(1.02)' : 'scale(1)'
                   }}
                 >
+                  {/* Mini dark UI mockup */}
+                  <div style={{ background: '#0f172a', padding: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                    <div style={{ display: 'flex', gap: '0.3rem', marginBottom: '0.2rem' }}>
+                      <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#ef4444' }} />
+                      <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#f59e0b' }} />
+                      <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#10b981' }} />
+                    </div>
+                    <div style={{ background: 'rgba(255,255,255,0.06)', borderRadius: '6px', padding: '0.4rem 0.5rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                      <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: 'linear-gradient(135deg, #818cf8, #4f46e5)' }} />
+                      <div style={{ height: '5px', width: '55px', borderRadius: '3px', background: 'linear-gradient(90deg, #c7d2fe, #818cf8)' }} />
+                    </div>
+                    <div style={{ background: 'rgba(255,255,255,0.04)', borderRadius: '6px', padding: '0.5rem', display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+                      <div style={{ height: '4px', width: '80%', borderRadius: '3px', background: 'rgba(255,255,255,0.15)' }} />
+                      <div style={{ height: '4px', width: '60%', borderRadius: '3px', background: 'rgba(255,255,255,0.08)' }} />
+                      <div style={{ height: '20px', borderRadius: '4px', background: 'linear-gradient(90deg, #6366f1, #a855f7)', marginTop: '0.25rem' }} />
+                    </div>
+                  </div>
+                  {/* Label */}
                   <div style={{
-                    width: '32px',
-                    height: '32px',
-                    borderRadius: '50%',
-                    background: 'radial-gradient(circle, #818cf8 0%, #1e1b4b 100%)',
-                    boxShadow: '0 0 8px rgba(129, 140, 248, 0.5)'
-                  }} />
-                  <span style={{ fontSize: '0.9rem', fontWeight: '600', color: '#fff' }}>Giao diện Tối (Dark)</span>
+                    background: theme === 'dark' ? 'rgba(99, 102, 241, 0.12)' : 'rgba(15,23,42,0.85)',
+                    padding: '0.6rem 0.75rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.5rem',
+                    justifyContent: 'center'
+                  }}>
+                    <span style={{ fontSize: '1rem' }}>🌙</span>
+                    <span style={{ fontSize: '0.85rem', fontWeight: '600', color: theme === 'dark' ? '#818cf8' : '#94a3b8' }}>Giao diện Tối</span>
+                    {theme === 'dark' && (
+                      <span style={{ marginLeft: 'auto', fontSize: '0.7rem', background: '#6366f1', color: '#fff', borderRadius: '99px', padding: '1px 7px', fontWeight: '700' }}>Đang dùng</span>
+                    )}
+                  </div>
                 </div>
 
                 {/* Light Theme Card */}
                 <div 
                   onClick={() => handleThemeChange('light')}
                   style={{
-                    padding: '1.5rem',
-                    borderRadius: '12px',
+                    borderRadius: '14px',
                     cursor: 'pointer',
-                    background: 'rgba(255, 255, 255, 0.8)',
-                    border: `2px solid ${theme === 'light' ? 'var(--primary)' : 'rgba(0,0,0,0.08)'}`,
-                    boxShadow: theme === 'light' ? '0 0 15px rgba(99, 102, 241, 0.25)' : 'none',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    gap: '0.75rem',
-                    transition: 'var(--transition-smooth)'
+                    border: `2px solid ${theme === 'light' ? 'var(--primary)' : 'var(--card-border)'}`,
+                    boxShadow: theme === 'light' ? '0 0 0 3px rgba(99, 102, 241, 0.15)' : 'none',
+                    overflow: 'hidden',
+                    transition: 'all 0.25s ease',
+                    transform: theme === 'light' ? 'scale(1.02)' : 'scale(1)'
                   }}
                 >
+                  {/* Mini light UI mockup */}
+                  <div style={{ background: '#f0f4ff', padding: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                    <div style={{ display: 'flex', gap: '0.3rem', marginBottom: '0.2rem' }}>
+                      <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#ef4444' }} />
+                      <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#f59e0b' }} />
+                      <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#10b981' }} />
+                    </div>
+                    <div style={{ background: 'rgba(255,255,255,0.9)', borderRadius: '6px', padding: '0.4rem 0.5rem', display: 'flex', alignItems: 'center', gap: '0.35rem', border: '1px solid rgba(99,102,241,0.12)' }}>
+                      <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: 'linear-gradient(135deg, #818cf8, #4f46e5)' }} />
+                      <div style={{ height: '5px', width: '55px', borderRadius: '3px', background: 'linear-gradient(90deg, #4f46e5, #7c3aed)' }} />
+                    </div>
+                    <div style={{ background: 'rgba(255,255,255,0.85)', borderRadius: '6px', padding: '0.5rem', display: 'flex', flexDirection: 'column', gap: '0.3rem', border: '1px solid rgba(99,102,241,0.1)' }}>
+                      <div style={{ height: '4px', width: '80%', borderRadius: '3px', background: 'rgba(30,41,59,0.2)' }} />
+                      <div style={{ height: '4px', width: '60%', borderRadius: '3px', background: 'rgba(30,41,59,0.12)' }} />
+                      <div style={{ height: '20px', borderRadius: '4px', background: 'linear-gradient(90deg, #4f46e5, #7c3aed)', marginTop: '0.25rem' }} />
+                    </div>
+                  </div>
+                  {/* Label */}
                   <div style={{
-                    width: '32px',
-                    height: '32px',
-                    borderRadius: '50%',
-                    background: 'radial-gradient(circle, #fcd34d 0%, #fb923c 100%)',
-                    boxShadow: '0 0 8px rgba(251, 146, 60, 0.5)'
-                  }} />
-                  <span style={{ fontSize: '0.9rem', fontWeight: '600', color: '#0f172a' }}>Giao diện Sáng (Light)</span>
+                    background: theme === 'light' ? 'rgba(79, 70, 229, 0.08)' : 'rgba(240,244,255,0.9)',
+                    padding: '0.6rem 0.75rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.5rem',
+                    justifyContent: 'center',
+                    borderTop: '1px solid rgba(99,102,241,0.1)'
+                  }}>
+                    <span style={{ fontSize: '1rem' }}>☀️</span>
+                    <span style={{ fontSize: '0.85rem', fontWeight: '600', color: theme === 'light' ? '#4f46e5' : '#475569' }}>Giao diện Sáng</span>
+                    {theme === 'light' && (
+                      <span style={{ marginLeft: 'auto', fontSize: '0.7rem', background: '#4f46e5', color: '#fff', borderRadius: '99px', padding: '1px 7px', fontWeight: '700' }}>Đang dùng</span>
+                    )}
+                  </div>
                 </div>
+
               </div>
+              <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
+                💡 Click để xem trước. Nhấn <strong>Lưu thay đổi</strong> để áp dụng vĩnh viễn.
+              </p>
             </div>
 
             {/* Error Message */}
