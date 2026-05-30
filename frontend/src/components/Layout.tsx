@@ -1,5 +1,6 @@
 import Header from './Header';
 import Footer from './Footer';
+import FeedbackButton from './FeedbackButton';
 import { Outlet } from 'react-router-dom';
 
 function Layout() {
@@ -10,6 +11,7 @@ function Layout() {
         <Outlet />
       </main>
       <Footer />
+      <FeedbackButton />
     </div>
   );
 }
