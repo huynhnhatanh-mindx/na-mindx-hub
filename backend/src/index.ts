@@ -135,7 +135,7 @@ if (process.env.MONGODB_URI) {
     .then(async () => {
       useMongoDB = true;
       console.log('[Database]: Kết nối cơ sở dữ liệu MongoDB thành công!');
-      
+
       // Auto-migrate: ensure all existing teachers have user accounts
       try {
         const teachers = await TeacherModel.find({});
@@ -328,8 +328,8 @@ const upload = multer({ storage });
 
 // Middleware - CORS bảo mật
 const allowedOrigins = [
-  'http://localhost:5173', // Local React frontend
-  process.env.FRONTEND_URL  // Deployed React frontend
+  process.env.FRONTEND_URL,  // Deployed React frontend
+  'http://localhost:5173' // Local React frontend
 ].filter(Boolean) as string[];
 
 app.use(cors({
@@ -472,7 +472,7 @@ app.post('/api/auth/login', async (req: Request, res: Response) => {
     }
 
     const hashedPassword = hashPassword(password);
-    
+
     // Fallback hỗ trợ login offline khi MongoDB bị ngắt kết nối
     if (!useMongoDB) {
       const configAdminPasscode = process.env.ADMIN_PASSCODE || 'admin123';
@@ -618,7 +618,7 @@ app.delete('/api/admin/users/:id', adminAuth, async (req: Request, res: Response
     if (user.username === 'admin') {
       return res.status(400).json({ error: 'Không thể xóa tài khoản admin hệ thống.' });
     }
-    
+
     const userRole = user.role;
     const userDisplayName = user.displayName;
 
@@ -774,7 +774,7 @@ app.put('/api/admin/teachers/:id', adminAuth, async (req: Request, res: Response
           await user.save();
         }
       }
-      
+
       // Also update classes that use this teacher name
       await ClassModel.updateMany({ teacherName: oldName }, { teacherName: name.trim() });
     } else if (password && password.trim() !== '') {
@@ -879,7 +879,7 @@ app.put('/api/admin/students/:id', adminAuth, async (req: Request, res: Response
     if (name) student.name = name.trim();
     if (className) {
       student.className = className.trim();
-      
+
       // Auto-create class if not exists
       if (useMongoDB) {
         const classExisting = await ClassModel.findOne({ name: className.trim() });
@@ -955,7 +955,7 @@ app.get('/api/submissions', async (req: Request, res: Response) => {
           if (role === 'admin' || role === 'teacher') {
             isUserAuthenticated = true;
             authUserRole = role;
-            
+
             // Resolve display name for the user
             if (useMongoDB) {
               const userDb = await UserModel.findOne({ username });
@@ -967,14 +967,14 @@ app.get('/api/submissions', async (req: Request, res: Response) => {
             }
           }
         }
-      } catch (e) {}
+      } catch (e) { }
     }
 
     const hasStudentCode = studentCode && typeof studentCode === 'string' && studentCode.trim() !== '';
 
     if (!isAdmin && !hasStudentCode && !isUserAuthenticated) {
-      return res.status(400).json({ 
-        error: 'Vui lòng cung cấp Mã tra cứu học viên hoặc Đăng nhập để tra cứu lịch sử nộp bài.' 
+      return res.status(400).json({
+        error: 'Vui lòng cung cấp Mã tra cứu học viên hoặc Đăng nhập để tra cứu lịch sử nộp bài.'
       });
     }
 
@@ -995,8 +995,8 @@ app.get('/api/submissions', async (req: Request, res: Response) => {
       if (!isAdmin && !isUserAuthenticated && studentCode) {
         // Resolve studentCode to name and className
         const trimmedCode = (studentCode as string).trim();
-        const student = await StudentModel.findOne({ 
-          studentCode: { $regex: new RegExp(`^${trimmedCode}$`, 'i') } 
+        const student = await StudentModel.findOne({
+          studentCode: { $regex: new RegExp(`^${trimmedCode}$`, 'i') }
         });
 
         if (!student) {
@@ -1022,29 +1022,29 @@ app.get('/api/submissions', async (req: Request, res: Response) => {
       if (fs.existsSync(submissionsFile)) {
         data = JSON.parse(fs.readFileSync(submissionsFile, 'utf8'));
       }
-      
+
       let filteredData = data;
       if (!isAdmin && !isUserAuthenticated && studentCode) {
         const trimmedCode = (studentCode as string).trim().toUpperCase();
         const fallbackStudent = STUDENT_CODES_FALLBACK[trimmedCode] || Object.entries(STUDENT_CODES_FALLBACK).find(([k]) => k.toUpperCase() === trimmedCode)?.[1];
-        
+
         if (!fallbackStudent) {
           return res.status(404).json({ error: 'Mã tra cứu học viên không tồn tại trong hệ thống offline.' });
         }
 
-        filteredData = data.filter((s: any) => 
+        filteredData = data.filter((s: any) =>
           s.className?.trim().toLowerCase() === fallbackStudent.className.toLowerCase() &&
           s.fullName?.trim().toLowerCase() === fallbackStudent.name.toLowerCase()
         );
       } else if (isUserAuthenticated && authUserRole === 'teacher') {
-        filteredData = data.filter((s: any) => 
+        filteredData = data.filter((s: any) =>
           s.teacher?.trim().toLowerCase() === authUserDisplayName.trim().toLowerCase()
         );
       }
-      
+
       // Sort local by date descending
       filteredData.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-      
+
       res.json({ source: 'local', count: filteredData.length, data: filteredData });
     }
   } catch (err: any) {
