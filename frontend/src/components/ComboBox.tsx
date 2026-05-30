@@ -38,14 +38,16 @@ export default function ComboBox({
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
-        setIsOpen(false);
-        // Save the typed value when user clicks outside
-        onChange(searchTerm);
+        if (isOpen) {
+          setIsOpen(false);
+          // Save the typed value when user clicks outside
+          onChange(searchTerm);
+        }
       }
     }
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [searchTerm, onChange]);
+  }, [isOpen, searchTerm, onChange]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
