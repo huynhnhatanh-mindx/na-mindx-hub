@@ -6,6 +6,7 @@ interface UserData {
   username: string;
   role: string;
   displayName: string;
+  email?: string;
   createdAt: string;
 }
 
@@ -63,6 +64,7 @@ export default function AdminDashboard() {
   const [userPassword, setUserPassword] = useState('');
   const [userRole, setUserRole] = useState('admin');
   const [userDisplayName, setUserDisplayName] = useState('');
+  const [userEmail, setUserEmail] = useState('');
 
   // Teacher form states
   const [teacherNameInput, setTeacherNameInput] = useState('');
@@ -178,6 +180,7 @@ export default function AdminDashboard() {
     setUserPassword('');
     setUserRole('admin');
     setUserDisplayName('');
+    setUserEmail('');
     setTeacherNameInput('');
     setNewTeacherUsername('');
     setNewTeacherPassword('');
@@ -203,6 +206,7 @@ export default function AdminDashboard() {
       setUserPassword(''); // Leave blank to not change password
       setUserRole(item.role);
       setUserDisplayName(item.displayName);
+      setUserEmail(item.email || '');
     } else if (activeTab === 'teachers') {
       setTeacherNameInput(item.name);
       setNewTeacherUsername('');
@@ -282,7 +286,8 @@ export default function AdminDashboard() {
         username: userUsername,
         password: userPassword,
         role: userRole,
-        displayName: userDisplayName
+        displayName: userDisplayName,
+        email: userEmail
       };
     } else if (activeTab === 'teachers') {
       url = `${API_BASE_URL}/api/admin/teachers${editingId ? `/${editingId}` : ''}`;
@@ -330,7 +335,8 @@ export default function AdminDashboard() {
               const updatedUser = {
                 ...currentUser,
                 displayName: userDisplayName,
-                role: userRole
+                role: userRole,
+                email: userEmail
               };
               localStorage.setItem('user', JSON.stringify(updatedUser));
               // Dispatch event to update Header component greeting immediately
@@ -494,6 +500,7 @@ export default function AdminDashboard() {
                     <tr style={{ borderBottom: '1px solid var(--card-border)', color: 'var(--text-primary)', fontSize: '0.9rem', fontWeight: '700' }}>
                       <th style={{ padding: '1rem' }}>Tên đăng nhập</th>
                       <th style={{ padding: '1rem' }}>Tên hiển thị</th>
+                      <th style={{ padding: '1rem' }}>Email</th>
                       <th style={{ padding: '1rem' }}>Quyền hạn</th>
                       <th style={{ padding: '1rem' }}>Ngày tạo</th>
                       <th style={{ padding: '1rem', textAlign: 'center' }}>Thao tác</th>
@@ -504,6 +511,7 @@ export default function AdminDashboard() {
                       <tr key={item._id} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)', fontSize: '0.875rem' }}>
                         <td data-label="Tên đăng nhập" style={{ padding: '1rem', color: 'var(--text-primary)', fontWeight: '600' }}>{item.username}</td>
                         <td data-label="Tên hiển thị" style={{ padding: '1rem' }}>{item.displayName}</td>
+                        <td data-label="Email" style={{ padding: '1rem' }}>{item.email || '-'}</td>
                         <td data-label="Quyền hạn" style={{ padding: '1rem' }}>
                           <span style={{
                             background: item.role === 'admin' ? 'rgba(168, 85, 247, 0.15)' : 'rgba(99, 102, 241, 0.15)',
@@ -713,6 +721,17 @@ export default function AdminDashboard() {
                       <option value="admin">Quản trị viên</option>
                       <option value="teacher">Giáo viên</option>
                     </select>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                    <label className="form-label">Email</label>
+                    <input
+                      type="email"
+                      value={userEmail}
+                      onChange={(e) => setUserEmail(e.target.value)}
+                      placeholder="Ví dụ: giaovien@gmail.com"
+                      className="form-input-field"
+                      autoComplete="off"
+                    />
                   </div>
                 </>
               )}

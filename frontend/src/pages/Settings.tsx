@@ -7,6 +7,7 @@ export default function Settings() {
   
   // Profile settings state
   const [displayName, setDisplayName] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   
@@ -30,6 +31,7 @@ export default function Settings() {
       const user = JSON.parse(userStr);
       setCurrentUser(user);
       setDisplayName(user.displayName || '');
+      setEmail(user.email || '');
     } catch (e) {
       navigate('/login');
     }
@@ -82,7 +84,8 @@ export default function Settings() {
         },
         body: JSON.stringify({
           displayName: displayName.trim(),
-          password: password ? password : undefined
+          password: password ? password : undefined,
+          email: email.trim()
         })
       });
 
@@ -96,7 +99,8 @@ export default function Settings() {
       // Update locally stored user data
       const updatedUser = {
         ...currentUser,
-        displayName: resData.user.displayName
+        displayName: resData.user.displayName,
+        email: resData.user.email
       };
       localStorage.setItem('user', JSON.stringify(updatedUser));
       setCurrentUser(updatedUser);
@@ -188,6 +192,21 @@ export default function Settings() {
                 required
                 className="form-input-field"
               />
+            </div>
+
+            {/* Email Input */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+              <label className="form-label">Email nhận thông báo khi có bài nộp mới</label>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="Ví dụ: giaovien@gmail.com"
+                className="form-input-field"
+              />
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                *(Dành cho Giáo viên để nhận thông báo trực tiếp khi học viên nộp bài)
+              </span>
             </div>
 
             {/* Password Fields */}
