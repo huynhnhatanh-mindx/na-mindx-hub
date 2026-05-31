@@ -7,6 +7,7 @@ interface UserData {
   role: string;
   displayName: string;
   email?: string;
+  status?: string;
   createdAt: string;
 }
 
@@ -26,6 +27,9 @@ interface StudentData {
   name: string;
   className: string;
   studentCode: string;
+  status?: string;
+  maxUploadSize?: number;
+  submissionCount?: number;
 }
 
 interface SubmissionData {
@@ -65,6 +69,7 @@ export default function AdminDashboard() {
   const [userRole, setUserRole] = useState('admin');
   const [userDisplayName, setUserDisplayName] = useState('');
   const [userEmail, setUserEmail] = useState('');
+  const [userStatus, setUserStatus] = useState('active');
 
   // Teacher form states
   const [teacherNameInput, setTeacherNameInput] = useState('');
@@ -84,6 +89,8 @@ export default function AdminDashboard() {
   const [studentCode, setStudentCode] = useState('');
   const [isNewClass, setIsNewClass] = useState(false);
   const [newClassName, setNewClassName] = useState('');
+  const [studentMaxUploadSize, setStudentMaxUploadSize] = useState<number>(20);
+  const [studentStatus, setStudentStatus] = useState('active');
 
   // Check login on load
   useEffect(() => {
@@ -181,14 +188,17 @@ export default function AdminDashboard() {
     setUserRole('admin');
     setUserDisplayName('');
     setUserEmail('');
+    setUserStatus('active');
     setTeacherNameInput('');
     setNewTeacherUsername('');
     setNewTeacherPassword('');
     setClassName('');
-    setClassTeacher('');
+    setClassTeacher(currentUser?.role === 'teacher' ? currentUser.displayName : '');
     setStudentName('');
     setStudentClass('');
     setStudentCode('');
+    setStudentMaxUploadSize(20);
+    setStudentStatus('active');
     setIsNewClass(false);
     setNewClassName('');
     setIsNewTeacher(false);
@@ -207,6 +217,7 @@ export default function AdminDashboard() {
       setUserRole(item.role);
       setUserDisplayName(item.displayName);
       setUserEmail(item.email || '');
+      setUserStatus(item.status || 'active');
     } else if (activeTab === 'teachers') {
       setTeacherNameInput(item.name);
       setNewTeacherUsername('');
@@ -216,7 +227,7 @@ export default function AdminDashboard() {
       
       const teacherExists = teachers.includes(item.teacherName);
       if (teacherExists || !item.teacherName) {
-        setClassTeacher(item.teacherName || '');
+        setClassTeacher(item.teacherName || (currentUser?.role === 'teacher' ? currentUser.displayName : ''));
         setIsNewTeacher(false);
         setNewTeacherName('');
         setNewTeacherUsername('');
@@ -231,6 +242,8 @@ export default function AdminDashboard() {
     } else if (activeTab === 'students') {
       setStudentName(item.name);
       setStudentCode(item.studentCode);
+      setStudentStatus(item.status || 'active');
+      setStudentMaxUploadSize(item.maxUploadSize !== undefined ? item.maxUploadSize : 20);
 
       const classExists = classes.some(c => c.name === item.className);
       if (classExists || !item.className) {
@@ -287,7 +300,8 @@ export default function AdminDashboard() {
         password: userPassword,
         role: userRole,
         displayName: userDisplayName,
-        email: userEmail
+        email: userEmail,
+        status: userStatus
       };
     } else if (activeTab === 'teachers') {
       url = `${API_BASE_URL}/api/admin/teachers${editingId ? `/${editingId}` : ''}`;
@@ -309,7 +323,9 @@ export default function AdminDashboard() {
       body = {
         name: studentName,
         className: isNewClass ? newClassName.trim() : studentClass,
-        studentCode: studentCode
+        studentCode: studentCode,
+        maxUploadSize: studentMaxUploadSize,
+        status: studentStatus
       };
     }
 
@@ -332,11 +348,20 @@ export default function AdminDashboard() {
           try {
             const currentUser = JSON.parse(currentUserStr);
             if (currentUser.username === userUsername.trim().toLowerCase()) {
+              if (userRole !== currentUser.role) {
+                alert('Quyền của bạn đã bị thay đổi (xuống cấp). Vui lòng đăng nhập lại.');
+                localStorage.removeItem('token');
+                localStorage.removeItem('user');
+                window.location.href = '/login';
+                return;
+              }
+
               const updatedUser = {
                 ...currentUser,
                 displayName: userDisplayName,
                 role: userRole,
-                email: userEmail
+                email: userEmail,
+                status: userStatus
               };
               localStorage.setItem('user', JSON.stringify(updatedUser));
               // Dispatch event to update Header component greeting immediately
@@ -501,6 +526,7 @@ export default function AdminDashboard() {
                       <th style={{ padding: '1rem' }}>Tên đăng nhập</th>
                       <th style={{ padding: '1rem' }}>Tên hiển thị</th>
                       <th style={{ padding: '1rem' }}>Email</th>
+                      <th style={{ padding: '1rem' }}>Trạng thái</th>
                       <th style={{ padding: '1rem' }}>Quyền hạn</th>
                       <th style={{ padding: '1rem' }}>Ngày tạo</th>
                       <th style={{ padding: '1rem', textAlign: 'center' }}>Thao tác</th>
@@ -512,6 +538,11 @@ export default function AdminDashboard() {
                         <td data-label="Tên đăng nhập" style={{ padding: '1rem', color: 'var(--text-primary)', fontWeight: '600' }}>{item.username}</td>
                         <td data-label="Tên hiển thị" style={{ padding: '1rem' }}>{item.displayName}</td>
                         <td data-label="Email" style={{ padding: '1rem' }}>{item.email || '-'}</td>
+                        <td data-label="Trạng thái" style={{ padding: '1rem' }}>
+                          <span style={{ color: item.status === 'inactive' ? '#ff8a8a' : 'var(--success)', fontWeight: '600' }}>
+                            {item.status === 'inactive' ? 'Đã khóa' : 'Hoạt động'}
+                          </span>
+                        </td>
                         <td data-label="Quyền hạn" style={{ padding: '1rem' }}>
                           <span style={{
                             background: item.role === 'admin' ? 'rgba(168, 85, 247, 0.15)' : 'rgba(99, 102, 241, 0.15)',
@@ -524,7 +555,7 @@ export default function AdminDashboard() {
                         <td data-label="Ngày tạo" style={{ padding: '1rem' }}>{formatDate(item.createdAt)}</td>
                         <td data-label="Thao tác" style={{ padding: '1rem', display: 'flex', gap: '0.5rem', justifyContent: 'center' }}>
                           <button className="btn btn-neutral" style={{ padding: '4px 10px', height: 'auto', fontSize: '0.8rem' }} onClick={() => handleOpenEditModal(item)}>Sửa</button>
-                          {item.username !== 'admin' && (
+                          {item.username !== 'admin' && item.username !== currentUser?.username && item.role !== currentUser?.role && (
                             <button className="btn btn-danger" style={{ padding: '4px 10px', height: 'auto', fontSize: '0.8rem' }} onClick={() => handleDeleteItem(item._id)}>Xóa</button>
                           )}
                         </td>
@@ -567,6 +598,9 @@ export default function AdminDashboard() {
                       <th style={{ padding: '1rem' }}>Tên học viên</th>
                       <th style={{ padding: '1rem' }}>Mã lớp học</th>
                       <th style={{ padding: '1rem' }}>Mã tra cứu học viên</th>
+                      <th style={{ padding: '1rem' }}>Số bài nộp</th>
+                      <th style={{ padding: '1rem' }}>Trạng thái</th>
+                      <th style={{ padding: '1rem' }}>Giới hạn tải lên</th>
                       <th style={{ padding: '1rem', textAlign: 'center' }}>Thao tác</th>
                     </tr>
                   </thead>
@@ -580,6 +614,17 @@ export default function AdminDashboard() {
                           </span>
                         </td>
                         <td data-label="Mã tra cứu" style={{ padding: '1rem', color: 'var(--success)', fontWeight: '600' }}>{item.studentCode}</td>
+                        <td data-label="Số bài nộp" style={{ padding: '1rem' }}>
+                          <span style={{ color: item.submissionCount && item.submissionCount > 0 ? 'var(--success)' : 'var(--text-muted)', fontWeight: '600' }}>
+                            {item.submissionCount || 0}
+                          </span>
+                        </td>
+                        <td data-label="Trạng thái" style={{ padding: '1rem' }}>
+                          <span style={{ color: item.status === 'inactive' ? '#ff8a8a' : 'var(--success)', fontWeight: '600' }}>
+                            {item.status === 'inactive' ? 'Đã khóa' : 'Hoạt động'}
+                          </span>
+                        </td>
+                        <td data-label="Giới hạn tải lên" style={{ padding: '1rem', fontWeight: '500' }}>{item.maxUploadSize || 20} MB</td>
                         <td data-label="Thao tác" style={{ padding: '1rem', display: 'flex', gap: '0.5rem', justifyContent: 'center' }}>
                           <button className="btn btn-neutral" style={{ padding: '4px 10px', height: 'auto', fontSize: '0.8rem' }} onClick={() => handleOpenEditModal(item)}>Sửa</button>
                           <button className="btn btn-danger" style={{ padding: '4px 10px', height: 'auto', fontSize: '0.8rem' }} onClick={() => handleDeleteItem(item._id)}>Xóa</button>
@@ -663,8 +708,15 @@ export default function AdminDashboard() {
           zIndex: 9999,
           padding: '1rem'
         }}>
-          <div className="glass-card" style={{ width: '100%', maxWidth: '500px', padding: '2rem', animation: 'scaleUp 0.3s ease-out' }}>
-            <h3 style={{ fontSize: '1.5rem', fontWeight: '700', marginBottom: '1.5rem', fontFamily: 'var(--font-heading)' }}>
+          <div className="glass-card" style={{ 
+            width: '100%', 
+            maxWidth: '500px', 
+            padding: 'max(1.5rem, 5vw)', 
+            animation: 'scaleUp 0.3s ease-out', 
+            maxHeight: '90vh', 
+            overflowY: 'auto' 
+          }}>
+            <h3 style={{ fontSize: 'clamp(1.2rem, 4vw, 1.5rem)', fontWeight: '700', marginBottom: '1.5rem', fontFamily: 'var(--font-heading)' }}>
               {editingId ? 'Cập Nhật Thông Tin' : 'Tạo Bản Ghi Mới'}
             </h3>
 
@@ -723,6 +775,17 @@ export default function AdminDashboard() {
                     </select>
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                    <label className="form-label">Trạng thái hoạt động</label>
+                    <select
+                      value={userStatus}
+                      onChange={(e) => setUserStatus(e.target.value)}
+                      className="form-select-field"
+                    >
+                      <option value="active">Hoạt động</option>
+                      <option value="inactive">Không hoạt động (Khóa)</option>
+                    </select>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                     <label className="form-label">Email</label>
                     <input
                       type="email"
@@ -766,14 +829,21 @@ export default function AdminDashboard() {
                       }}
                       className="form-select-field"
                       required
+                      disabled={currentUser?.role === 'teacher'}
                     >
-                      <option value="">-- Chọn giáo viên --</option>
-                      {teachers.map((tName, index) => (
-                        <option key={`${tName}-${index}`} value={tName}>
-                          {tName}
-                        </option>
-                      ))}
-                      <option value="__NEW_TEACHER__">+ Thêm giáo viên mới...</option>
+                      {currentUser?.role === 'teacher' ? (
+                        <option value={currentUser.displayName}>{currentUser.displayName}</option>
+                      ) : (
+                        <>
+                          <option value="">-- Chọn giáo viên --</option>
+                          {teachers.map((tName, index) => (
+                            <option key={`${tName}-${index}`} value={tName}>
+                              {tName}
+                            </option>
+                          ))}
+                          <option value="__NEW_TEACHER__">+ Thêm giáo viên mới...</option>
+                        </>
+                      )}
                     </select>
                   </div>
                   {isNewTeacher && (
@@ -884,6 +954,41 @@ export default function AdminDashboard() {
                       autoComplete="off"
                     />
                   </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                    <label className="form-label">Trạng thái hoạt động</label>
+                    <select
+                      value={studentStatus}
+                      onChange={(e) => setStudentStatus(e.target.value)}
+                      className="form-select-field"
+                    >
+                      <option value="active">Hoạt động</option>
+                      <option value="inactive">Không hoạt động (Khóa)</option>
+                    </select>
+                  </div>
+                  {currentUser?.role === 'admin' ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                      <label className="form-label">Giới hạn tải lên (MB)</label>
+                      <input
+                        type="number"
+                        value={studentMaxUploadSize}
+                        onChange={(e) => setStudentMaxUploadSize(Number(e.target.value))}
+                        placeholder="Ví dụ: 200"
+                        className="form-input-field"
+                        min="1"
+                        required
+                      />
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                      <label className="form-label">Giới hạn tải lên (MB) - Chỉ Admin được sửa</label>
+                      <input
+                        type="number"
+                        value={studentMaxUploadSize}
+                        className="form-input-field"
+                        disabled
+                      />
+                    </div>
+                  )}
                 </>
               )}
 

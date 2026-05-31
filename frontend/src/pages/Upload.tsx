@@ -30,6 +30,11 @@ const CLASS_STUDENTS_MAP_FALLBACK: Record<string, string[]> = {
   'HCM3': ['Phan Văn E', 'Đỗ Thị F']
 };
 
+interface StudentDetail {
+  name: string;
+  maxUploadSize: number;
+}
+
 function Upload() {
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [isDragging, setIsDragging] = useState<boolean>(false);
@@ -39,13 +44,69 @@ function Upload() {
   const [errorMessage, setErrorMessage] = useState<string>('');
   const [uploadedFiles, setUploadedFiles] = useState<UploadResponseFile[]>([]);
 
+  // States for file preview
+  const [previewFile, setPreviewFile] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewContent, setPreviewContent] = useState<string | null>(null);
+  const [previewLoading, setPreviewLoading] = useState<boolean>(false);
+
+  // Hook to handle file preview URL/content generation
+  useEffect(() => {
+    if (!previewFile) {
+      setPreviewUrl(null);
+      setPreviewContent(null);
+      return;
+    }
+
+    const type = previewFile.type;
+    const name = previewFile.name.toLowerCase();
+    let url: string | null = null;
+
+    if (type.startsWith('image/') || type.startsWith('video/') || type.startsWith('audio/') || type === 'application/pdf') {
+      url = URL.createObjectURL(previewFile);
+      setPreviewUrl(url);
+    } else if (
+      type.startsWith('text/') ||
+      name.endsWith('.txt') ||
+      name.endsWith('.js') ||
+      name.endsWith('.jsx') ||
+      name.endsWith('.ts') ||
+      name.endsWith('.tsx') ||
+      name.endsWith('.json') ||
+      name.endsWith('.css') ||
+      name.endsWith('.html')
+    ) {
+      setPreviewLoading(true);
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        setPreviewContent(e.target?.result as string);
+        setPreviewLoading(false);
+      };
+      reader.onerror = () => {
+        setPreviewContent('Không thể đọc nội dung tệp tin.');
+        setPreviewLoading(false);
+      };
+      reader.readAsText(previewFile);
+    } else {
+      setPreviewUrl(null);
+      setPreviewContent(null);
+    }
+
+    return () => {
+      if (url) {
+        URL.revokeObjectURL(url);
+      }
+    };
+  }, [previewFile]);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // States for metadata dropdown options, dynamically loaded from backend/database
   const [teachersList, setTeachersList] = useState<string[]>([]);
   const [classesList, setClassesList] = useState<string[]>([]);
   const [studentsList, setStudentsList] = useState<string[]>([]);
-  const stagesList = ['Checkpoint 1', 'Checkpoint 2', 'Sản phẩm cuối khóa'];
+  const [studentDetails, setStudentDetails] = useState<StudentDetail[]>([]);
+  const stagesList = ['Checkpoint 1', 'Checkpoint 2', 'Sản phẩm cuối khóa', 'Buổi học lý thuyết'];
 
   const sessionsMap: Record<string, string[]> = {
     'Checkpoint 1': ['Buổi 5'],
@@ -56,8 +117,18 @@ function Upload() {
       'Buổi 12',
       'Buổi 13',
       'Buổi 14'
+    ],
+    'Buổi học lý thuyết': [
+      'Buổi 1',
+      'Buổi 2',
+      'Buổi 3',
+      'Buổi 4',
+      'Buổi 6',
+      'Buổi 7',
+      'Buổi 8'
     ]
   };
+
 
   // State for metadata fields
   const [teacher, setTeacher] = useState<string>('');
@@ -110,6 +181,7 @@ function Upload() {
   useEffect(() => {
     if (!className.trim()) {
       setStudentsList([]);
+      setStudentDetails([]);
       return;
     }
     const fetchStudents = async () => {
@@ -118,11 +190,19 @@ function Upload() {
         const res = await fetch(`${API_BASE_URL}/api/students?className=${encodeURIComponent(className.trim())}`);
         if (!res.ok) throw new Error('Failed to fetch students');
         const data = await res.json();
-        setStudentsList(data);
+
+        if (data.length > 0 && typeof data[0] === 'object') {
+          setStudentDetails(data);
+          setStudentsList(data.map((s: any) => s.name));
+        } else {
+          setStudentDetails(data.map((name: string) => ({ name, maxUploadSize: 20 })));
+          setStudentsList(data);
+        }
       } catch (err) {
         console.warn('Using offline fallback for students list due to error:', err);
         const trimmedClass = className.trim();
         const fallbackStudents = CLASS_STUDENTS_MAP_FALLBACK[trimmedClass] || [];
+        setStudentDetails(fallbackStudents.map(name => ({ name, maxUploadSize: 20 })));
         setStudentsList(fallbackStudents);
       }
     };
@@ -189,7 +269,30 @@ function Upload() {
     setIsDragging(false);
   };
 
-  const MAX_FILE_SIZE = 200 * 1024 * 1024; // 200MB
+  const getSelectedStudentLimit = () => {
+    if (!fullName) return 20; // default 20MB
+    const found = studentDetails.find(s => s.name.trim().toLowerCase() === fullName.trim().toLowerCase());
+    return found && found.maxUploadSize ? found.maxUploadSize : 20;
+  };
+
+  // Re-validate selected files when files list or student name changes
+  useEffect(() => {
+    if (fullName) {
+      const maxMB = getSelectedStudentLimit();
+      const currentLimitBytes = maxMB * 1024 * 1024;
+      const totalSize = selectedFiles.reduce((acc, f) => acc + f.size, 0);
+      if (totalSize > currentLimitBytes) {
+        setUploadStatus('error');
+        setErrorMessage(`Tổng dung lượng các tệp tin đã chọn (${formatBytes(totalSize)}) vượt quá giới hạn tải lên của bạn (tối đa ${maxMB}MB).`);
+      } else {
+        // Clear size limit errors if they are resolved now
+        if (errorMessage && (errorMessage.includes('giới hạn tải lên') || errorMessage.includes('vượt quá kích thước') || errorMessage.includes('vượt quá cho phép'))) {
+          setUploadStatus('idle');
+          setErrorMessage('');
+        }
+      }
+    }
+  }, [selectedFiles, fullName]);
 
   // Drop handler
   const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
@@ -198,15 +301,18 @@ function Upload() {
 
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       const filesArray = Array.from(e.dataTransfer.files);
-      const oversizedFiles = filesArray.filter(f => f.size > MAX_FILE_SIZE);
-      if (oversizedFiles.length > 0) {
+      const maxMB = getSelectedStudentLimit();
+      const currentLimitBytes = maxMB * 1024 * 1024;
+      const newTotalSize = [...selectedFiles, ...filesArray].reduce((acc, f) => acc + f.size, 0);
+
+      if (newTotalSize > currentLimitBytes) {
         setUploadStatus('error');
-        setErrorMessage(`Tệp tin "${oversizedFiles[0].name}" vượt quá kích thước cho phép (tối đa 200MB).`);
-        return;
+        setErrorMessage(`Tổng dung lượng các tệp tin đã chọn (${formatBytes(newTotalSize)}) vượt quá giới hạn tải lên cho phép (tối đa ${maxMB}MB).`);
+      } else {
+        setUploadStatus('idle');
+        setErrorMessage('');
       }
       setSelectedFiles((prevFiles) => [...prevFiles, ...filesArray]);
-      setUploadStatus('idle');
-      setErrorMessage('');
     }
   };
 
@@ -219,16 +325,20 @@ function Upload() {
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       const filesArray = Array.from(e.target.files);
-      const oversizedFiles = filesArray.filter(f => f.size > MAX_FILE_SIZE);
-      if (oversizedFiles.length > 0) {
+      const maxMB = getSelectedStudentLimit();
+      const currentLimitBytes = maxMB * 1024 * 1024;
+      const newTotalSize = [...selectedFiles, ...filesArray].reduce((acc, f) => acc + f.size, 0);
+
+      if (newTotalSize > currentLimitBytes) {
         setUploadStatus('error');
-        setErrorMessage(`Tệp tin "${oversizedFiles[0].name}" vượt quá kích thước cho phép (tối đa 200MB).`);
-        if (fileInputRef.current) fileInputRef.current.value = '';
-        return;
+        setErrorMessage(`Tổng dung lượng các tệp tin đã chọn (${formatBytes(newTotalSize)}) vượt quá giới hạn tải lên cho phép (tối đa ${maxMB}MB).`);
+      } else {
+        setUploadStatus('idle');
+        setErrorMessage('');
       }
       setSelectedFiles((prevFiles) => [...prevFiles, ...filesArray]);
-      setUploadStatus('idle');
-      setErrorMessage('');
+      
+      if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
 
@@ -277,7 +387,7 @@ function Upload() {
         try {
           const errData = await response.json();
           errMsg = errData.error || errMsg;
-        } catch (e) {}
+        } catch (e) { }
         setUploadStatus('error');
         setErrorMessage(errMsg);
         return;
@@ -348,6 +458,8 @@ function Upload() {
     }
   };
 
+  const isMetadataIncomplete = !teacher.trim() || !className.trim() || !fullName.trim() || !stage.trim() || !session.trim();
+
   return (
     <>
       <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
@@ -368,26 +480,27 @@ function Upload() {
       <main style={{ maxWidth: '700px', margin: '0 auto', width: '100%' }}>
         <div className="glass-card" style={{ padding: '2.5rem' }}>
 
-          {/* Back button */}
-          <Link to="/" style={{
-            color: 'var(--text-secondary)',
-            textDecoration: 'none',
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '0.5rem',
-            marginBottom: '2rem',
-            fontSize: '0.9rem',
-            fontWeight: '600',
-            transition: 'var(--transition-fast)'
-          }}
-            className="back-link"
-          >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-              <line x1="19" y1="12" x2="5" y2="12" />
-              <polyline points="12 19 5 12 12 5" />
-            </svg>
-            Quay lại trang chủ
-          </Link>
+          {/* Header Controls */}
+          <div style={{ marginBottom: '2rem' }}>
+            <Link to="/" style={{
+              color: 'var(--text-secondary)',
+              textDecoration: 'none',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.5rem',
+              fontSize: '0.9rem',
+              fontWeight: '600',
+              transition: 'var(--transition-fast)'
+            }}
+              className="back-link"
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <line x1="19" y1="12" x2="5" y2="12" />
+                <polyline points="12 19 5 12 12 5" />
+              </svg>
+              Quay lại
+            </Link>
+          </div>
 
           {/* Form */}
           <form onSubmit={handleSubmit}>
@@ -444,26 +557,27 @@ function Upload() {
 
             {/* Drag & Drop Area */}
             <div
-              className={`dropzone ${isDragging ? 'dragging' : ''}`}
-              onDragOver={handleDragOver}
+              className={`dropzone ${isDragging && !isMetadataIncomplete ? 'dragging' : ''}`}
+              onDragOver={isMetadataIncomplete ? (e) => e.preventDefault() : handleDragOver}
               onDragLeave={handleDragLeave}
-              onDrop={handleDrop}
-              onClick={handleBrowseClick}
+              onDrop={isMetadataIncomplete ? (e) => e.preventDefault() : handleDrop}
+              onClick={isMetadataIncomplete ? undefined : handleBrowseClick}
               style={{
                 border: '2px dashed var(--card-border)',
                 borderRadius: '12px',
                 padding: '3rem 2rem',
                 textAlign: 'center',
-                cursor: 'pointer',
-                backgroundColor: isDragging ? 'rgba(99, 102, 241, 0.08)' : 'rgba(0, 0, 0, 0.2)',
-                borderColor: isDragging ? 'var(--primary)' : 'var(--card-border)',
+                cursor: isMetadataIncomplete ? 'not-allowed' : 'pointer',
+                backgroundColor: isDragging && !isMetadataIncomplete ? 'rgba(99, 102, 241, 0.08)' : 'rgba(0, 0, 0, 0.2)',
+                borderColor: isDragging && !isMetadataIncomplete ? 'var(--primary)' : 'var(--card-border)',
                 transition: 'var(--transition-smooth)',
                 marginBottom: '2rem',
                 display: 'flex',
                 flexDirection: 'column',
                 alignItems: 'center',
                 justifyContent: 'center',
-                gap: '1rem'
+                gap: '1rem',
+                opacity: isMetadataIncomplete ? 0.4 : 1
               }}
             >
               <input
@@ -471,6 +585,7 @@ function Upload() {
                 ref={fileInputRef}
                 onChange={handleFileChange}
                 multiple
+                disabled={isMetadataIncomplete}
                 style={{ display: 'none' }}
               />
 
@@ -479,11 +594,11 @@ function Upload() {
                 width: '64px',
                 height: '64px',
                 borderRadius: '50%',
-                background: isDragging ? 'rgba(99, 102, 241, 0.2)' : 'rgba(255, 255, 255, 0.03)',
+                background: isDragging && !isMetadataIncomplete ? 'rgba(99, 102, 241, 0.2)' : 'rgba(255, 255, 255, 0.03)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                color: isDragging ? 'var(--primary)' : 'var(--text-secondary)',
+                color: isDragging && !isMetadataIncomplete ? 'var(--primary)' : 'var(--text-secondary)',
                 border: '1px solid rgba(255, 255, 255, 0.05)',
                 transition: 'var(--transition-smooth)'
               }}>
@@ -494,14 +609,44 @@ function Upload() {
                 </svg>
               </div>
 
-              <div>
-                <p style={{ fontWeight: '600', fontSize: '1.1rem', marginBottom: '0.25rem' }}>
-                  Kéo thả file vào đây hoặc <span style={{ color: 'var(--primary)' }}>chọn file từ máy</span>
-                </p>
-                <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-                  Hỗ trợ tải lên nhiều file cùng lúc
-                </p>
-              </div>
+              {isMetadataIncomplete ? (
+                <div>
+                  <p style={{ fontWeight: '600', fontSize: '1.05rem', color: 'var(--text-secondary)', marginBottom: '0.25rem' }}>
+                    Khu vực tải lên đang khóa
+                  </p>
+                  <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                    Vui lòng điền đầy đủ thông tin bên trên để nộp bài
+                  </p>
+                </div>
+              ) : (
+                <div>
+                  <p style={{ fontWeight: '600', fontSize: '1.1rem', marginBottom: '0.25rem' }}>
+                    Kéo thả file vào đây hoặc <span style={{ color: 'var(--primary)' }}>chọn file từ máy</span>
+                  </p>
+                  <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '0.75rem' }}>
+                    Hỗ trợ tải lên nhiều file cùng lúc
+                  </p>
+                  <div style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '0.4rem',
+                    background: 'rgba(16, 185, 129, 0.1)',
+                    color: 'var(--success)',
+                    padding: '4px 10px',
+                    borderRadius: '6px',
+                    fontSize: '0.8rem',
+                    fontWeight: '600',
+                    border: '1px solid rgba(16, 185, 129, 0.2)'
+                  }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                      <circle cx="12" cy="12" r="10" />
+                      <line x1="12" y1="16" x2="12" y2="12" />
+                      <line x1="12" y1="8" x2="12.01" y2="8" />
+                    </svg>
+                    Giới hạn dung lượng bài nộp: {getSelectedStudentLimit()} MB
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* List of Selected Files */}
@@ -544,30 +689,55 @@ function Upload() {
                         </span>
                       </div>
 
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveFile(idx)}
-                        style={{
-                          background: 'none',
-                          border: 'none',
-                          color: 'var(--text-muted)',
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          padding: '4px',
-                          borderRadius: '4px',
-                          transition: 'var(--transition-fast)'
-                        }}
-                        className="btn-delete"
-                      >
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                          <polyline points="3 6 5 6 21 6" />
-                          <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                          <line x1="10" y1="11" x2="10" y2="17" />
-                          <line x1="14" y1="11" x2="14" y2="17" />
-                        </svg>
-                      </button>
+                      <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                        <button
+                          type="button"
+                          onClick={() => setPreviewFile(file)}
+                          style={{
+                            background: 'rgba(99, 102, 241, 0.1)',
+                            border: 'none',
+                            color: 'var(--primary)',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            padding: '6px 12px',
+                            borderRadius: '6px',
+                            fontSize: '0.8rem',
+                            fontWeight: '600',
+                            transition: 'var(--transition-fast)'
+                          }}
+                          onMouseOver={(e) => e.currentTarget.style.background = 'rgba(99, 102, 241, 0.2)'}
+                          onMouseOut={(e) => e.currentTarget.style.background = 'rgba(99, 102, 241, 0.1)'}
+                        >
+                          Xem trước
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveFile(idx)}
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            color: 'var(--text-muted)',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            padding: '4px',
+                            borderRadius: '4px',
+                            transition: 'var(--transition-fast)'
+                          }}
+                          className="btn-delete"
+                        >
+                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <polyline points="3 6 5 6 21 6" />
+                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                            <line x1="10" y1="11" x2="10" y2="17" />
+                            <line x1="14" y1="11" x2="14" y2="17" />
+                          </svg>
+                        </button>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -652,7 +822,7 @@ function Upload() {
             <button
               type="submit"
               className="btn btn-primary"
-              disabled={selectedFiles.length === 0 || isUploading}
+              disabled={selectedFiles.length === 0 || isUploading || uploadStatus === 'error'}
               style={{
                 height: '3rem',
                 fontSize: '1rem'
@@ -663,6 +833,175 @@ function Upload() {
           </form>
         </div>
       </main>
+
+      {/* Modal Xem Trước Tệp Tin */}
+      {previewFile && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(2, 6, 23, 0.95)',
+          backdropFilter: 'blur(12px)',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 10000,
+          padding: '2rem'
+        }}>
+          <div className="glass-card" style={{
+            width: '100%',
+            maxWidth: '800px',
+            maxHeight: '85vh',
+            display: 'flex',
+            flexDirection: 'column',
+            padding: '2rem',
+            gap: '1.5rem',
+            animation: 'scaleUp 0.3s ease-out',
+            overflow: 'hidden'
+          }}>
+            {/* Header */}
+            <div style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              borderBottom: '1px solid var(--card-border)',
+              paddingBottom: '1rem'
+            }}>
+              <div>
+                <h3 style={{ fontSize: '1.25rem', fontWeight: '700', color: 'var(--text-primary)' }}>
+                  Xem trước tệp tin
+                </h3>
+                <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '0.25rem' }}>
+                  {previewFile.name} ({formatBytes(previewFile.size)})
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPreviewFile(null)}
+                style={{
+                  background: 'rgba(255, 255, 255, 0.05)',
+                  border: 'none',
+                  color: 'var(--text-secondary)',
+                  cursor: 'pointer',
+                  padding: '8px',
+                  borderRadius: '50%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  transition: 'var(--transition-fast)'
+                }}
+                onMouseOver={(e) => e.currentTarget.style.background = 'rgba(239, 68, 68, 0.2)'}
+                onMouseOut={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'}
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                  <line x1="18" y1="6" x2="6" y2="18" />
+                  <line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Content Body */}
+            <div style={{
+              flex: 1,
+              overflow: 'auto',
+              display: 'flex',
+              justifyContent: 'center',
+              alignItems: 'center',
+              background: 'rgba(0, 0, 0, 0.3)',
+              borderRadius: '8px',
+              border: '1px solid var(--card-border)',
+              padding: '1rem',
+              minHeight: '300px'
+            }}>
+              {previewLoading ? (
+                <div style={{ color: 'var(--text-secondary)' }}>Đang đọc nội dung...</div>
+              ) : previewUrl && previewFile.type.startsWith('image/') ? (
+                <img
+                  src={previewUrl}
+                  alt={previewFile.name}
+                  style={{
+                    maxWidth: '100%',
+                    maxHeight: '55vh',
+                    objectFit: 'contain',
+                    borderRadius: '4px'
+                  }}
+                />
+              ) : previewUrl && previewFile.type.startsWith('video/') ? (
+                <video
+                  src={previewUrl}
+                  controls
+                  style={{
+                    maxWidth: '100%',
+                    maxHeight: '55vh',
+                    borderRadius: '4px'
+                  }}
+                />
+              ) : previewUrl && previewFile.type.startsWith('audio/') ? (
+                <audio
+                  src={previewUrl}
+                  controls
+                  style={{ width: '100%', maxWidth: '500px' }}
+                />
+              ) : previewUrl && previewFile.type === 'application/pdf' ? (
+                <iframe
+                  src={previewUrl}
+                  title="PDF Preview"
+                  style={{
+                    width: '100%',
+                    height: '55vh',
+                    border: 'none',
+                    borderRadius: '4px'
+                  }}
+                />
+              ) : previewContent !== null ? (
+                <pre style={{
+                  width: '100%',
+                  height: '55vh',
+                  margin: 0,
+                  padding: '1rem',
+                  fontSize: '0.85rem',
+                  fontFamily: 'monospace',
+                  color: 'var(--text-secondary)',
+                  textAlign: 'left',
+                  whiteSpace: 'pre-wrap',
+                  overflow: 'auto'
+                }}>
+                  {previewContent}
+                </pre>
+              ) : (
+                <div style={{ textAlign: 'center', padding: '2rem' }}>
+                  <div style={{
+                    width: '64px',
+                    height: '64px',
+                    borderRadius: '50%',
+                    background: 'rgba(255, 255, 255, 0.03)',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: 'var(--text-muted)',
+                    border: '1px solid rgba(255, 255, 255, 0.05)',
+                    marginBottom: '1rem'
+                  }}>
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                      <polyline points="14 2 14 8 20 8" />
+                    </svg>
+                  </div>
+                  <h4 style={{ fontWeight: '600', color: 'var(--text-primary)', marginBottom: '0.25rem' }}>
+                    Không hỗ trợ xem trước trực tiếp
+                  </h4>
+                  <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                    Định dạng tệp tin này ({previewFile.name.split('.').pop()?.toUpperCase()}) không thể xem trước trực tiếp. Bạn vẫn có thể tải lên tệp tin này bình thường.
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

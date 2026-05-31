@@ -38,7 +38,9 @@ const ClassModel = mongoose.model('Class', classSchema);
 const studentSchema = new mongoose.Schema({
   name: { type: String, required: true },
   className: { type: String, required: true },
-  studentCode: { type: String, required: true, unique: true }
+  studentCode: { type: String, required: true, unique: true },
+  maxUploadSize: { type: Number, default: 20 }, // Limit in MB
+  status: { type: String, enum: ['active', 'inactive'], default: 'active' }
 });
 studentSchema.index({ name: 1, className: 1 }, { unique: true });
 const StudentModel = mongoose.model('Student', studentSchema);
@@ -68,6 +70,7 @@ const userSchema = new mongoose.Schema({
   role: { type: String, required: true, enum: ['admin', 'teacher'], default: 'admin' },
   displayName: { type: String, required: true },
   email: { type: String, default: '' }, // Email nhận thông báo
+  status: { type: String, enum: ['active', 'inactive'], default: 'active' },
   createdAt: { type: Date, default: Date.now }
 });
 const UserModel = mongoose.model('User', userSchema);
@@ -328,7 +331,7 @@ const storage = multer.diskStorage({
 
 const upload = multer({
   storage,
-  limits: { fileSize: 200 * 1024 * 1024 } // 200MB
+  limits: { fileSize: 500 * 1024 * 1024 } // 500MB
 });
 
 // Middleware - CORS bảo mật
@@ -377,8 +380,23 @@ app.get('/api/hello', (req: Request, res: Response) => {
 app.get('/api/teachers', async (req: Request, res: Response) => {
   try {
     if (useMongoDB) {
-      const teachers = await TeacherModel.find({});
-      res.json(teachers.map(t => t.name));
+      // 1. Lấy danh sách giáo viên ĐANG HOẠT ĐỘNG từ UserModel
+      const activeTeachers = await UserModel.find({ role: 'teacher', status: 'active' });
+      const activeTeacherNames = activeTeachers.map(t => t.displayName);
+
+      // 2. Lấy danh sách giáo viên BỊ KHÓA từ UserModel
+      const inactiveTeachers = await UserModel.find({ role: 'teacher', status: 'inactive' });
+      const inactiveTeacherNames = inactiveTeachers.map(t => t.displayName);
+
+      // 3. Lấy thêm các giáo viên trong TeacherModel (những người chưa có tài khoản User)
+      // Loại trừ những người bị khóa và những người đã có trong danh sách active
+      const otherTeachers = await TeacherModel.find({
+        name: { $nin: [...activeTeacherNames, ...inactiveTeacherNames] }
+      });
+      const otherTeacherNames = otherTeachers.map(t => t.name);
+      
+      const allTeacherNames = [...activeTeacherNames, ...otherTeacherNames];
+      res.json(allTeacherNames);
     } else {
       // Fallback khi chạy offline
       res.json(['Huỳnh Nhật Anh', 'Nguyễn Văn A', 'Trần Thị B']);
@@ -423,7 +441,10 @@ app.get('/api/students', async (req: Request, res: Response) => {
     if (useMongoDB) {
       const query = classNameStr ? { className: classNameStr } : {};
       const students = await StudentModel.find(query);
-      res.json(students.map(s => s.name));
+      res.json(students.map(s => ({
+        name: s.name,
+        maxUploadSize: (s as any).maxUploadSize !== undefined ? (s as any).maxUploadSize : 20
+      })));
     } else {
       // Fallback khi chạy offline
       const fallbackMap: Record<string, string[]> = {
@@ -432,11 +453,11 @@ app.get('/api/students', async (req: Request, res: Response) => {
         'HCM2': ['Hoàng Văn C', 'Trần Thị D'],
         'HCM3': ['Phan Văn E', 'Đỗ Thị F']
       };
-      if (classNameStr) {
-        res.json(fallbackMap[classNameStr] || []);
-      } else {
-        res.json(['Nguyễn Văn Nam', 'Trần Thị Mai', 'Lê Hoàng Long', 'Phạm Minh Đức', 'Hoàng Văn C', 'Trần Thị D', 'Phan Văn E', 'Đỗ Thị F']);
-      }
+      const names = classNameStr ? (fallbackMap[classNameStr] || []) : ['Nguyễn Văn Nam', 'Trần Thị Mai', 'Lê Hoàng Long', 'Phạm Minh Đức', 'Hoàng Văn C', 'Trần Thị D', 'Phan Văn E', 'Đỗ Thị F'];
+      res.json(names.map(name => ({
+        name,
+        maxUploadSize: 20
+      })));
     }
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -556,6 +577,9 @@ app.post('/api/auth/login', async (req: Request, res: Response) => {
     const user = await UserModel.findOne({ username: username.trim(), password: hashedPassword });
     if (!user) {
       return res.status(401).json({ error: 'Tên đăng nhập hoặc mật khẩu không chính xác.' });
+    }
+    if (user.status === 'inactive') {
+      return res.status(403).json({ error: 'Tài khoản của bạn đã bị khóa. Vui lòng liên hệ Admin.' });
     }
 
     const token = generateSecureToken(user.username, user.role);
@@ -689,12 +713,33 @@ app.put('/api/admin/users/:id', adminAuth, async (req: Request, res: Response) =
     const role = sanitize(req.body.role);
     const displayName = sanitize(req.body.displayName);
     const email = sanitize(req.body.email);
+    const status = sanitize(req.body.status);
     const user = await UserModel.findById(req.params.id);
     if (!user) {
       return res.status(404).json({ error: 'Không tìm thấy tài khoản.' });
     }
+    const reqUser = (req as any).user;
+
+    // Logic: Không cho phép khóa tài khoản ngang cấp hoặc chính mình
+    if (status === 'inactive') {
+      if (user.username === reqUser.username) {
+        return res.status(400).json({ error: 'Không thể tự khóa tài khoản của chính mình.' });
+      }
+      if (user.role === 'admin' && reqUser.role === 'admin' && user.username !== reqUser.username) {
+        return res.status(400).json({ error: 'Không thể khóa tài khoản của quản trị viên khác ngang cấp.' });
+      }
+    }
+
     if (user.username === 'admin' && role && role !== 'admin') {
       return res.status(400).json({ error: 'Không thể hạ quyền của tài khoản admin tối cao.' });
+    }
+
+    // Logic: Nếu tự hạ quyền của chính mình, phải đảm bảo còn ít nhất 1 admin khác đang hoạt động
+    if (user.username === reqUser.username && user.role === 'admin' && role && role !== 'admin') {
+      const activeAdminCount = await UserModel.countDocuments({ role: 'admin', status: 'active' });
+      if (activeAdminCount <= 1) {
+        return res.status(400).json({ error: 'Bạn là Quản trị viên duy nhất còn lại. Vui lòng cấp quyền Quản trị cho một tài khoản khác trước khi tự hạ cấp.' });
+      }
     }
 
     const oldDisplayName = user.displayName;
@@ -706,6 +751,7 @@ app.put('/api/admin/users/:id', adminAuth, async (req: Request, res: Response) =
     if (role) user.role = role;
     if (displayName) user.displayName = displayName;
     if (typeof email === 'string') user.email = email.trim().toLowerCase();
+    if (status) user.status = status;
     await user.save();
 
     // Sync to Teacher collection
@@ -746,6 +792,14 @@ app.delete('/api/admin/users/:id', adminAuth, async (req: Request, res: Response
     }
     if (user.username === 'admin') {
       return res.status(400).json({ error: 'Không thể xóa tài khoản admin hệ thống.' });
+    }
+
+    const reqUser = (req as any).user;
+    if (user.username === reqUser.username) {
+      return res.status(400).json({ error: 'Không thể tự xóa tài khoản của chính mình.' });
+    }
+    if (user.role === 'admin' && reqUser.role === 'admin') {
+      return res.status(400).json({ error: 'Không thể xóa tài khoản của quản trị viên khác.' });
     }
 
     const userRole = user.role;
@@ -825,7 +879,12 @@ app.put('/api/admin/classes/:id', adminOrTeacherAuth, async (req: Request, res: 
       if (existing) {
         return res.status(400).json({ error: 'Tên lớp học mới đã tồn tại.' });
       }
+      const oldName = cls.name;
       cls.name = name.trim();
+      
+      // Đồng bộ tên lớp mới cho học viên và các bài nộp cũ
+      await StudentModel.updateMany({ className: oldName }, { className: cls.name });
+      await SubmissionModel.updateMany({ className: oldName }, { className: cls.name });
     }
     if (teacherName) {
       cls.teacherName = teacherName.trim();
@@ -844,6 +903,10 @@ app.delete('/api/admin/classes/:id', adminOrTeacherAuth, async (req: Request, re
     if (!cls) {
       return res.status(404).json({ error: 'Không tìm thấy lớp học.' });
     }
+
+    // Xóa liên kết lớp của các học viên thuộc lớp này
+    await StudentModel.updateMany({ className: cls.name }, { className: 'Chưa phân công lớp' });
+
     res.json({ message: 'Xóa lớp học thành công.' });
   } catch (err: any) {
     res.status(500).json({ error: 'Lỗi xóa lớp học: ' + err.message });
@@ -974,10 +1037,47 @@ app.get('/api/admin/students', adminOrTeacherAuth, async (req: Request, res: Res
       const classNames = teacherClasses.map(c => c.name);
       query = { className: { $in: classNames } };
     }
-    const students = await StudentModel.find(query);
-    res.json(students);
+    const students = await StudentModel.find(query).lean();
+    
+    // Đếm số lần nộp bài của mỗi học viên
+    const studentsWithCount = await Promise.all(students.map(async (student: any) => {
+      const submissionCount = await SubmissionModel.countDocuments({ fullName: student.name, className: student.className });
+      return { ...student, submissionCount };
+    }));
+
+    res.json(studentsWithCount);
   } catch (err: any) {
     res.status(500).json({ error: 'Lỗi tải danh sách học viên: ' + err.message });
+  }
+});
+
+app.get('/api/leaderboard', async (req: Request, res: Response) => {
+  try {
+    const leaderboard = await SubmissionModel.aggregate([
+      {
+        $group: {
+          _id: { fullName: '$fullName', className: '$className' },
+          submissionCount: { $sum: 1 }
+        }
+      },
+      {
+        $project: {
+          _id: 0,
+          fullName: '$_id.fullName',
+          className: '$_id.className',
+          submissionCount: 1
+        }
+      },
+      {
+        $sort: { submissionCount: -1 }
+      },
+      {
+        $limit: 10
+      }
+    ]);
+    res.json(leaderboard);
+  } catch (err: any) {
+    res.status(500).json({ error: 'Lỗi tải bảng xếp hạng: ' + err.message });
   }
 });
 
@@ -986,6 +1086,11 @@ app.post('/api/admin/students', adminOrTeacherAuth, async (req: Request, res: Re
     const name = sanitize(req.body.name);
     const className = sanitize(req.body.className);
     const studentCode = sanitize(req.body.studentCode);
+    const userRole = (req as any).user.role;
+    const maxUploadSize = userRole === 'admin' && req.body.maxUploadSize !== undefined
+      ? Number(req.body.maxUploadSize)
+      : 20;
+
     if (!name || !className || !studentCode) {
       return res.status(400).json({ error: 'Vui lòng nhập đầy đủ tên học viên, lớp học và mã tra cứu.' });
     }
@@ -1009,7 +1114,8 @@ app.post('/api/admin/students', adminOrTeacherAuth, async (req: Request, res: Re
     const newStudent = new StudentModel({
       name: name.trim(),
       className: className.trim(),
-      studentCode: studentCode.trim()
+      studentCode: studentCode.trim(),
+      maxUploadSize: maxUploadSize
     });
     await newStudent.save();
     res.json({ message: 'Tạo học viên thành công.', data: newStudent });
@@ -1023,6 +1129,9 @@ app.put('/api/admin/students/:id', adminOrTeacherAuth, async (req: Request, res:
     const name = sanitize(req.body.name);
     const className = sanitize(req.body.className);
     const studentCode = sanitize(req.body.studentCode);
+    const status = sanitize(req.body.status);
+    const userRole = (req as any).user.role;
+
     const student = await StudentModel.findById(req.params.id);
     if (!student) {
       return res.status(404).json({ error: 'Không tìm thấy học viên.' });
@@ -1050,6 +1159,15 @@ app.put('/api/admin/students/:id', adminOrTeacherAuth, async (req: Request, res:
         }
       }
     }
+    
+    if (userRole === 'admin' && req.body.maxUploadSize !== undefined) {
+      (student as any).maxUploadSize = Number(req.body.maxUploadSize);
+    }
+    
+    if (status) {
+      student.status = status;
+    }
+
     await student.save();
     res.json({ message: 'Cập nhật học viên thành công.', data: student });
   } catch (err: any) {
@@ -1261,7 +1379,7 @@ app.post('/api/upload', (req: Request, res: Response, next: any) => {
   uploadArray(req, res, (err: any) => {
     if (err) {
       if (err.code === 'LIMIT_FILE_SIZE') {
-        return res.status(400).json({ error: 'Tệp tin vượt quá kích thước giới hạn cho phép (tối đa 200MB).' });
+        return res.status(400).json({ error: 'Tệp tin vượt quá kích thước giới hạn hệ thống cho phép (tối đa 500MB).' });
       }
       return res.status(400).json({ error: err.message || 'Lỗi xảy ra trong quá trình tải tệp tin.' });
     }
@@ -1272,6 +1390,41 @@ app.post('/api/upload', (req: Request, res: Response, next: any) => {
     const files = req.files as Express.Multer.File[];
     if (!files || files.length === 0) {
       return res.status(400).json({ error: 'Vui lòng chọn ít nhất một tệp tin để tải lên.' });
+    }
+
+    const fullName = sanitize(req.body.fullName || 'N/A').trim();
+    const className = sanitize(req.body.className || 'N/A').trim();
+
+    // Check size limit dynamically based on student
+    let maxUploadSizeMB = 20; // default
+    if (useMongoDB && fullName !== 'N/A' && className !== 'N/A') {
+      const student = await StudentModel.findOne({ name: fullName, className: className });
+      if (student) {
+        if (student.status === 'inactive') {
+          for (const f of files) {
+            if (fs.existsSync(f.path)) fs.unlinkSync(f.path);
+          }
+          return res.status(403).json({ error: 'Tài khoản học viên đang bị khóa. Bạn không thể nộp bài, vui lòng liên hệ Admin hoặc Giáo viên.' });
+        }
+        if ((student as any).maxUploadSize !== undefined) {
+          maxUploadSizeMB = (student as any).maxUploadSize;
+        }
+      }
+    }
+
+    const limitBytes = maxUploadSizeMB * 1024 * 1024;
+    const totalSize = files.reduce((acc, f) => acc + f.size, 0);
+    if (totalSize > limitBytes) {
+      // Delete temporary files written by Multer
+      for (const f of files) {
+        if (fs.existsSync(f.path)) {
+          fs.unlinkSync(f.path);
+        }
+      }
+      const totalSizeMB = (totalSize / (1024 * 1024)).toFixed(2);
+      return res.status(400).json({
+        error: `Tổng dung lượng các tệp tin tải lên (${totalSizeMB}MB) vượt quá giới hạn cho phép của học viên ${fullName} (tối đa ${maxUploadSizeMB}MB).`
+      });
     }
 
     // Thiết lập HTTP Header cho luồng Server-Sent Events (SSE) để duy trì kết nối chống Timeout
@@ -1287,13 +1440,10 @@ app.post('/api/upload', (req: Request, res: Response, next: any) => {
 
     // Áp dụng mongo-sanitize để tránh NoSQL Injection
     const teacher = sanitize(req.body.teacher || 'N/A').trim();
-    const className = sanitize(req.body.className || 'N/A').trim();
-    const fullName = sanitize(req.body.fullName || 'N/A').trim();
     const stage = sanitize(req.body.stage || 'N/A').trim();
     const session = sanitize(req.body.session || 'N/A').trim();
 
     const fileDetails: any[] = [];
-    const totalSize = files.reduce((acc, f) => acc + f.size, 0);
     let totalBytesUploaded = 0;
 
     // Tính toán số lần nộp bài (attemptNumber)

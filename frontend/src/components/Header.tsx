@@ -89,6 +89,11 @@ function Header() {
               </NavLink>
             </li>
           )}
+          <li>
+            <NavLink to="/leaderboard" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
+              Bảng xếp hạng
+            </NavLink>
+          </li>
           {(!user || user.role !== 'admin') && (
             <li>
               <NavLink to="/submissions" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
@@ -103,13 +108,7 @@ function Header() {
               </NavLink>
             </li>
           )}
-          {user && (
-            <li className="mobile-only-link">
-              <NavLink to="/settings" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-                Cài đặt
-              </NavLink>
-            </li>
-          )}
+
         </ul>
 
         {/* User Actions */}
