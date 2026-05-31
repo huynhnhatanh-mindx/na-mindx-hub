@@ -11,6 +11,7 @@ const FEEDBACK_TYPES: { value: FeedbackType; label: string; emoji: string }[] = 
 export default function FeedbackButton() {
   const [open, setOpen] = useState(false);
   const [type, setType] = useState<FeedbackType>('idea');
+  const [name, setName] = useState('');
   const [message, setMessage] = useState('');
   const [status, setStatus] = useState<'idle' | 'sending' | 'success' | 'error'>('idle');
   const popupRef = useRef<HTMLDivElement>(null);
@@ -41,6 +42,7 @@ export default function FeedbackButton() {
     if (status === 'success') {
       setTimeout(() => {
         setMessage('');
+        setName('');
         setType('idea');
         setStatus('idle');
       }, 300);
@@ -59,7 +61,7 @@ export default function FeedbackButton() {
       const res = await fetch(`${API_BASE_URL}/api/feedback`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type, message: message.trim() }),
+        body: JSON.stringify({ type, name: name.trim(), message: message.trim() }),
       });
       // Accept both success and 404 (endpoint may not exist yet) as "sent"
       if (res.ok || res.status === 404) {
@@ -276,6 +278,41 @@ export default function FeedbackButton() {
                       </button>
                     ))}
                   </div>
+                </div>
+
+                {/* Name input */}
+                <div>
+                  <label style={{ fontSize: '0.78rem', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: '0.5rem' }}>
+                    Họ và tên <span style={{ color: 'var(--text-muted)', fontWeight: '400', textTransform: 'none', letterSpacing: 0 }}>(không bắt buộc)</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={name}
+                    onChange={e => setName(e.target.value)}
+                    placeholder="Vui lòng nhập tên để lại danh tính..."
+                    maxLength={80}
+                    style={{
+                      width: '100%',
+                      padding: '0.65rem 0.75rem',
+                      background: 'var(--input-bg)',
+                      border: '1px solid var(--input-border)',
+                      borderRadius: '10px',
+                      color: 'var(--text-primary)',
+                      fontFamily: 'var(--font-body)',
+                      fontSize: '0.9rem',
+                      outline: 'none',
+                      boxSizing: 'border-box',
+                      transition: 'border-color 0.2s, box-shadow 0.2s',
+                    }}
+                    onFocus={e => {
+                      e.currentTarget.style.borderColor = 'var(--primary)';
+                      e.currentTarget.style.boxShadow = '0 0 0 3px rgba(99,102,241,0.15)';
+                    }}
+                    onBlur={e => {
+                      e.currentTarget.style.borderColor = 'var(--input-border)';
+                      e.currentTarget.style.boxShadow = 'none';
+                    }}
+                  />
                 </div>
 
                 {/* Message */}
