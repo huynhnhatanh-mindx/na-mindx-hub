@@ -20,18 +20,23 @@ function createMailTransporter() {
   const smtpPass = process.env.FEEDBACK_EMAIL_PASS;
   const host = process.env.EMAIL_HOST;
   const port = process.env.EMAIL_PORT ? parseInt(process.env.EMAIL_PORT, 10) : undefined;
-  const secure = process.env.EMAIL_SECURE === 'true';
 
   if (!smtpUser || !smtpPass) {
     return null;
   }
 
   if (host) {
+    const resolvedPort = port || 587;
+    // Port 465 = SSL/TLS (secure: true), Port 587 = STARTTLS (secure: false)
+    const isSecure = resolvedPort === 465;
+
     return nodemailer.createTransport({
       host,
-      port: port || 465,
-      secure: port === 465 || secure,
+      port: resolvedPort,
+      secure: isSecure,
       auth: { user: smtpUser, pass: smtpPass },
+      // requireTLS bắt buộc nâng cấp kết nối lên TLS khi dùng port 587
+      requireTLS: resolvedPort === 587,
       tls: {
         rejectUnauthorized: false
       }
@@ -1680,7 +1685,7 @@ app.post('/api/feedback', async (req: Request, res: Response) => {
     await transporter.sendMail({
       from: `"NA MindX Hub \u2014 Góp ý" <${smtpUser}>`,
       to: adminEmail,
-      subject: `[Gop y] ${typeStrNoIcon} — NA MindX Hub`,
+      subject: `[Góp ý] ${typeStrNoIcon} — NA MindX Hub`,
       html: `
         <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 560px; margin: 0 auto; background: #0f172a; border-radius: 16px; overflow: hidden; color: #f1f5f9;">
           <div style="background: linear-gradient(135deg, #6366f1, #a855f7); padding: 24px 28px;">
