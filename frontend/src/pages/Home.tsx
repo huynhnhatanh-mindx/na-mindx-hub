@@ -6,8 +6,20 @@ type BackendStatus = 'checking' | 'online' | 'offline';
 function Home() {
   const [backendStatus, setBackendStatus] = useState<BackendStatus>('checking');
 
-  // Check Backend Connection status on mount
+  // Check Backend Connection status and User role on mount
   useEffect(() => {
+    // Redirect admin away from home page
+    const userStr = localStorage.getItem('user');
+    if (userStr) {
+      try {
+        const user = JSON.parse(userStr);
+        if (user.role === 'admin') {
+          window.location.href = '/admin';
+          return;
+        }
+      } catch (e) {}
+    }
+
     const checkConnection = async () => {
       try {
         const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';

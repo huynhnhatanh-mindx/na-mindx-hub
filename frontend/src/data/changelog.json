@@ -1,0 +1,25 @@
+[
+  {
+    "version": "1.1.0",
+    "date": "2026-06-03",
+    "title": "Nâng cấp Quản trị & Hiệu suất",
+    "features": [
+      "Thêm trang Tổng quan (Dashboard) hiển thị số liệu trực quan.",
+      "Thêm Nhật ký Hoạt động (Audit Logs) để theo dõi thao tác người dùng.",
+      "Tích hợp Phân trang (Pagination) và bộ lọc tìm kiếm cho tất cả danh sách.",
+      "Hỗ trợ thao tác hàng loạt (Bulk Actions): Xóa nhiều bản ghi, thay đổi trạng thái cùng lúc.",
+      "Tạo trang Lịch sử Phiên bản (Changelog)."
+    ]
+  },
+  {
+    "version": "1.0.0",
+    "date": "2026-05-30",
+    "title": "Phiên bản phát hành đầu tiên",
+    "features": [
+      "Tính năng Đăng nhập cho Admin và Giáo viên.",
+      "Quản lý Học viên, Lớp học, Giáo viên.",
+      "Học viên Nộp bài tập qua hệ thống MEGA (Google Drive).",
+      "Giao diện tối ưu (Responsive) cho Điện thoại."
+    ]
+  }
+]

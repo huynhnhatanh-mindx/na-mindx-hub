@@ -47,7 +47,16 @@ interface SubmissionData {
 
 export default function AdminDashboard() {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<'users' | 'teachers' | 'classes' | 'students' | 'submissions'>('users');
+  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'teachers' | 'classes' | 'students' | 'submissions' | 'audit_logs'>('overview');
+  
+  // Pagination & Bulk
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [searchInput, setSearchInput] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [dashboardStats, setDashboardStats] = useState<any>(null);
+  const [auditLogs, setAuditLogs] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [currentUser, setCurrentUser] = useState<any>(null);
@@ -117,8 +126,38 @@ export default function AdminDashboard() {
 
   // Fetch data depending on active tab
   useEffect(() => {
-    fetchData();
+    setCurrentPage(1);
+    setSearchQuery('');
+    setSearchInput('');
+    setSelectedIds([]);
   }, [activeTab]);
+
+  useEffect(() => {
+    fetchData();
+  }, [activeTab, currentPage, searchQuery]);
+
+  // Debounced search logic
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (searchInput !== searchQuery) {
+        setSearchQuery(searchInput);
+        setCurrentPage(1);
+      }
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [searchInput, searchQuery]);
+
+  const fetchWithAuth = async (url: string, options: any = {}) => {
+    const res = await fetch(url, options);
+    if (res.status === 401) {
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+      window.dispatchEvent(new Event('storage'));
+      navigate('/login');
+      throw new Error('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
+    }
+    return res;
+  };
 
   const getHeaders = () => {
     const token = localStorage.getItem('token');
@@ -128,56 +167,135 @@ export default function AdminDashboard() {
     };
   };
 
-  const fetchData = async () => {
+    const fetchData = async () => {
     setIsLoading(true);
     setError('');
     const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
     try {
-      if (activeTab === 'users') {
-        const res = await fetch(`${API_BASE_URL}/api/admin/users`, { headers: getHeaders() });
+      const queryParams = new URLSearchParams({ page: currentPage.toString(), limit: '10' });
+      if (searchQuery) queryParams.append('search', searchQuery);
+
+      if (activeTab === 'overview') {
+        const res = await fetchWithAuth(`${API_BASE_URL}/api/admin/dashboard-stats`, { headers: getHeaders() });
+        if (res.ok) setDashboardStats(await res.json());
+      } else if (activeTab === 'users') {
+        const res = await fetchWithAuth(`${API_BASE_URL}/api/admin/users?${queryParams}`, { headers: getHeaders() });
         if (!res.ok) throw new Error('Không thể tải danh sách tài khoản.');
-        const data = await res.json();
+        const { data, totalPages } = await res.json();
         setUsers(data);
+        setTotalPages(totalPages);
       } else if (activeTab === 'teachers') {
-        const res = await fetch(`${API_BASE_URL}/api/admin/teachers`, { headers: getHeaders() });
+        const res = await fetchWithAuth(`${API_BASE_URL}/api/admin/teachers?${queryParams}`, { headers: getHeaders() });
         if (!res.ok) throw new Error('Không thể tải danh sách giáo viên.');
-        const data = await res.json();
+        const { data, totalPages } = await res.json();
         setTeachersDataList(data);
+        setTotalPages(totalPages);
       } else if (activeTab === 'classes') {
-        const res = await fetch(`${API_BASE_URL}/api/admin/classes`, { headers: getHeaders() });
+        const res = await fetchWithAuth(`${API_BASE_URL}/api/admin/classes?${queryParams}`, { headers: getHeaders() });
         if (!res.ok) throw new Error('Không thể tải danh sách lớp học.');
-        const data = await res.json();
+        const { data, totalPages } = await res.json();
         setClasses(data);
+        setTotalPages(totalPages);
 
         // Fetch teachers list to populate the dropdown
-        const teacherRes = await fetch(`${API_BASE_URL}/api/teachers`);
+        const teacherRes = await fetchWithAuth(`${API_BASE_URL}/api/teachers`);
         if (teacherRes.ok) {
           const teacherData = await teacherRes.json();
           setTeachers(teacherData);
         }
       } else if (activeTab === 'students') {
-        const res = await fetch(`${API_BASE_URL}/api/admin/students`, { headers: getHeaders() });
+        const res = await fetchWithAuth(`${API_BASE_URL}/api/admin/students?${queryParams}`, { headers: getHeaders() });
         if (!res.ok) throw new Error('Không thể tải danh sách học viên.');
-        const data = await res.json();
+        const { data, totalPages } = await res.json();
         setStudents(data);
+        setTotalPages(totalPages);
 
         // Fetch classes to populate the dropdown
-        const classRes = await fetch(`${API_BASE_URL}/api/admin/classes`, { headers: getHeaders() });
+        const classRes = await fetchWithAuth(`${API_BASE_URL}/api/admin/classes?limit=1000`, { headers: getHeaders() });
         if (classRes.ok) {
           const classData = await classRes.json();
-          setClasses(classData);
+          setClasses(classData.data || classData);
         }
       } else if (activeTab === 'submissions') {
-        const res = await fetch(`${API_BASE_URL}/api/admin/submissions`, { headers: getHeaders() });
+        const res = await fetchWithAuth(`${API_BASE_URL}/api/admin/submissions?${queryParams}`, { headers: getHeaders() });
         if (!res.ok) throw new Error('Không thể tải danh sách bài nộp.');
-        const data = await res.json();
+        const { data, totalPages } = await res.json();
         setSubmissions(data);
+        setTotalPages(totalPages);
+      } else if (activeTab === 'audit_logs') {
+        const res = await fetchWithAuth(`${API_BASE_URL}/api/admin/audit-logs?${queryParams}`, { headers: getHeaders() });
+        if (!res.ok) throw new Error('Không thể tải nhật ký hoạt động.');
+        const { data, totalPages } = await res.json();
+        setAuditLogs(data);
+        setTotalPages(totalPages);
       }
     } catch (err: any) {
       setError(err.message || 'Đã xảy ra lỗi khi kết nối.');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleSearch = () => {
+    setSearchQuery(searchInput);
+    setCurrentPage(1);
+  };
+
+  const handleClearSearch = () => {
+    setSearchInput('');
+    setSearchQuery('');
+    setCurrentPage(1);
+  };
+
+  const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>, data: any[]) => {
+    if (e.target.checked) {
+      setSelectedIds(data.map(item => item._id));
+    } else {
+      setSelectedIds([]);
+    }
+  };
+
+  const handleSelectRow = (id: string) => {
+    setSelectedIds(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
+  };
+
+  const handleBulkDelete = async () => {
+    if (!window.confirm(`Bạn có chắc muốn xóa ${selectedIds.length} mục này?`)) return;
+    try {
+      const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+      const res = await fetchWithAuth(`${API_BASE_URL}/api/admin/${activeTab}/bulk-delete`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify({ ids: selectedIds })
+      });
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || 'Thao tác thất bại');
+      }
+      setSelectedIds([]);
+      fetchData();
+    } catch (err: any) {
+      alert(err.message);
+    }
+  };
+
+  const handleBulkUpdateStatus = async (status: string) => {
+    try {
+      const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+      const res = await fetchWithAuth(`${API_BASE_URL}/api/admin/${activeTab}/bulk-update-status`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify({ ids: selectedIds, status })
+      });
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || 'Thao tác thất bại');
+      }
+      setSelectedIds([]);
+      fetchData();
+    } catch (err: any) {
+      alert(err.message);
     }
   };
 
@@ -330,7 +448,7 @@ export default function AdminDashboard() {
     }
 
     try {
-      const res = await fetch(url, {
+      const res = await fetchWithAuth(url, {
         method,
         headers: getHeaders(),
         body: JSON.stringify(body)
@@ -347,7 +465,17 @@ export default function AdminDashboard() {
         if (currentUserStr) {
           try {
             const currentUser = JSON.parse(currentUserStr);
-            if (currentUser.username === userUsername.trim().toLowerCase()) {
+            const originalUser = users.find(u => u._id === editingId);
+            const isSelf = originalUser && originalUser.username === currentUser.username;
+            
+            if (isSelf) {
+              if (userUsername.trim().toLowerCase() !== originalUser.username) {
+                alert('Tên đăng nhập của bạn đã thay đổi. Vui lòng đăng nhập lại.');
+                localStorage.removeItem('token');
+                localStorage.removeItem('user');
+                window.location.href = '/login';
+                return;
+              }
               if (userRole !== currentUser.role) {
                 alert('Quyền của bạn đã bị thay đổi (xuống cấp). Vui lòng đăng nhập lại.');
                 localStorage.removeItem('token');
@@ -392,7 +520,7 @@ export default function AdminDashboard() {
     else if (activeTab === 'submissions') url = `${API_BASE_URL}/api/admin/submissions/${id}`;
 
     try {
-      const res = await fetch(url, {
+      const res = await fetchWithAuth(url, {
         method: 'DELETE',
         headers: getHeaders()
       });
@@ -448,11 +576,13 @@ export default function AdminDashboard() {
           flexWrap: 'wrap'
         }}>
           {[
+            { id: 'overview', label: 'Tổng quan' },
             { id: 'users', label: 'Quản lý Tài khoản' },
             { id: 'classes', label: 'Quản lý Lớp học' },
             { id: 'students', label: 'Quản lý Học viên' },
-            { id: 'submissions', label: 'Quản lý Bài nộp' }
-          ].filter(tab => currentUser?.role === 'admin' || (tab.id !== 'users' && tab.id !== 'submissions')).map((tab) => (
+            { id: 'submissions', label: 'Quản lý Bài nộp' },
+            { id: 'audit_logs', label: 'Nhật ký Hoạt động' }
+          ].filter(tab => currentUser?.role === 'admin' || (tab.id !== 'users' && tab.id !== 'audit_logs' && tab.id !== 'overview')).map((tab) => (
             <button
               key={tab.id}
               onClick={() => {
@@ -486,27 +616,88 @@ export default function AdminDashboard() {
         <div className="glass-card" style={{ padding: '2.5rem' }}>
           
           {/* Header Controls for CRUD (Users, Classes, Students) */}
-          {activeTab !== 'submissions' && (
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '1.5rem' }}>
-              <button
-                className="btn btn-primary"
-                onClick={handleOpenCreateModal}
-                style={{
-                  maxWidth: '180px',
-                  height: '2.5rem',
-                  fontSize: '0.9rem',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '0.5rem'
-                }}
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                  <line x1="12" y1="5" x2="12" y2="19" />
-                  <line x1="5" y1="12" x2="19" y2="12" />
+          {activeTab !== 'overview' && activeTab !== 'audit_logs' && (
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
+              {/* Search */}
+              <div className="search-wrapper-container">
+                <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  style={{
+                    position: 'absolute',
+                    left: '12px',
+                    color: 'var(--text-muted)',
+                    opacity: 0.7,
+                    pointerEvents: 'none'
+                  }}
+                >
+                  <circle cx="11" cy="11" r="8" />
+                  <line x1="21" y1="21" x2="16.65" y2="16.65" />
                 </svg>
-                Thêm mới
-              </button>
+                <input
+                  type="text"
+                  placeholder="Tìm kiếm..."
+                  value={searchInput}
+                  onChange={(e) => setSearchInput(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+                  className="form-input-field"
+                  style={{
+                    paddingLeft: '36px',
+                    paddingRight: searchInput ? '36px' : '12px',
+                    width: '100%',
+                    border: 'none',
+                    background: 'transparent',
+                    boxShadow: 'none'
+                  }}
+                />
+                {searchInput && (
+                  <button
+                    type="button"
+                    onClick={handleClearSearch}
+                    className="clear-search-btn"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+
+              {/* Action Buttons */}
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                {selectedIds.length > 0 && activeTab !== 'submissions' && (
+                   <button className="btn btn-danger" onClick={handleBulkDelete} style={{ height: 'auto', padding: '0 1rem' }}>Xóa {selectedIds.length} mục</button>
+                )}
+                {selectedIds.length > 0 && (activeTab === 'users' || activeTab === 'students') && (
+                   <>
+                     <button className="btn btn-neutral" onClick={() => handleBulkUpdateStatus('active')} style={{ height: 'auto', padding: '0 1rem' }}>Mở khóa</button>
+                     <button className="btn btn-neutral" onClick={() => handleBulkUpdateStatus('inactive')} style={{ height: 'auto', padding: '0 1rem' }}>Khóa</button>
+                   </>
+                )}
+                {activeTab !== 'submissions' && (
+                  <button
+                    className="btn btn-primary"
+                    onClick={handleOpenCreateModal}
+                    style={{
+                      height: 'auto',
+                      padding: '0 1rem',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '0.5rem'
+                    }}
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                      <line x1="12" y1="5" x2="12" y2="19" />
+                      <line x1="5" y1="12" x2="19" y2="12" />
+                    </svg>
+                    Thêm mới
+                  </button>
+                )}
+              </div>
             </div>
           )}
 
@@ -518,11 +709,59 @@ export default function AdminDashboard() {
           ) : (
             <div style={{ overflowX: 'auto', width: '100%' }}>
               
-              {/* --- BẢNG TÀI KHOẢN --- */}
-              {activeTab === 'users' && (
-                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: '700px' }}>
+              {/* --- TỔNG QUAN --- */}
+              {activeTab === 'overview' && dashboardStats && (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1.5rem', marginBottom: '2rem' }}>
+                  <div className="glass-card" style={{ padding: '1.5rem', textAlign: 'center' }}>
+                    <h3>Tài khoản</h3><h1 style={{ color: 'var(--primary)', fontSize: '3rem', margin: '0.5rem 0' }}>{dashboardStats.users}</h1>
+                  </div>
+                  <div className="glass-card" style={{ padding: '1.5rem', textAlign: 'center' }}>
+                    <h3>Giáo viên</h3><h1 style={{ color: 'var(--primary)', fontSize: '3rem', margin: '0.5rem 0' }}>{dashboardStats.teachers}</h1>
+                  </div>
+                  <div className="glass-card" style={{ padding: '1.5rem', textAlign: 'center' }}>
+                    <h3>Lớp học</h3><h1 style={{ color: 'var(--primary)', fontSize: '3rem', margin: '0.5rem 0' }}>{dashboardStats.classes}</h1>
+                  </div>
+                  <div className="glass-card" style={{ padding: '1.5rem', textAlign: 'center' }}>
+                    <h3>Học viên</h3><h1 style={{ color: 'var(--primary)', fontSize: '3rem', margin: '0.5rem 0' }}>{dashboardStats.students}</h1>
+                  </div>
+                  <div className="glass-card" style={{ padding: '1.5rem', textAlign: 'center' }}>
+                    <h3>Bài nộp</h3><h1 style={{ color: 'var(--primary)', fontSize: '3rem', margin: '0.5rem 0' }}>{dashboardStats.submissions}</h1>
+                  </div>
+                </div>
+              )}
+              
+              {/* --- NHẬT KÝ HOẠT ĐỘNG --- */}
+              {activeTab === 'audit_logs' && (
+                <table className="responsive-table" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
                   <thead>
                     <tr style={{ borderBottom: '1px solid var(--card-border)', color: 'var(--text-primary)', fontSize: '0.9rem', fontWeight: '700' }}>
+                      <th style={{ padding: '1rem' }}>Thời gian</th>
+                      <th style={{ padding: '1rem' }}>Người dùng</th>
+                      <th style={{ padding: '1rem' }}>Hành động</th>
+                      <th style={{ padding: '1rem' }}>Mục tiêu</th>
+                      <th style={{ padding: '1rem' }}>Chi tiết</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {auditLogs.map((log: any) => (
+                      <tr key={log._id} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)', fontSize: '0.875rem' }}>
+                        <td data-label="Thời gian" style={{ padding: '1rem' }}>{new Date(log.createdAt).toLocaleString('vi-VN')}</td>
+                        <td data-label="Người dùng" style={{ padding: '1rem', fontWeight: 'bold' }}>{log.user}</td>
+                        <td data-label="Hành động" style={{ padding: '1rem', color: 'var(--primary)' }}>{log.action}</td>
+                        <td data-label="Mục tiêu" style={{ padding: '1rem' }}>{log.resource}</td>
+                        <td data-label="Chi tiết" style={{ padding: '1rem' }}>{log.details}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+
+              {/* --- BẢNG TÀI KHOẢN --- */}
+              {activeTab === 'users' && (
+                <table className="responsive-table" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '1px solid var(--card-border)', color: 'var(--text-primary)', fontSize: '0.9rem', fontWeight: '700' }}>
+                      <th style={{ padding: '1rem', width: '40px' }}><input type="checkbox" onChange={(e) => handleSelectAll(e, users)} checked={users.length > 0 && selectedIds.length === users.length} /></th>
                       <th style={{ padding: '1rem' }}>Tên đăng nhập</th>
                       <th style={{ padding: '1rem' }}>Tên hiển thị</th>
                       <th style={{ padding: '1rem' }}>Email</th>
@@ -535,6 +774,7 @@ export default function AdminDashboard() {
                   <tbody>
                     {users.map((item) => (
                       <tr key={item._id} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)', fontSize: '0.875rem' }}>
+                        <td style={{ padding: '1rem' }}><input type="checkbox" checked={selectedIds.includes(item._id)} onChange={() => handleSelectRow(item._id)} /></td>
                         <td data-label="Tên đăng nhập" style={{ padding: '1rem', color: 'var(--text-primary)', fontWeight: '600' }}>{item.username}</td>
                         <td data-label="Tên hiển thị" style={{ padding: '1rem' }}>{item.displayName}</td>
                         <td data-label="Email" style={{ padding: '1rem' }}>{item.email || '-'}</td>
@@ -567,9 +807,10 @@ export default function AdminDashboard() {
 
               {/* --- BẢNG LỚP HỌC --- */}
               {activeTab === 'classes' && (
-                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: '600px' }}>
+                <table className="responsive-table" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
                   <thead>
                     <tr style={{ borderBottom: '1px solid var(--card-border)', color: 'var(--text-primary)', fontSize: '0.9rem', fontWeight: '700' }}>
+                      <th style={{ padding: '1rem', width: '40px' }}><input type="checkbox" onChange={(e) => handleSelectAll(e, classes)} checked={classes.length > 0 && selectedIds.length === classes.length} /></th>
                       <th style={{ padding: '1rem' }}>Tên lớp học</th>
                       <th style={{ padding: '1rem' }}>Giáo viên phụ trách</th>
                       <th style={{ padding: '1rem', textAlign: 'center' }}>Thao tác</th>
@@ -578,6 +819,7 @@ export default function AdminDashboard() {
                   <tbody>
                     {classes.map((item) => (
                       <tr key={item._id} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)', fontSize: '0.875rem' }}>
+                        <td style={{ padding: '1rem' }}><input type="checkbox" checked={selectedIds.includes(item._id)} onChange={() => handleSelectRow(item._id)} /></td>
                         <td data-label="Tên lớp học" style={{ padding: '1rem', color: 'var(--text-primary)', fontWeight: '600' }}>{item.name}</td>
                         <td data-label="Giáo viên phụ trách" style={{ padding: '1rem' }}>{item.teacherName}</td>
                         <td data-label="Thao tác" style={{ padding: '1rem', display: 'flex', gap: '0.5rem', justifyContent: 'center' }}>
@@ -592,7 +834,7 @@ export default function AdminDashboard() {
 
               {/* --- BẢNG HỌC VIÊN --- */}
               {activeTab === 'students' && (
-                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: '700px' }}>
+                <table className="responsive-table" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
                   <thead>
                     <tr style={{ borderBottom: '1px solid var(--card-border)', color: 'var(--text-primary)', fontSize: '0.9rem', fontWeight: '700' }}>
                       <th style={{ padding: '1rem' }}>Tên học viên</th>
@@ -635,11 +877,21 @@ export default function AdminDashboard() {
                 </table>
               )}
 
+              {/* Pagination */}
+              {activeTab !== 'overview' && totalPages > 1 && (
+                <div style={{ display: 'flex', justifyContent: 'center', gap: '0.5rem', marginTop: '1.5rem', marginBottom: '1.5rem' }}>
+                  <button disabled={currentPage === 1} onClick={() => setCurrentPage(prev => prev - 1)} className="btn btn-neutral">Trước</button>
+                  <span style={{ padding: '0.5rem 1rem', background: 'rgba(255,255,255,0.05)', borderRadius: '8px' }}>Trang {currentPage} / {totalPages}</span>
+                  <button disabled={currentPage === totalPages} onClick={() => setCurrentPage(prev => prev + 1)} className="btn btn-neutral">Sau</button>
+                </div>
+              )}
+
               {/* --- BẢNG BÀI NỘP --- */}
               {activeTab === 'submissions' && (
-                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: '850px' }}>
+                <table className="responsive-table" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
                   <thead>
                     <tr style={{ borderBottom: '1px solid var(--card-border)', color: 'var(--text-primary)', fontSize: '0.9rem', fontWeight: '700' }}>
+                      <th style={{ padding: '1rem', width: '40px' }}><input type="checkbox" onChange={(e) => handleSelectAll(e, submissions)} checked={submissions.length > 0 && selectedIds.length === submissions.length} /></th>
                       <th style={{ padding: '1rem' }}>Học viên</th>
                       <th style={{ padding: '1rem' }}>Lớp</th>
                       <th style={{ padding: '1rem' }}>Giai đoạn/Buổi</th>
@@ -651,6 +903,7 @@ export default function AdminDashboard() {
                   <tbody>
                     {submissions.map((item) => (
                       <tr key={item._id} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)', fontSize: '0.875rem' }}>
+                        <td style={{ padding: '1rem' }}><input type="checkbox" checked={selectedIds.includes(item._id)} onChange={() => handleSelectRow(item._id)} /></td>
                         <td data-label="Học viên" style={{ padding: '1rem', color: 'var(--text-primary)', fontWeight: '600' }}>{item.fullName}</td>
                         <td data-label="Lớp" style={{ padding: '1rem' }}>{item.className}</td>
                         <td data-label="Giai đoạn/Buổi" style={{ padding: '1rem' }}>{item.stage} ({item.session})</td>
@@ -734,7 +987,7 @@ export default function AdminDashboard() {
                       placeholder="Ví dụ: giaovien1"
                       className="form-input-field"
                       required
-                      disabled={!!editingId}
+                      disabled={editingId ? (users.find(u => u._id === editingId)?.username === 'admin') : false}
                       autoComplete="off"
                     />
                   </div>

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 
 export default function Login() {
   const [username, setUsername] = useState('');
@@ -143,6 +143,11 @@ export default function Login() {
             lineHeight: '1.4'
           }}>
             💡 <strong>Lưu ý:</strong> Trang đăng nhập chỉ dành riêng cho <strong>Quản trị viên</strong> và <strong>Giáo viên</strong>. Tài khoản đăng nhập sẽ do Quản trị viên hệ thống (Admin) khởi tạo và cấp phát.
+            <div style={{ marginTop: '0.5rem' }}>
+              <Link to="/contact-admin" style={{ color: 'var(--primary)', textDecoration: 'none', fontWeight: '600' }}>
+                Liên hệ Quản trị viên
+              </Link>
+            </div>
           </div>
         </div>
       </main>

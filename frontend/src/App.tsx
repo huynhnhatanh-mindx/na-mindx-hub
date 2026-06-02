@@ -3,10 +3,11 @@ import Layout from './components/Layout';
 import Home from './pages/Home';
 import Upload from './pages/Upload';
 import Submissions from './pages/Submissions';
-import Leaderboard from './pages/Leaderboard';
+import ContactAdmin from './pages/ContactAdmin';
 import Login from './pages/Login';
 import AdminDashboard from './pages/AdminDashboard';
 import Settings from './pages/Settings';
+import Changelog from './pages/Changelog';
 import './App.css';
 
 // Route Guard component to prevent unauthorized direct URL navigation
@@ -35,9 +36,10 @@ function App() {
       <Route path="/" element={<Layout />}>
         <Route index element={<Home />} />
         <Route path="upload" element={<Upload />} />
-        <Route path="leaderboard" element={<Leaderboard />} />
         <Route path="submissions" element={<Submissions />} />
+        <Route path="contact-admin" element={<ContactAdmin />} />
         <Route path="login" element={<Login />} />
+        <Route path="changelog" element={<Changelog />} />
         
         {/* Protected Admin & Teacher Routes */}
         <Route element={<ProtectedRoute allowedRoles={['admin', 'teacher']} />}>

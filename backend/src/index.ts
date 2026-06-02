@@ -75,6 +75,42 @@ const userSchema = new mongoose.Schema({
 });
 const UserModel = mongoose.model('User', userSchema);
 
+// Audit Log Schema
+const auditLogSchema = new mongoose.Schema({
+  action: { type: String, required: true },
+  entityType: { type: String, required: true },
+  details: { type: String, required: true },
+  performedBy: { type: String, required: true },
+  createdAt: { type: Date, default: Date.now }
+});
+const AuditLogModel = mongoose.model('AuditLog', auditLogSchema);
+
+// Helper function
+async function logAudit(action: string, entityType: string, details: string, performedBy: string) {
+  try {
+    if (mongoose.connection.readyState === 1) {
+      const log = new AuditLogModel({ action, entityType, details, performedBy });
+      await log.save();
+    }
+  } catch (err) {
+    console.error('Error saving audit log:', err);
+  }
+}
+
+// Helper function to build paginated responses
+async function buildPaginatedResponse(model: any, query: any, page: number, limit: number, sort: any = { _id: -1 }) {
+  const skip = (page - 1) * limit;
+  const data = await model.find(query).sort(sort).skip(skip).limit(limit);
+  const totalItems = await model.countDocuments(query);
+  const totalPages = Math.ceil(totalItems / limit);
+  return {
+    data,
+    currentPage: page,
+    totalPages,
+    totalItems
+  };
+}
+
 function normalizeUsername(name: string): string {
   return name
     .normalize('NFD')
@@ -492,7 +528,14 @@ function verifySecureToken(token: string): { username: string; role: string } | 
     }
 
     const parts = payload.split(':');
-    if (parts.length < 2) return null;
+    if (parts.length < 3) return null;
+    
+    // Check expiration (24 hours)
+    const tokenTime = parseInt(parts[2], 10);
+    const EXPIRATION_TIME = 24 * 60 * 60 * 1000;
+    if (Date.now() - tokenTime > EXPIRATION_TIME) {
+      return null;
+    }
     return { username: parts[0], role: parts[1] };
   } catch (e) {
     return null;
@@ -662,8 +705,24 @@ app.put('/api/auth/profile', adminOrTeacherAuth, async (req: Request, res: Respo
 // API CRUD TÀI KHOẢN (Users)
 app.get('/api/admin/users', adminAuth, async (req: Request, res: Response) => {
   try {
-    const users = await UserModel.find({}, { password: 0 });
-    res.json(users);
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 10;
+    const search = req.query.search as string;
+
+    const query: any = {};
+    if (search) {
+      query.$or = [
+        { username: { $regex: search, $options: 'i' } },
+        { displayName: { $regex: search, $options: 'i' } }
+      ];
+    }
+    const response = await buildPaginatedResponse(UserModel, query, page, limit);
+    response.data = response.data.map((u: any) => {
+      const obj = u.toObject();
+      delete obj.password;
+      return obj;
+    });
+    res.json(response);
   } catch (err: any) {
     res.status(500).json({ error: 'Lỗi tải danh sách tài khoản: ' + err.message });
   }
@@ -701,6 +760,7 @@ app.post('/api/admin/users', adminAuth, async (req: Request, res: Response) => {
       }
     }
 
+    await logAudit('CREATE', 'User', `Tạo tài khoản: ${newUser.username}`, (req as any).user.username);
     res.json({ message: 'Tạo tài khoản thành công.', user: { username: newUser.username, role: newUser.role, displayName: newUser.displayName, email: newUser.email } });
   } catch (err: any) {
     res.status(500).json({ error: 'Lỗi tạo tài khoản: ' + err.message });
@@ -709,6 +769,7 @@ app.post('/api/admin/users', adminAuth, async (req: Request, res: Response) => {
 
 app.put('/api/admin/users/:id', adminAuth, async (req: Request, res: Response) => {
   try {
+    const username = sanitize(req.body.username);
     const password = sanitize(req.body.password);
     const role = sanitize(req.body.role);
     const displayName = sanitize(req.body.displayName);
@@ -719,6 +780,21 @@ app.put('/api/admin/users/:id', adminAuth, async (req: Request, res: Response) =
       return res.status(404).json({ error: 'Không tìm thấy tài khoản.' });
     }
     const reqUser = (req as any).user;
+
+    // Check if renaming the admin account
+    if (user.username === 'admin' && username && username.trim().toLowerCase() !== 'admin') {
+      return res.status(400).json({ error: 'Không thể thay đổi tên đăng nhập của tài khoản admin hệ thống.' });
+    }
+
+    // Check username uniqueness if changed
+    if (username && username.trim().toLowerCase() !== user.username) {
+      const cleanUsername = username.trim().toLowerCase();
+      const existing = await UserModel.findOne({ username: cleanUsername });
+      if (existing) {
+        return res.status(400).json({ error: 'Tên đăng nhập đã tồn tại trên hệ thống.' });
+      }
+      user.username = cleanUsername;
+    }
 
     // Logic: Không cho phép khóa tài khoản ngang cấp hoặc chính mình
     if (status === 'inactive') {
@@ -753,6 +829,7 @@ app.put('/api/admin/users/:id', adminAuth, async (req: Request, res: Response) =
     if (typeof email === 'string') user.email = email.trim().toLowerCase();
     if (status) user.status = status;
     await user.save();
+    await logAudit('UPDATE', 'User', `Cập nhật tài khoản: ${user.username}`, (req as any).user.username);
 
     // Sync to Teacher collection
     if (oldRole === 'teacher' && user.role !== 'teacher') {
@@ -806,6 +883,7 @@ app.delete('/api/admin/users/:id', adminAuth, async (req: Request, res: Response
     const userDisplayName = user.displayName;
 
     await UserModel.findByIdAndDelete(req.params.id);
+    await logAudit('DELETE', 'User', `Xóa tài khoản: ${user.username}`, reqUser.username);
 
     // Sync deletion to Teachers
     if (userRole === 'teacher') {
@@ -819,18 +897,90 @@ app.delete('/api/admin/users/:id', adminAuth, async (req: Request, res: Response
   }
 });
 
+app.post('/api/admin/users/bulk-delete', adminAuth, async (req: Request, res: Response) => {
+  try {
+    const { ids } = req.body;
+    if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: 'Dữ liệu không hợp lệ.' });
+    
+    // Check if trying to delete self or admin
+    const reqUser = (req as any).user;
+    const usersToDelete = await UserModel.find({ _id: { $in: ids } });
+    
+    for (const u of usersToDelete) {
+      if (u.username === reqUser.username) {
+        return res.status(400).json({ error: 'Không thể tự xóa tài khoản của chính mình trong danh sách hàng loạt.' });
+      }
+      if (u.username === 'admin') {
+        return res.status(400).json({ error: 'Không thể xóa tài khoản admin hệ thống.' });
+      }
+      if (u.role === 'admin' && reqUser.role === 'admin') {
+        return res.status(400).json({ error: 'Không thể xóa tài khoản của quản trị viên khác.' });
+      }
+    }
+
+    for (const user of usersToDelete) {
+      if (user.role === 'teacher') {
+        await TeacherModel.deleteOne({ name: user.displayName.trim() });
+        await ClassModel.updateMany({ teacherName: user.displayName.trim() }, { teacherName: 'Chưa phân công' });
+      }
+    }
+
+    await UserModel.deleteMany({ _id: { $in: ids } });
+    await logAudit('BULK_DELETE', 'User', `Xóa ${ids.length} tài khoản`, reqUser.username);
+    res.json({ message: 'Xóa hàng loạt thành công.' });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Lỗi xóa hàng loạt: ' + err.message });
+  }
+});
+
+app.post('/api/admin/users/bulk-update-status', adminAuth, async (req: Request, res: Response) => {
+  try {
+    const { ids, status } = req.body;
+    if (!Array.isArray(ids) || !ids.length || !['active', 'inactive'].includes(status)) {
+      return res.status(400).json({ error: 'Dữ liệu không hợp lệ.' });
+    }
+    
+    const reqUser = (req as any).user;
+    const usersToUpdate = await UserModel.find({ _id: { $in: ids } });
+    
+    for (const u of usersToUpdate) {
+      if (status === 'inactive' && u.username === reqUser.username) {
+        return res.status(400).json({ error: 'Không thể tự khóa tài khoản của chính mình.' });
+      }
+      if (status === 'inactive' && u.username === 'admin') {
+        return res.status(400).json({ error: 'Không thể khóa tài khoản admin hệ thống.' });
+      }
+    }
+    
+    await UserModel.updateMany({ _id: { $in: ids } }, { status });
+    await logAudit('BULK_UPDATE_STATUS', 'User', `Cập nhật trạng thái ${status} cho ${ids.length} tài khoản`, reqUser.username);
+    res.json({ message: 'Cập nhật trạng thái hàng loạt thành công.' });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Lỗi cập nhật hàng loạt: ' + err.message });
+  }
+});
+
 // API CRUD LỚP HỌC (Classes)
 app.get('/api/admin/classes', adminOrTeacherAuth, async (req: Request, res: Response) => {
   try {
     const { role, username } = (req as any).user;
-    let query = {};
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 10;
+    const search = req.query.search as string;
+
+    const query: any = {};
     if (role === 'teacher') {
       const user = await UserModel.findOne({ username });
       const teacherName = user ? user.displayName : '';
-      query = { teacherName };
+      query.teacherName = teacherName;
     }
-    const classes = await ClassModel.find(query);
-    res.json(classes);
+    
+    if (search) {
+      query.name = { $regex: search, $options: 'i' };
+    }
+
+    const response = await buildPaginatedResponse(ClassModel, query, page, limit);
+    res.json(response);
   } catch (err: any) {
     res.status(500).json({ error: 'Lỗi tải danh sách lớp học: ' + err.message });
   }
@@ -845,7 +995,8 @@ app.post('/api/admin/classes', adminOrTeacherAuth, async (req: Request, res: Res
     if (!name || !teacherName) {
       return res.status(400).json({ error: 'Vui lòng cung cấp tên lớp và tên giáo viên.' });
     }
-    const existing = await ClassModel.findOne({ name: name.trim() });
+    const cleanClassName = name.trim().toUpperCase();
+    const existing = await ClassModel.findOne({ name: { $regex: new RegExp(`^${name.trim()}$`, 'i') } });
     if (existing) {
       return res.status(400).json({ error: 'Tên lớp học đã tồn tại.' });
     }
@@ -853,10 +1004,11 @@ app.post('/api/admin/classes', adminOrTeacherAuth, async (req: Request, res: Res
     await createTeacherWithAccount(teacherName.trim(), newTeacherUsername, newTeacherPassword);
 
     const newClass = new ClassModel({
-      name: name.trim(),
+      name: cleanClassName,
       teacherName: teacherName.trim()
     });
     await newClass.save();
+    await logAudit('CREATE', 'Class', `Tạo lớp học: ${newClass.name}`, (req as any).user.username);
     res.json({ message: 'Tạo lớp học thành công.', data: newClass });
   } catch (err: any) {
     res.status(500).json({ error: 'Lỗi tạo lớp học: ' + err.message });
@@ -874,13 +1026,13 @@ app.put('/api/admin/classes/:id', adminOrTeacherAuth, async (req: Request, res: 
       return res.status(404).json({ error: 'Không tìm thấy lớp học.' });
     }
 
-    if (name && name.trim() !== cls.name) {
-      const existing = await ClassModel.findOne({ name: name.trim() });
+    if (name && name.trim().toUpperCase() !== cls.name.toUpperCase()) {
+      const existing = await ClassModel.findOne({ name: { $regex: new RegExp(`^${name.trim()}$`, 'i') } });
       if (existing) {
         return res.status(400).json({ error: 'Tên lớp học mới đã tồn tại.' });
       }
       const oldName = cls.name;
-      cls.name = name.trim();
+      cls.name = name.trim().toUpperCase();
       
       // Đồng bộ tên lớp mới cho học viên và các bài nộp cũ
       await StudentModel.updateMany({ className: oldName }, { className: cls.name });
@@ -891,6 +1043,7 @@ app.put('/api/admin/classes/:id', adminOrTeacherAuth, async (req: Request, res: 
       await createTeacherWithAccount(teacherName.trim(), newTeacherUsername, newTeacherPassword);
     }
     await cls.save();
+    await logAudit('UPDATE', 'Class', `Cập nhật lớp học: ${cls.name}`, (req as any).user.username);
     res.json({ message: 'Cập nhật lớp học thành công.', data: cls });
   } catch (err: any) {
     res.status(500).json({ error: 'Lỗi cập nhật lớp học: ' + err.message });
@@ -904,6 +1057,8 @@ app.delete('/api/admin/classes/:id', adminOrTeacherAuth, async (req: Request, re
       return res.status(404).json({ error: 'Không tìm thấy lớp học.' });
     }
 
+    await logAudit('DELETE', 'Class', `Xóa lớp học: ${cls.name}`, (req as any).user.username);
+
     // Xóa liên kết lớp của các học viên thuộc lớp này
     await StudentModel.updateMany({ className: cls.name }, { className: 'Chưa phân công lớp' });
 
@@ -913,11 +1068,36 @@ app.delete('/api/admin/classes/:id', adminOrTeacherAuth, async (req: Request, re
   }
 });
 
+app.post('/api/admin/classes/bulk-delete', adminOrTeacherAuth, async (req: Request, res: Response) => {
+  try {
+    const { ids } = req.body;
+    if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: 'Dữ liệu không hợp lệ.' });
+    
+    const classesToDelete = await ClassModel.find({ _id: { $in: ids } });
+    const classNames = classesToDelete.map(c => c.name);
+    await StudentModel.updateMany({ className: { $in: classNames } }, { className: 'Chưa phân công lớp' });
+    
+    await ClassModel.deleteMany({ _id: { $in: ids } });
+    await logAudit('BULK_DELETE', 'Class', `Xóa ${ids.length} lớp học`, (req as any).user.username);
+    res.json({ message: 'Xóa hàng loạt thành công.' });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Lỗi xóa hàng loạt: ' + err.message });
+  }
+});
+
 // API CRUD GIÁO VIÊN (Teachers)
 app.get('/api/admin/teachers', adminAuth, async (req: Request, res: Response) => {
   try {
-    const teachers = await TeacherModel.find({});
-    res.json(teachers);
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 10;
+    const search = req.query.search as string;
+
+    const query: any = {};
+    if (search) {
+      query.name = { $regex: search, $options: 'i' };
+    }
+    const response = await buildPaginatedResponse(TeacherModel, query, page, limit);
+    res.json(response);
   } catch (err: any) {
     res.status(500).json({ error: 'Lỗi tải danh sách giáo viên: ' + err.message });
   }
@@ -946,6 +1126,7 @@ app.post('/api/admin/teachers', adminAuth, async (req: Request, res: Response) =
     await createTeacherWithAccount(name.trim(), username, password);
     const savedTeacher = await TeacherModel.findOne({ name: name.trim() });
 
+    await logAudit('CREATE', 'Teacher', `Tạo giáo viên: ${savedTeacher?.name}`, (req as any).user.username);
     res.json({ message: 'Tạo giáo viên thành công.', data: savedTeacher });
   } catch (err: any) {
     res.status(500).json({ error: 'Lỗi tạo giáo viên: ' + err.message });
@@ -995,6 +1176,7 @@ app.put('/api/admin/teachers/:id', adminAuth, async (req: Request, res: Response
         }
       }
     }
+    await logAudit('UPDATE', 'Teacher', `Cập nhật giáo viên: ${teacher.name}`, (req as any).user.username);
     res.json({ message: 'Cập nhật giáo viên thành công.', data: teacher });
   } catch (err: any) {
     res.status(500).json({ error: 'Lỗi cập nhật giáo viên: ' + err.message });
@@ -1010,6 +1192,7 @@ app.delete('/api/admin/teachers/:id', adminAuth, async (req: Request, res: Respo
 
     const teacherName = teacher.name;
     await TeacherModel.findByIdAndDelete(req.params.id);
+    await logAudit('DELETE', 'Teacher', `Xóa giáo viên: ${teacherName}`, (req as any).user.username);
 
     // Optionally delete the corresponding user account
     if (useMongoDB) {
@@ -1025,27 +1208,60 @@ app.delete('/api/admin/teachers/:id', adminAuth, async (req: Request, res: Respo
   }
 });
 
+app.post('/api/admin/teachers/bulk-delete', adminAuth, async (req: Request, res: Response) => {
+  try {
+    const { ids } = req.body;
+    if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: 'Dữ liệu không hợp lệ.' });
+    
+    const teachersToDelete = await TeacherModel.find({ _id: { $in: ids } });
+    const teacherNames = teachersToDelete.map(t => t.name);
+    
+    if (useMongoDB) {
+      await UserModel.deleteMany({ displayName: { $in: teacherNames }, role: 'teacher' });
+    }
+    await ClassModel.updateMany({ teacherName: { $in: teacherNames } }, { teacherName: 'Chưa phân công' });
+    
+    await TeacherModel.deleteMany({ _id: { $in: ids } });
+    await logAudit('BULK_DELETE', 'Teacher', `Xóa ${ids.length} giáo viên`, (req as any).user.username);
+    res.json({ message: 'Xóa hàng loạt thành công.' });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Lỗi xóa hàng loạt: ' + err.message });
+  }
+});
+
 // API CRUD HỌC VIÊN (Students)
 app.get('/api/admin/students', adminOrTeacherAuth, async (req: Request, res: Response) => {
   try {
     const { role, username } = (req as any).user;
-    let query = {};
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 10;
+    const search = req.query.search as string;
+
+    const query: any = {};
     if (role === 'teacher') {
       const user = await UserModel.findOne({ username });
       const teacherName = user ? user.displayName : '';
       const teacherClasses = await ClassModel.find({ teacherName });
       const classNames = teacherClasses.map(c => c.name);
-      query = { className: { $in: classNames } };
+      query.className = { $in: classNames };
     }
-    const students = await StudentModel.find(query).lean();
+    if (search) {
+      query.$or = [
+        { name: { $regex: search, $options: 'i' } },
+        { className: { $regex: search, $options: 'i' } },
+        { studentCode: { $regex: search, $options: 'i' } }
+      ];
+    }
     
-    // Đếm số lần nộp bài của mỗi học viên
-    const studentsWithCount = await Promise.all(students.map(async (student: any) => {
-      const submissionCount = await SubmissionModel.countDocuments({ fullName: student.name, className: student.className });
-      return { ...student, submissionCount };
+    const response = await buildPaginatedResponse(StudentModel, query, page, limit);
+    
+    response.data = await Promise.all(response.data.map(async (student: any) => {
+      const studentObj = student.toObject ? student.toObject() : student;
+      const submissionCount = await SubmissionModel.countDocuments({ fullName: studentObj.name, className: studentObj.className });
+      return { ...studentObj, submissionCount };
     }));
 
-    res.json(studentsWithCount);
+    res.json(response);
   } catch (err: any) {
     res.status(500).json({ error: 'Lỗi tải danh sách học viên: ' + err.message });
   }
@@ -1081,6 +1297,32 @@ app.get('/api/leaderboard', async (req: Request, res: Response) => {
   }
 });
 
+app.post('/api/admin/students/bulk-update-status', adminOrTeacherAuth, async (req: Request, res: Response) => {
+  try {
+    const { ids, status } = req.body;
+    if (!Array.isArray(ids) || !ids.length || !['active', 'inactive'].includes(status)) {
+      return res.status(400).json({ error: 'Dữ liệu không hợp lệ.' });
+    }
+    await StudentModel.updateMany({ _id: { $in: ids } }, { status });
+    await logAudit('BULK_UPDATE', 'Student', `Cập nhật trạng thái ${status} cho ${ids.length} học viên`, (req as any).user.username);
+    res.json({ message: 'Cập nhật trạng thái hàng loạt thành công.' });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Lỗi cập nhật hàng loạt: ' + err.message });
+  }
+});
+
+app.post('/api/admin/students/bulk-delete', adminOrTeacherAuth, async (req: Request, res: Response) => {
+  try {
+    const { ids } = req.body;
+    if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: 'Dữ liệu không hợp lệ.' });
+    await StudentModel.deleteMany({ _id: { $in: ids } });
+    await logAudit('BULK_DELETE', 'Student', `Xóa ${ids.length} học viên`, (req as any).user.username);
+    res.json({ message: 'Xóa hàng loạt thành công.' });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Lỗi xóa hàng loạt: ' + err.message });
+  }
+});
+
 app.post('/api/admin/students', adminOrTeacherAuth, async (req: Request, res: Response) => {
   try {
     const name = sanitize(req.body.name);
@@ -1100,24 +1342,28 @@ app.post('/api/admin/students', adminOrTeacherAuth, async (req: Request, res: Re
     }
 
     // Auto-create class if not exists
+    let finalClassName = className.trim().toUpperCase();
     if (useMongoDB) {
-      const classExisting = await ClassModel.findOne({ name: className.trim() });
+      const classExisting = await ClassModel.findOne({ name: { $regex: new RegExp(`^${className.trim()}$`, 'i') } });
       if (!classExisting) {
         const newClass = new ClassModel({
-          name: className.trim(),
+          name: finalClassName,
           teacherName: 'Chưa phân công'
         });
         await newClass.save();
+      } else {
+        finalClassName = classExisting.name;
       }
     }
 
     const newStudent = new StudentModel({
       name: name.trim(),
-      className: className.trim(),
+      className: finalClassName,
       studentCode: studentCode.trim(),
       maxUploadSize: maxUploadSize
     });
     await newStudent.save();
+    await logAudit('CREATE', 'Student', `Tạo học viên: ${newStudent.name}`, (req as any).user.username);
     res.json({ message: 'Tạo học viên thành công.', data: newStudent });
   } catch (err: any) {
     res.status(500).json({ error: 'Lỗi tạo học viên: ' + err.message });
@@ -1145,19 +1391,22 @@ app.put('/api/admin/students/:id', adminOrTeacherAuth, async (req: Request, res:
     }
     if (name) student.name = name.trim();
     if (className) {
-      student.className = className.trim();
+      let finalClassName = className.trim().toUpperCase();
 
       // Auto-create class if not exists
       if (useMongoDB) {
-        const classExisting = await ClassModel.findOne({ name: className.trim() });
+        const classExisting = await ClassModel.findOne({ name: { $regex: new RegExp(`^${className.trim()}$`, 'i') } });
         if (!classExisting) {
           const newClass = new ClassModel({
-            name: className.trim(),
+            name: finalClassName,
             teacherName: 'Chưa phân công'
           });
           await newClass.save();
+        } else {
+          finalClassName = classExisting.name;
         }
       }
+      student.className = finalClassName;
     }
     
     if (userRole === 'admin' && req.body.maxUploadSize !== undefined) {
@@ -1169,6 +1418,7 @@ app.put('/api/admin/students/:id', adminOrTeacherAuth, async (req: Request, res:
     }
 
     await student.save();
+    await logAudit('UPDATE', 'Student', `Cập nhật học viên: ${student.name}`, (req as any).user.username);
     res.json({ message: 'Cập nhật học viên thành công.', data: student });
   } catch (err: any) {
     res.status(500).json({ error: 'Lỗi cập nhật học viên: ' + err.message });
@@ -1181,6 +1431,7 @@ app.delete('/api/admin/students/:id', adminOrTeacherAuth, async (req: Request, r
     if (!student) {
       return res.status(404).json({ error: 'Không tìm thấy học viên.' });
     }
+    await logAudit('DELETE', 'Student', `Xóa học viên: ${student.name}`, (req as any).user.username);
     res.json({ message: 'Xóa học viên thành công.' });
   } catch (err: any) {
     res.status(500).json({ error: 'Lỗi xóa học viên: ' + err.message });
@@ -1191,18 +1442,40 @@ app.delete('/api/admin/students/:id', adminOrTeacherAuth, async (req: Request, r
 app.get('/api/admin/submissions', adminOrTeacherAuth, async (req: Request, res: Response) => {
   try {
     const { role, username } = (req as any).user;
-    let query = {};
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 10;
+    const search = req.query.search as string;
+
+    const query: any = {};
     if (role === 'teacher') {
       const user = await UserModel.findOne({ username });
       const teacherName = user ? user.displayName : '';
-      const teacherClasses = await ClassModel.find({ teacherName });
-      const classNames = teacherClasses.map(c => c.name);
-      query = { className: { $in: classNames } };
+      query.teacher = teacherName;
     }
-    const submissions = await SubmissionModel.find(query).sort({ createdAt: -1 });
-    res.json(submissions);
+    if (search) {
+      query.$or = [
+        { fullName: { $regex: search, $options: 'i' } },
+        { className: { $regex: search, $options: 'i' } },
+        { fileName: { $regex: search, $options: 'i' } }
+      ];
+    }
+    const response = await buildPaginatedResponse(SubmissionModel, query, page, limit, { createdAt: -1 });
+    res.json(response);
   } catch (err: any) {
     res.status(500).json({ error: 'Lỗi tải danh sách bài nộp: ' + err.message });
+  }
+});
+
+app.post('/api/admin/submissions/bulk-delete', adminAuth, async (req: Request, res: Response) => {
+  try {
+    const { ids } = req.body;
+    if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: 'Dữ liệu không hợp lệ.' });
+    
+    await SubmissionModel.deleteMany({ _id: { $in: ids } });
+    await logAudit('BULK_DELETE', 'Submission', `Xóa ${ids.length} bản ghi bài nộp`, (req as any).user.username);
+    res.json({ message: 'Xóa hàng loạt thành công.' });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Lỗi xóa hàng loạt: ' + err.message });
   }
 });
 
@@ -1251,6 +1524,7 @@ app.delete('/api/admin/submissions/:id', adminAuth, async (req: Request, res: Re
       }
     }
 
+    await logAudit('DELETE', 'Submission', `Xóa bài nộp: ${submission.fileName}`, (req as any).user.username);
     res.json({ message: 'Xóa bài nộp thành công.' });
   } catch (err: any) {
     res.status(500).json({ error: 'Lỗi xóa bài nộp: ' + err.message });
@@ -1652,6 +1926,39 @@ app.post('/api/upload', (req: Request, res: Response, next: any) => {
     } else {
       res.status(500).json({ error: error.message || 'Internal server error during upload.' });
     }
+  }
+});
+
+// API Audit Logs
+app.get('/api/admin/audit-logs', adminAuth, async (req: Request, res: Response) => {
+  try {
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 10;
+    const response = await buildPaginatedResponse(AuditLogModel, {}, page, limit, { createdAt: -1 });
+    res.json(response);
+  } catch (err: any) {
+    res.status(500).json({ error: 'Lỗi tải nhật ký hoạt động: ' + err.message });
+  }
+});
+
+// API Thống kê Dashboard
+app.get('/api/admin/dashboard-stats', adminOrTeacherAuth, async (req: Request, res: Response) => {
+  try {
+    const totalUsers = await UserModel.countDocuments({});
+    const totalTeachers = await TeacherModel.countDocuments({});
+    const totalClasses = await ClassModel.countDocuments({});
+    const totalStudents = await StudentModel.countDocuments({});
+    const totalSubmissions = await SubmissionModel.countDocuments({});
+    
+    res.json({
+      users: totalUsers,
+      teachers: totalTeachers,
+      classes: totalClasses,
+      students: totalStudents,
+      submissions: totalSubmissions
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Lỗi tải thống kê: ' + err.message });
   }
 });
 

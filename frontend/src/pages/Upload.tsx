@@ -100,6 +100,23 @@ function Upload() {
   }, [previewFile]);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (isUploading) {
+        e.preventDefault();
+        e.returnValue = 'Bạn có chắc chắn muốn rời khỏi trang? Quá trình tải bài lên sẽ bị hủy.';
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
+  }, [isUploading]);
 
   // States for metadata dropdown options, dynamically loaded from backend/database
   const [teachersList, setTeachersList] = useState<string[]>([]);
@@ -375,11 +392,15 @@ function Upload() {
       formData.append('files', file);
     });
 
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
+
     try {
       const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
       const response = await fetch(`${API_BASE_URL}/api/upload`, {
         method: 'POST',
         body: formData,
+        signal: abortController.signal
       });
 
       if (!response.ok) {
@@ -450,11 +471,17 @@ function Upload() {
         }
       }
     } catch (error: any) {
+      if (error.name === 'AbortError') {
+        setUploadStatus('error');
+        setErrorMessage('Quá trình tải lên đã bị hủy.');
+        return;
+      }
       setUploadStatus('error');
       setErrorMessage(error.message || 'Không thể kết nối đến server backend. Vui lòng kiểm tra xem server đã chạy chưa.');
       console.error('Upload error:', error);
     } finally {
       setIsUploading(false);
+      abortControllerRef.current = null;
     }
   };
 
@@ -716,6 +743,7 @@ function Upload() {
                         <button
                           type="button"
                           onClick={() => handleRemoveFile(idx)}
+                          disabled={isUploading}
                           style={{
                             background: 'none',
                             border: 'none',

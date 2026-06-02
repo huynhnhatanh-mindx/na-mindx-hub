@@ -41,6 +41,13 @@ export default function Submissions() {
         }
       });
       if (!response.ok) {
+        if (response.status === 401) {
+          localStorage.removeItem('token');
+          localStorage.removeItem('user');
+          window.dispatchEvent(new Event('storage'));
+          window.location.href = '/login';
+          return;
+        }
         let errMsg = 'Không thể tải lịch sử nộp bài.';
         try {
           const errData = await response.json();
@@ -79,7 +86,16 @@ export default function Submissions() {
           }
         })
           .then(res => {
-            if (!res.ok) throw new Error('Không thể tải lịch sử nộp bài.');
+            if (!res.ok) {
+              if (res.status === 401) {
+                localStorage.removeItem('token');
+                localStorage.removeItem('user');
+                window.dispatchEvent(new Event('storage'));
+                window.location.href = '/login';
+                throw new Error('Phiên đăng nhập hết hạn.');
+              }
+              throw new Error('Không thể tải lịch sử nộp bài.');
+            }
             return res.json();
           })
           .then(resData => {
@@ -425,7 +441,7 @@ export default function Submissions() {
           {!isLoading && !error && hasQueried && (
             <div style={{ overflowX: 'auto', width: '100%' }}>
               {filteredSubmissions.length > 0 ? (
-                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: '800px' }}>
+                <table className="responsive-table" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
                   <thead>
                     <tr style={{ borderBottom: '1px solid var(--card-border)', color: 'var(--text-primary)', fontSize: '0.9rem', fontWeight: '700' }}>
                       <th style={{ padding: '1rem' }}>Học Viên</th>

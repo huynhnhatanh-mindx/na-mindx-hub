@@ -77,9 +77,16 @@ function Header() {
 
         {/* Navigation Menu */}
         <ul className={`nav-menu ${isMobileMenuOpen ? 'open' : ''}`}>
+          {(!user || user.role !== 'admin') && (
+            <li>
+              <NavLink to="/" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`} end>
+                Trang chủ
+              </NavLink>
+            </li>
+          )}
           <li>
-            <NavLink to="/" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`} end>
-              Trang chủ
+            <NavLink to="/changelog" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
+              Phiên bản
             </NavLink>
           </li>
           {!user && (
@@ -89,12 +96,7 @@ function Header() {
               </NavLink>
             </li>
           )}
-          <li>
-            <NavLink to="/leaderboard" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-              Bảng xếp hạng
-            </NavLink>
-          </li>
-          {(!user || user.role !== 'admin') && (
+          {!user && (
             <li>
               <NavLink to="/submissions" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
                 Lịch sử nộp
