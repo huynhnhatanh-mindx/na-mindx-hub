@@ -1,4 +1,4 @@
-import React from 'react';
+
 import changelogData from '../data/changelog.json';
 
 export default function Changelog() {
