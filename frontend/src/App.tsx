@@ -8,6 +8,7 @@ import Login from './pages/Login';
 import AdminDashboard from './pages/AdminDashboard';
 import Settings from './pages/Settings';
 import Changelog from './pages/Changelog';
+import PresentationArranger from './pages/PresentationArranger';
 import './App.css';
 
 // Route Guard component to prevent unauthorized direct URL navigation
@@ -45,6 +46,7 @@ function App() {
         <Route element={<ProtectedRoute allowedRoles={['admin', 'teacher']} />}>
           <Route path="admin" element={<AdminDashboard />} />
           <Route path="settings" element={<Settings />} />
+          <Route path="presentation-arranger" element={<PresentationArranger />} />
         </Route>
       </Route>
     </Routes>

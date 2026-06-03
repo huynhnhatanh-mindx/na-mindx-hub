@@ -104,11 +104,18 @@ function Header() {
             </li>
           )}
           {user && (user.role === 'admin' || user.role === 'teacher') && (
-            <li>
-              <NavLink to="/admin" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-                {user.role === 'admin' ? 'Quản trị' : 'Quản lý'}
-              </NavLink>
-            </li>
+            <>
+              <li>
+                <NavLink to="/admin" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
+                  {user.role === 'admin' ? 'Quản trị' : 'Quản lý'}
+                </NavLink>
+              </li>
+              <li>
+                <NavLink to="/presentation-arranger" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
+                  Xếp lịch thuyết trình
+                </NavLink>
+              </li>
+            </>
           )}
 
         </ul>

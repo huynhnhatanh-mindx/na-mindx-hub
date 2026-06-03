@@ -1277,12 +1277,27 @@ app.get('/api/admin/students', adminOrTeacherAuth, async (req: Request, res: Res
     const search = req.query.search as string;
 
     const query: any = {};
+    const classNameFilter = req.query.className as string;
+
     if (role === 'teacher') {
       const user = await UserModel.findOne({ username });
       const teacherName = user ? user.displayName : '';
       const teacherClasses = await ClassModel.find({ teacherName });
       const classNames = teacherClasses.map(c => c.name);
-      query.className = { $in: classNames };
+      
+      if (classNameFilter) {
+        if (classNames.includes(classNameFilter.trim())) {
+          query.className = classNameFilter.trim();
+        } else {
+          return res.status(403).json({ error: 'Bạn không có quyền truy cập dữ liệu lớp này.' });
+        }
+      } else {
+        query.className = { $in: classNames };
+      }
+    } else {
+      if (classNameFilter) {
+        query.className = classNameFilter.trim();
+      }
     }
     if (search) {
       query.$or = [
