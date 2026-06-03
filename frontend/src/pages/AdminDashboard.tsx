@@ -1398,7 +1398,7 @@ export default function AdminDashboard() {
                           type="password"
                           value={newTeacherPassword}
                           onChange={(e) => setNewTeacherPassword(e.target.value)}
-                          placeholder="Để trống nếu lấy mặc định là 123456..."
+                          placeholder={`Để trống nếu lấy mặc định là Mindx@${new Date().getFullYear()}...`}
                           className="form-input-field"
                           autoComplete="new-password"
                         />
@@ -1445,7 +1445,7 @@ export default function AdminDashboard() {
                       type="password"
                       value={newTeacherPassword}
                       onChange={(e) => setNewTeacherPassword(e.target.value)}
-                      placeholder={editingId ? 'Mật khẩu mới...' : 'Để trống nếu lấy mặc định là 123456...'}
+                      placeholder={editingId ? 'Mật khẩu mới...' : `Để trống nếu lấy mặc định là Mindx@${new Date().getFullYear()}...`}
                       className="form-input-field"
                       autoComplete="new-password"
                     />

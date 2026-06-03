@@ -174,7 +174,7 @@ async function createTeacherWithAccount(
 
     const newUser = new UserModel({
       username: finalUsername,
-      password: password && password.trim() !== '' ? hashPassword(password) : hashPassword('123456'),
+      password: password && password.trim() !== '' ? hashPassword(password) : hashPassword(`Mindx@${new Date().getFullYear()}`),
       role: 'teacher',
       displayName: displayName && displayName.trim() !== '' ? displayName.trim() : nameClean
     });
