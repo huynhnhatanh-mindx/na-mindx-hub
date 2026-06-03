@@ -31,7 +31,14 @@ const TeacherModel = mongoose.model('Teacher', teacherSchema);
 
 const classSchema = new mongoose.Schema({
   name: { type: String, required: true, unique: true },
-  teacherName: { type: String, required: true }
+  teacherName: { type: String, required: true },
+  startDate: { type: Date },
+  startTime: { type: String, default: "08:00" },
+  endTime: { type: String, default: "10:00" },
+  checkpoint1Deadline: { type: Date },
+  checkpoint2Deadline: { type: Date },
+  finalProjectDeadline: { type: Date },
+  allowLateUpload: { type: Boolean, default: false }
 });
 const ClassModel = mongoose.model('Class', classSchema);
 
@@ -122,6 +129,29 @@ function normalizeUsername(name: string): string {
     .replace(/[^a-zA-Z0-9]/g, '') // Remove spaces and special chars
     .toLowerCase()
     .trim();
+}
+
+async function generateStudentCode(name: string): Promise<string> {
+  const cleanName = name.trim().replace(/\s+/g, ' ');
+  const parts = cleanName.split(' ');
+  if (parts.length === 0 || !parts[0]) return 'hv';
+  const firstName = parts[parts.length - 1];
+  const otherParts = parts.slice(0, parts.length - 1);
+  
+  const cleanFirstName = normalizeUsername(firstName);
+  const cleanOtherInitials = otherParts
+    .map(word => normalizeUsername(word)[0] || '')
+    .join('');
+    
+  const baseCode = cleanFirstName + cleanOtherInitials;
+  
+  let finalCode = baseCode || 'hv';
+  let counter = 1;
+  while (await StudentModel.findOne({ studentCode: finalCode })) {
+    finalCode = `${baseCode}${counter}`;
+    counter++;
+  }
+  return finalCode;
 }
 
 function escapeRegExp(string: string): string {
@@ -1044,6 +1074,15 @@ app.post('/api/admin/classes', adminOrTeacherAuth, async (req: Request, res: Res
     const teacherName = sanitize(req.body.teacherName);
     const newTeacherUsername = sanitize(req.body.newTeacherUsername);
     const newTeacherPassword = sanitize(req.body.newTeacherPassword);
+
+    const startDate = req.body.startDate ? new Date(req.body.startDate) : undefined;
+    const startTime = sanitize(req.body.startTime) || "08:00";
+    const endTime = sanitize(req.body.endTime) || "10:00";
+    const checkpoint1Deadline = req.body.checkpoint1Deadline ? new Date(req.body.checkpoint1Deadline) : undefined;
+    const checkpoint2Deadline = req.body.checkpoint2Deadline ? new Date(req.body.checkpoint2Deadline) : undefined;
+    const finalProjectDeadline = req.body.finalProjectDeadline ? new Date(req.body.finalProjectDeadline) : undefined;
+    const allowLateUpload = req.body.allowLateUpload === true;
+
     if (!name || !teacherName) {
       return res.status(400).json({ error: 'Vui lòng cung cấp tên lớp và tên giáo viên.' });
     }
@@ -1057,7 +1096,14 @@ app.post('/api/admin/classes', adminOrTeacherAuth, async (req: Request, res: Res
 
     const newClass = new ClassModel({
       name: cleanClassName,
-      teacherName: teacherName.trim()
+      teacherName: teacherName.trim(),
+      startDate,
+      startTime,
+      endTime,
+      checkpoint1Deadline,
+      checkpoint2Deadline,
+      finalProjectDeadline,
+      allowLateUpload
     });
     await newClass.save();
     await logAudit('CREATE', 'Class', `Tạo lớp học: ${newClass.name} (giáo viên: ${teacherName.trim()})`, (req as any).user.username, (req as any).user.role);
@@ -1073,6 +1119,15 @@ app.put('/api/admin/classes/:id', adminOrTeacherAuth, async (req: Request, res: 
     const teacherName = sanitize(req.body.teacherName);
     const newTeacherUsername = sanitize(req.body.newTeacherUsername);
     const newTeacherPassword = sanitize(req.body.newTeacherPassword);
+
+    const startDate = req.body.startDate === null || req.body.startDate === '' ? null : (req.body.startDate ? new Date(req.body.startDate) : undefined);
+    const startTime = req.body.startTime !== undefined ? sanitize(req.body.startTime) : undefined;
+    const endTime = req.body.endTime !== undefined ? sanitize(req.body.endTime) : undefined;
+    const checkpoint1Deadline = req.body.checkpoint1Deadline === null || req.body.checkpoint1Deadline === '' ? null : (req.body.checkpoint1Deadline ? new Date(req.body.checkpoint1Deadline) : undefined);
+    const checkpoint2Deadline = req.body.checkpoint2Deadline === null || req.body.checkpoint2Deadline === '' ? null : (req.body.checkpoint2Deadline ? new Date(req.body.checkpoint2Deadline) : undefined);
+    const finalProjectDeadline = req.body.finalProjectDeadline === null || req.body.finalProjectDeadline === '' ? null : (req.body.finalProjectDeadline ? new Date(req.body.finalProjectDeadline) : undefined);
+    const allowLateUpload = req.body.allowLateUpload !== undefined ? req.body.allowLateUpload === true : undefined;
+
     const cls = await ClassModel.findById(req.params.id);
     if (!cls) {
       return res.status(404).json({ error: 'Không tìm thấy lớp học.' });
@@ -1094,6 +1149,15 @@ app.put('/api/admin/classes/:id', adminOrTeacherAuth, async (req: Request, res: 
       cls.teacherName = teacherName.trim();
       await createTeacherWithAccount(teacherName.trim(), newTeacherUsername, newTeacherPassword, undefined, (req as any).user.username, (req as any).user.role);
     }
+
+    if (startDate !== undefined) (cls as any).startDate = startDate;
+    if (startTime !== undefined) (cls as any).startTime = startTime;
+    if (endTime !== undefined) (cls as any).endTime = endTime;
+    if (checkpoint1Deadline !== undefined) (cls as any).checkpoint1Deadline = checkpoint1Deadline;
+    if (checkpoint2Deadline !== undefined) (cls as any).checkpoint2Deadline = checkpoint2Deadline;
+    if (finalProjectDeadline !== undefined) (cls as any).finalProjectDeadline = finalProjectDeadline;
+    if (allowLateUpload !== undefined) (cls as any).allowLateUpload = allowLateUpload;
+
     await cls.save();
     await logAudit('UPDATE', 'Class', `Cập nhật lớp học: ${cls.name}`, (req as any).user.username, (req as any).user.role);
     res.json({ message: 'Cập nhật lớp học thành công.', data: cls });
@@ -1400,12 +1464,18 @@ app.post('/api/admin/students', adminOrTeacherAuth, async (req: Request, res: Re
       ? Number(req.body.maxUploadSize)
       : 20;
 
-    if (!name || !className || !studentCode) {
-      return res.status(400).json({ error: 'Vui lòng nhập đầy đủ tên học viên, lớp học và mã tra cứu.' });
+    if (!name || !className) {
+      return res.status(400).json({ error: 'Vui lòng nhập đầy đủ tên học viên và lớp học.' });
     }
-    const codeExisting = await StudentModel.findOne({ studentCode: studentCode.trim() });
-    if (codeExisting) {
-      return res.status(400).json({ error: 'Mã tra cứu học viên đã tồn tại.' });
+
+    let finalStudentCode = studentCode && studentCode.trim() !== '' ? studentCode.trim() : '';
+    if (!finalStudentCode) {
+      finalStudentCode = await generateStudentCode(name);
+    } else {
+      const codeExisting = await StudentModel.findOne({ studentCode: finalStudentCode });
+      if (codeExisting) {
+        return res.status(400).json({ error: 'Mã tra cứu học viên đã tồn tại.' });
+      }
     }
 
     // Auto-create class if not exists
@@ -1426,7 +1496,7 @@ app.post('/api/admin/students', adminOrTeacherAuth, async (req: Request, res: Re
     const newStudent = new StudentModel({
       name: name.trim(),
       className: finalClassName,
-      studentCode: studentCode.trim(),
+      studentCode: finalStudentCode,
       maxUploadSize: maxUploadSize
     });
     await newStudent.save();
@@ -1449,12 +1519,17 @@ app.put('/api/admin/students/:id', adminOrTeacherAuth, async (req: Request, res:
     if (!student) {
       return res.status(404).json({ error: 'Không tìm thấy học viên.' });
     }
-    if (studentCode && studentCode.trim() !== student.studentCode) {
-      const codeExisting = await StudentModel.findOne({ studentCode: studentCode.trim() });
+    let finalStudentCode = studentCode && studentCode.trim() !== '' ? studentCode.trim() : '';
+    if (!finalStudentCode) {
+      finalStudentCode = await generateStudentCode(name || student.name);
+    }
+    
+    if (finalStudentCode !== student.studentCode) {
+      const codeExisting = await StudentModel.findOne({ studentCode: finalStudentCode });
       if (codeExisting) {
         return res.status(400).json({ error: 'Mã tra cứu học viên mới đã tồn tại.' });
       }
-      student.studentCode = studentCode.trim();
+      student.studentCode = finalStudentCode;
     }
     if (name) student.name = name.trim();
     if (className) {
@@ -1766,6 +1841,65 @@ app.post('/api/upload', (req: Request, res: Response, next: any) => {
       return res.status(400).json({
         error: `Tổng dung lượng các tệp tin tải lên (${totalSizeMB}MB) vượt quá giới hạn cho phép của học viên ${fullName} (tối đa ${maxUploadSizeMB}MB).`
       });
+    }
+
+    // Check deadline for class submissions
+    if (useMongoDB && className !== 'N/A') {
+      const cls = await ClassModel.findOne({ name: { $regex: new RegExp(`^${escapeRegExp(className)}$`, 'i') } });
+      if (cls) {
+        const stage = sanitize(req.body.stage || 'N/A').trim();
+        const stageLower = stage.toLowerCase();
+        // Ignore theory lessons
+        const isTheory = stageLower.includes('ly thuyet') || stageLower.includes('lý thuyết') || stageLower.includes('theory');
+        
+        if (!isTheory) {
+          let deadline: Date | null = null;
+          if (stageLower.includes('checkpoint 1')) {
+            if (cls.checkpoint1Deadline) {
+              deadline = new Date(cls.checkpoint1Deadline);
+            } else if (cls.startDate) {
+              deadline = new Date(cls.startDate);
+              deadline.setDate(deadline.getDate() + 28);
+              const [hStr, mStr] = (cls.endTime || "10:00").split(":");
+              deadline.setHours(parseInt(hStr, 10) || 10, parseInt(mStr, 10) || 0, 0, 0);
+            }
+          } else if (stageLower.includes('checkpoint 2')) {
+            if (cls.checkpoint2Deadline) {
+              deadline = new Date(cls.checkpoint2Deadline);
+            } else if (cls.startDate) {
+              deadline = new Date(cls.startDate);
+              deadline.setDate(deadline.getDate() + 56);
+              const [hStr, mStr] = (cls.endTime || "10:00").split(":");
+              deadline.setHours(parseInt(hStr, 10) || 10, parseInt(mStr, 10) || 0, 0, 0);
+            }
+          } else if (stageLower.includes('san pham cuoi khoa') || stageLower.includes('sản phẩm cuối khóa')) {
+            if (cls.finalProjectDeadline) {
+              deadline = new Date(cls.finalProjectDeadline);
+            } else if (cls.startDate) {
+              deadline = new Date(cls.startDate);
+              deadline.setDate(deadline.getDate() + 85);
+              const [hStr, mStr] = (cls.endTime || "10:00").split(":");
+              deadline.setHours(parseInt(hStr, 10) || 10, parseInt(mStr, 10) || 0, 0, 0);
+            }
+          }
+
+          if (deadline && new Date() > deadline && !cls.allowLateUpload) {
+            // Delete temporary files written by Multer
+            for (const f of files) {
+              if (fs.existsSync(f.path)) {
+                fs.unlinkSync(f.path);
+              }
+            }
+            const pad = (n: number) => n.toString().padStart(2, '0');
+            const dateStr = `${pad(deadline.getDate())}/${pad(deadline.getMonth() + 1)}/${deadline.getFullYear()}`;
+            const timeStr = `${pad(deadline.getHours())}:${pad(deadline.getMinutes())}`;
+            const formattedDeadline = `${timeStr} ngày ${dateStr}`;
+            return res.status(403).json({
+              error: `Đã quá hạn nộp bài cho giai đoạn này (${stage}). Hạn chót là: ${formattedDeadline}. Cổng nộp bài đã đóng.`
+            });
+          }
+        }
+      }
     }
 
     // Thiết lập HTTP Header cho luồng Server-Sent Events (SSE) để duy trì kết nối chống Timeout

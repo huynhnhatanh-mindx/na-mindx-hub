@@ -16,6 +16,13 @@ interface ClassData {
   name: string;
   teacherName: string;
   studentCount?: number;
+  startDate?: string;
+  startTime?: string;
+  endTime?: string;
+  checkpoint1Deadline?: string;
+  checkpoint2Deadline?: string;
+  finalProjectDeadline?: string;
+  allowLateUpload?: boolean;
 }
 
 interface TeacherData {
@@ -93,6 +100,13 @@ export default function AdminDashboard() {
   const [teachers, setTeachers] = useState<string[]>([]);
   const [isNewTeacher, setIsNewTeacher] = useState(false);
   const [newTeacherName, setNewTeacherName] = useState('');
+  const [classStartDate, setClassStartDate] = useState('');
+  const [classStartTime, setClassStartTime] = useState('08:00');
+  const [classEndTime, setClassEndTime] = useState('10:00');
+  const [classCheckpoint1Deadline, setClassCheckpoint1Deadline] = useState('');
+  const [classCheckpoint2Deadline, setClassCheckpoint2Deadline] = useState('');
+  const [classFinalProjectDeadline, setClassFinalProjectDeadline] = useState('');
+  const [classAllowLateUpload, setClassAllowLateUpload] = useState(false);
 
   // Student form states
   const [studentName, setStudentName] = useState('');
@@ -350,6 +364,13 @@ export default function AdminDashboard() {
     setNewTeacherPassword('');
     setClassName('');
     setClassTeacher(currentUser?.role === 'teacher' ? currentUser.displayName : '');
+    setClassStartDate('');
+    setClassStartTime('08:00');
+    setClassEndTime('10:00');
+    setClassCheckpoint1Deadline('');
+    setClassCheckpoint2Deadline('');
+    setClassFinalProjectDeadline('');
+    setClassAllowLateUpload(false);
     setStudentName('');
     setStudentClass('');
     setStudentCode('');
@@ -380,6 +401,13 @@ export default function AdminDashboard() {
       setNewTeacherPassword('');
     } else if (activeTab === 'classes') {
       setClassName(item.name);
+      setClassStartDate(toLocalYYYYMMDD(item.startDate));
+      setClassStartTime(item.startTime || '08:00');
+      setClassEndTime(item.endTime || '10:00');
+      setClassCheckpoint1Deadline(toLocalYYYYMMDDTHHMM(item.checkpoint1Deadline));
+      setClassCheckpoint2Deadline(toLocalYYYYMMDDTHHMM(item.checkpoint2Deadline));
+      setClassFinalProjectDeadline(toLocalYYYYMMDDTHHMM(item.finalProjectDeadline));
+      setClassAllowLateUpload(!!item.allowLateUpload);
       
       const teacherExists = teachers.includes(item.teacherName);
       if (teacherExists || !item.teacherName) {
@@ -472,7 +500,14 @@ export default function AdminDashboard() {
         name: className,
         teacherName: isNewTeacher ? newTeacherName.trim() : classTeacher,
         newTeacherUsername: isNewTeacher ? newTeacherUsername.trim() : undefined,
-        newTeacherPassword: isNewTeacher ? newTeacherPassword.trim() : undefined
+        newTeacherPassword: isNewTeacher ? newTeacherPassword.trim() : undefined,
+        startDate: classStartDate || null,
+        startTime: classStartTime || "08:00",
+        endTime: classEndTime || "10:00",
+        checkpoint1Deadline: classCheckpoint1Deadline || null,
+        checkpoint2Deadline: classCheckpoint2Deadline || null,
+        finalProjectDeadline: classFinalProjectDeadline || null,
+        allowLateUpload: classAllowLateUpload
       };
     } else if (activeTab === 'students') {
       url = `${API_BASE_URL}/api/admin/students${editingId ? `/${editingId}` : ''}`;
@@ -573,6 +608,22 @@ export default function AdminDashboard() {
     } catch (err: any) {
       alert(err.message || 'Đã xảy ra lỗi khi xóa.');
     }
+  };
+
+  const toLocalYYYYMMDD = (dateStr: string | Date | undefined | null) => {
+    if (!dateStr) return '';
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return '';
+    const pad = (n: number) => n.toString().padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  };
+
+  const toLocalYYYYMMDDTHHMM = (dateStr: string | Date | undefined | null) => {
+    if (!dateStr) return '';
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return '';
+    const pad = (n: number) => n.toString().padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
   };
 
   const formatDate = (dateStr: string) => {
@@ -1079,6 +1130,8 @@ export default function AdminDashboard() {
                       <th style={{ padding: '1rem', width: '40px' }}><input type="checkbox" onChange={(e) => handleSelectAll(e, classes)} checked={classes.length > 0 && selectedIds.length === classes.length} /></th>
                       <th style={{ padding: '1rem' }}>Tên lớp học</th>
                       <th style={{ padding: '1rem' }}>Giáo viên phụ trách</th>
+                      <th style={{ padding: '1rem' }}>Lịch học & Cài đặt</th>
+                      <th style={{ padding: '1rem' }}>Hạn chót các cổng nộp</th>
                       <th style={{ padding: '1rem', textAlign: 'center' }}>Sĩ số</th>
                       <th style={{ padding: '1rem', textAlign: 'center' }}>Thao tác</th>
                     </tr>
@@ -1089,6 +1142,63 @@ export default function AdminDashboard() {
                         <td style={{ padding: '1rem' }}><input type="checkbox" checked={selectedIds.includes(item._id)} onChange={() => handleSelectRow(item._id)} /></td>
                         <td data-label="Tên lớp học" style={{ padding: '1rem', color: 'var(--text-primary)', fontWeight: '600' }}>{item.name}</td>
                         <td data-label="Giáo viên phụ trách" style={{ padding: '1rem' }}>{item.teacherName}</td>
+                        <td data-label="Lịch học & Cài đặt" style={{ padding: '1rem', fontSize: '0.825rem', lineHeight: '1.4' }}>
+                          <div><strong style={{ color: '#ccc' }}>Bắt đầu:</strong> {item.startDate ? new Date(item.startDate).toLocaleDateString('vi-VN') : 'Chưa đặt'}</div>
+                          <div><strong style={{ color: '#ccc' }}>Giờ học:</strong> {item.startTime || '08:00'} - {item.endTime || '10:00'}</div>
+                          <div style={{ color: item.allowLateUpload ? 'var(--success)' : '#ff8a8a', fontWeight: '600', marginTop: '2px' }}>
+                            {item.allowLateUpload ? '✓ Cho phép nộp muộn' : '✗ Chặn nộp muộn'}
+                          </div>
+                        </td>
+                        <td data-label="Hạn chót các cổng nộp" style={{ padding: '1rem', fontSize: '0.825rem', lineHeight: '1.4' }}>
+                          <div>
+                            <strong style={{ color: '#ccc' }}>CP1:</strong>{' '}
+                            {item.checkpoint1Deadline ? (
+                              <span style={{ color: 'var(--success)', fontWeight: '600' }}>{formatDate(item.checkpoint1Deadline)}</span>
+                            ) : item.startDate ? (
+                              (() => {
+                                const d = new Date(item.startDate);
+                                d.setDate(d.getDate() + 28);
+                                const [h, m] = (item.endTime || '10:00').split(':');
+                                d.setHours(parseInt(h) || 10, parseInt(m) || 0, 0, 0);
+                                return <span style={{ color: '#aaa' }}>{formatDate(d.toISOString())} (Tự động)</span>;
+                              })()
+                            ) : (
+                              <span style={{ color: 'var(--text-muted)' }}>Chưa cấu hình</span>
+                            )}
+                          </div>
+                          <div>
+                            <strong style={{ color: '#ccc' }}>CP2:</strong>{' '}
+                            {item.checkpoint2Deadline ? (
+                              <span style={{ color: 'var(--success)', fontWeight: '600' }}>{formatDate(item.checkpoint2Deadline)}</span>
+                            ) : item.startDate ? (
+                              (() => {
+                                const d = new Date(item.startDate);
+                                d.setDate(d.getDate() + 56);
+                                const [h, m] = (item.endTime || '10:00').split(':');
+                                d.setHours(parseInt(h) || 10, parseInt(m) || 0, 0, 0);
+                                return <span style={{ color: '#aaa' }}>{formatDate(d.toISOString())} (Tự động)</span>;
+                              })()
+                            ) : (
+                              <span style={{ color: 'var(--text-muted)' }}>Chưa cấu hình</span>
+                            )}
+                          </div>
+                          <div>
+                            <strong style={{ color: '#ccc' }}>SPCK:</strong>{' '}
+                            {item.finalProjectDeadline ? (
+                              <span style={{ color: 'var(--success)', fontWeight: '600' }}>{formatDate(item.finalProjectDeadline)}</span>
+                            ) : item.startDate ? (
+                              (() => {
+                                const d = new Date(item.startDate);
+                                d.setDate(d.getDate() + 85);
+                                const [h, m] = (item.endTime || '10:00').split(':');
+                                d.setHours(parseInt(h) || 10, parseInt(m) || 0, 0, 0);
+                                return <span style={{ color: '#aaa' }}>{formatDate(d.toISOString())} (Tự động)</span>;
+                              })()
+                            ) : (
+                              <span style={{ color: 'var(--text-muted)' }}>Chưa cấu hình</span>
+                            )}
+                          </div>
+                        </td>
                         <td data-label="Sĩ số" style={{ padding: '1rem', textAlign: 'center' }}>
                           <span style={{ 
                             background: 'rgba(99, 102, 241, 0.1)', 
@@ -1419,6 +1529,92 @@ export default function AdminDashboard() {
                       </div>
                     </>
                   )}
+                  
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginTop: '0.5rem' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                      <label className="form-label">Ngày bắt đầu lớp học</label>
+                      <input
+                        type="date"
+                        value={classStartDate}
+                        onChange={(e) => setClassStartDate(e.target.value)}
+                        className="form-input-field"
+                      />
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                      <label className="form-label">Cổng nộp muộn</label>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', height: '100%' }}>
+                        <input
+                          type="checkbox"
+                          checked={classAllowLateUpload}
+                          onChange={(e) => setClassAllowLateUpload(e.target.checked)}
+                          style={{ width: '1.2rem', height: '1.2rem', cursor: 'pointer' }}
+                        />
+                        <span style={{ fontSize: '0.85rem', color: '#ccc' }}>Cho phép nộp sau hạn chót</span>
+                      </label>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginTop: '0.5rem' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                      <label className="form-label">Giờ học bắt đầu</label>
+                      <input
+                        type="time"
+                        value={classStartTime}
+                        onChange={(e) => setClassStartTime(e.target.value)}
+                        className="form-input-field"
+                        required
+                      />
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                      <label className="form-label">Giờ học kết thúc</label>
+                      <input
+                        type="time"
+                        value={classEndTime}
+                        onChange={(e) => setClassEndTime(e.target.value)}
+                        className="form-input-field"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '0.5rem' }}>
+                    <label className="form-label" style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span>Hạn chót Checkpoint 1 (Buổi 5)</span>
+                      <span style={{ fontSize: '0.75rem', color: '#888' }}>(Mặc định: +28 ngày kể từ ngày bắt đầu, lúc giờ kết thúc)</span>
+                    </label>
+                    <input
+                      type="datetime-local"
+                      value={classCheckpoint1Deadline}
+                      onChange={(e) => setClassCheckpoint1Deadline(e.target.value)}
+                      className="form-input-field"
+                    />
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '0.5rem' }}>
+                    <label className="form-label" style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span>Hạn chót Checkpoint 2 (Buổi 9)</span>
+                      <span style={{ fontSize: '0.75rem', color: '#888' }}>(Mặc định: +56 ngày kể từ ngày bắt đầu, lúc giờ kết thúc)</span>
+                    </label>
+                    <input
+                      type="datetime-local"
+                      value={classCheckpoint2Deadline}
+                      onChange={(e) => setClassCheckpoint2Deadline(e.target.value)}
+                      className="form-input-field"
+                    />
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '0.5rem' }}>
+                    <label className="form-label" style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span>Hạn chót SPCK (Buổi 10-14)</span>
+                      <span style={{ fontSize: '0.75rem', color: '#888' }}>(Mặc định: +85 ngày kể từ ngày bắt đầu, lúc giờ kết thúc)</span>
+                    </label>
+                    <input
+                      type="datetime-local"
+                      value={classFinalProjectDeadline}
+                      onChange={(e) => setClassFinalProjectDeadline(e.target.value)}
+                      className="form-input-field"
+                    />
+                  </div>
                 </>
               )}
 
@@ -1527,9 +1723,8 @@ export default function AdminDashboard() {
                       type="text"
                       value={studentCode}
                       onChange={(e) => setStudentCode(e.target.value)}
-                      placeholder="Ví dụ: HV001"
+                      placeholder="Để trống để tự động sinh mã (Ví dụ: Nguyễn Văn A -> anv)..."
                       className="form-input-field"
-                      required
                       autoComplete="off"
                     />
                   </div>
