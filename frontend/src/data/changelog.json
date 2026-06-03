@@ -1,5 +1,15 @@
 [
   {
+    "version": "1.2.0",
+    "date": "2026-06-03",
+    "title": "Tính năng Xếp lịch Thuyết trình & Cải tiến Mật khẩu",
+    "features": [
+      "Thêm trang Sắp xếp Thứ tự Thuyết trình theo Lớp, hỗ trợ phân chia vòng đăng ký và tự động đồng bộ hàng chờ thời gian thực.",
+      "Tích hợp xuất bảng thứ tự thuyết trình thành hình ảnh PNG để tải về.",
+      "Cập nhật mật khẩu mặc định tự động tạo theo năm hiện tại (Mindx@<năm>) khi để trống."
+    ]
+  },
+  {
     "version": "1.1.0",
     "date": "2026-06-03",
     "title": "Nâng cấp Quản trị & Hiệu suất",
