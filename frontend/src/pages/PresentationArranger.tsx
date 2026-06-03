@@ -23,7 +23,6 @@ export default function PresentationArranger() {
   const navigate = useNavigate();
   const [classes, setClasses] = useState<ClassData[]>([]);
   const [selectedClass, setSelectedClass] = useState<string>('');
-  const [students, setStudents] = useState<StudentData[]>([]);
   const [studentsList, setStudentsList] = useState<string[]>([]); // list of all student names in selected class
   
   // Game state
@@ -87,7 +86,6 @@ export default function PresentationArranger() {
   const handleClassChange = async (className: string) => {
     setSelectedClass(className);
     if (!className) {
-      setStudents([]);
       setStudentsList([]);
       setSlots([]);
       setRound(1);
@@ -103,8 +101,6 @@ export default function PresentationArranger() {
       if (!res.ok) throw new Error('Không thể tải danh sách học viên lớp này.');
       const result = await res.json();
       const studentData = result.data || result;
-      
-      setStudents(studentData);
       
       const names = studentData.map((s: StudentData) => s.name);
       setStudentsList(names);
@@ -167,19 +163,16 @@ export default function PresentationArranger() {
   const handleResolveRound = () => {
     if (!isLocked || isCompleted) return;
     
-    let resolvedAny = false;
     const newSlots = slots.map(slot => {
       if (slot.lockedUser) return slot;
       
       if (slot.volunteers.length === 1) {
-        resolvedAny = true;
         return {
           ...slot,
           lockedUser: slot.volunteers[0],
           volunteers: []
         };
       } else if (slot.volunteers.length > 1) {
-        resolvedAny = true;
         // Select 1 winner randomly
         const winner = slot.volunteers[Math.floor(Math.random() * slot.volunteers.length)];
         return {
@@ -200,7 +193,6 @@ export default function PresentationArranger() {
 
     // If no one volunteered and there are still unassigned students -> AUTO-ASSIGN ALL
     if (totalVolunteersCount === 0 && remainingStudents.length > 0) {
-      const emptySlots = newSlots.filter(s => !s.lockedUser);
       // Shuffle remaining students
       const shuffledStudents = [...remainingStudents].sort(() => Math.random() - 0.5);
       
