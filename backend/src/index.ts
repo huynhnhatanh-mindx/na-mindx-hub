@@ -1019,7 +1019,20 @@ app.get('/api/admin/classes', adminOrTeacherAuth, async (req: Request, res: Resp
     }
 
     const response = await buildPaginatedResponse(ClassModel, query, page, limit);
-    res.json(response);
+    
+    // Add student count to each class
+    const classesWithCount = await Promise.all(response.data.map(async (cls: any) => {
+      const studentCount = await StudentModel.countDocuments({ className: cls.name });
+      return {
+        ...cls.toObject(),
+        studentCount
+      };
+    }));
+
+    res.json({
+      ...response,
+      data: classesWithCount
+    });
   } catch (err: any) {
     res.status(500).json({ error: 'Lỗi tải danh sách lớp học: ' + err.message });
   }

@@ -15,6 +15,7 @@ interface ClassData {
   _id: string;
   name: string;
   teacherName: string;
+  studentCount?: number;
 }
 
 interface TeacherData {
@@ -1078,6 +1079,7 @@ export default function AdminDashboard() {
                       <th style={{ padding: '1rem', width: '40px' }}><input type="checkbox" onChange={(e) => handleSelectAll(e, classes)} checked={classes.length > 0 && selectedIds.length === classes.length} /></th>
                       <th style={{ padding: '1rem' }}>Tên lớp học</th>
                       <th style={{ padding: '1rem' }}>Giáo viên phụ trách</th>
+                      <th style={{ padding: '1rem', textAlign: 'center' }}>Sĩ số</th>
                       <th style={{ padding: '1rem', textAlign: 'center' }}>Thao tác</th>
                     </tr>
                   </thead>
@@ -1087,6 +1089,18 @@ export default function AdminDashboard() {
                         <td style={{ padding: '1rem' }}><input type="checkbox" checked={selectedIds.includes(item._id)} onChange={() => handleSelectRow(item._id)} /></td>
                         <td data-label="Tên lớp học" style={{ padding: '1rem', color: 'var(--text-primary)', fontWeight: '600' }}>{item.name}</td>
                         <td data-label="Giáo viên phụ trách" style={{ padding: '1rem' }}>{item.teacherName}</td>
+                        <td data-label="Sĩ số" style={{ padding: '1rem', textAlign: 'center' }}>
+                          <span style={{ 
+                            background: 'rgba(99, 102, 241, 0.1)', 
+                            color: 'var(--primary)', 
+                            padding: '4px 10px', 
+                            borderRadius: '20px', 
+                            fontSize: '0.85rem', 
+                            fontWeight: '700' 
+                          }}>
+                            {item.studentCount ?? 0} học viên
+                          </span>
+                        </td>
                         <td data-label="Thao tác" style={{ padding: '1rem', display: 'flex', gap: '0.5rem', justifyContent: 'center' }}>
                           <button className="btn btn-neutral" style={{ padding: '4px 10px', height: 'auto', fontSize: '0.8rem' }} onClick={() => handleOpenEditModal(item)}>Sửa</button>
                           <button className="btn btn-danger" style={{ padding: '4px 10px', height: 'auto', fontSize: '0.8rem' }} onClick={() => handleDeleteItem(item._id)}>Xóa</button>
