@@ -579,7 +579,11 @@ app.get('/api/classes', async (req: Request, res: Response) => {
     if (useMongoDB) {
       const query = teacherNameStr ? { teacherName: teacherNameStr } : {};
       const classes = await ClassModel.find(query);
-      res.json(classes.map(c => c.name));
+      if (req.query.full === 'true') {
+        res.json(classes);
+      } else {
+        res.json(classes.map(c => c.name));
+      }
     } else {
       // Fallback khi chạy offline
       const fallbackMap: Record<string, string[]> = {
@@ -587,10 +591,21 @@ app.get('/api/classes', async (req: Request, res: Response) => {
         'Nguyễn Văn A': ['HCM2'],
         'Trần Thị B': ['HCM3']
       };
-      if (teacherNameStr) {
-        res.json(fallbackMap[teacherNameStr] || []);
+      if (req.query.full === 'true') {
+        // Return dummy class structures
+        const list = teacherNameStr ? (fallbackMap[teacherNameStr] || []) : ['HCM4', 'HCM1', 'HCM2', 'HCM3'];
+        res.json(list.map(name => ({
+          _id: name,
+          name,
+          teacherName: teacherNameStr || 'Huỳnh Nhật Anh',
+          allowLateUpload: false
+        })));
       } else {
-        res.json(['HCM4', 'HCM1', 'HCM2', 'HCM3']);
+        if (teacherNameStr) {
+          res.json(fallbackMap[teacherNameStr] || []);
+        } else {
+          res.json(['HCM4', 'HCM1', 'HCM2', 'HCM3']);
+        }
       }
     }
   } catch (err: any) {

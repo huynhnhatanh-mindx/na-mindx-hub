@@ -126,6 +126,7 @@ function Upload() {
   // States for metadata dropdown options, dynamically loaded from backend/database
   const [teachersList, setTeachersList] = useState<string[]>([]);
   const [classesList, setClassesList] = useState<string[]>([]);
+  const [fullClassesData, setFullClassesData] = useState<any[]>([]);
   const [studentsList, setStudentsList] = useState<string[]>([]);
   const [studentDetails, setStudentDetails] = useState<StudentDetail[]>([]);
   const stagesList = ['Checkpoint 1', 'Checkpoint 2', 'Sản phẩm cuối khóa', 'Buổi học lý thuyết'];
@@ -180,20 +181,23 @@ function Upload() {
   useEffect(() => {
     if (!teacher.trim()) {
       setClassesList([]);
+      setFullClassesData([]);
       return;
     }
     const fetchClasses = async () => {
       try {
         const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
-        const res = await fetch(`${API_BASE_URL}/api/classes?teacherName=${encodeURIComponent(teacher.trim())}`);
+        const res = await fetch(`${API_BASE_URL}/api/classes?teacherName=${encodeURIComponent(teacher.trim())}&full=true`);
         if (!res.ok) throw new Error('Failed to fetch classes');
         const data = await res.json();
-        setClassesList(data);
+        setFullClassesData(data);
+        setClassesList(data.map((c: any) => c.name));
       } catch (err) {
         console.warn('Using offline fallback for classes list due to error:', err);
         const trimmedTeacher = teacher.trim();
         const fallbackClasses = TEACHER_CLASSES_MAP_FALLBACK[trimmedTeacher] || [];
         setClassesList(fallbackClasses);
+        setFullClassesData(fallbackClasses.map(name => ({ name, teacherName: teacher })));
       }
     };
     fetchClasses();
@@ -295,6 +299,61 @@ function Upload() {
     if (!fullName) return 20; // default 20MB
     const found = studentDetails.find(s => s.name.trim().toLowerCase() === fullName.trim().toLowerCase());
     return found && found.maxUploadSize ? found.maxUploadSize : 20;
+  };
+
+  const getSelectedClassDeadline = (): string | null => {
+    if (!className || !stage || !fullClassesData.length) return null;
+    const cls = fullClassesData.find((c: any) => c.name.toLowerCase() === className.toLowerCase());
+    if (!cls) return null;
+
+    const stageLower = stage.toLowerCase();
+    const isTheory = stageLower.includes('ly thuyet') || stageLower.includes('lý thuyết') || stageLower.includes('theory');
+    if (isTheory) return 'Không áp dụng hạn chót (luôn được phép nộp)';
+
+    let deadlineDate: Date | null = null;
+    let isManual = false;
+
+    if (stageLower.includes('checkpoint 1')) {
+      if (cls.checkpoint1Deadline) {
+        deadlineDate = new Date(cls.checkpoint1Deadline);
+        isManual = true;
+      } else if (cls.startDate) {
+        deadlineDate = new Date(cls.startDate);
+        deadlineDate.setDate(deadlineDate.getDate() + 28);
+        const [h, m] = (cls.endTime || "10:00").split(":");
+        deadlineDate.setHours(parseInt(h) || 10, parseInt(m) || 0, 0, 0);
+      }
+    } else if (stageLower.includes('checkpoint 2')) {
+      if (cls.checkpoint2Deadline) {
+        deadlineDate = new Date(cls.checkpoint2Deadline);
+        isManual = true;
+      } else if (cls.startDate) {
+        deadlineDate = new Date(cls.startDate);
+        deadlineDate.setDate(deadlineDate.getDate() + 56);
+        const [h, m] = (cls.endTime || "10:00").split(":");
+        deadlineDate.setHours(parseInt(h) || 10, parseInt(m) || 0, 0, 0);
+      }
+    } else if (stageLower.includes('san pham cuoi khoa') || stageLower.includes('sản phẩm cuối khóa')) {
+      if (cls.finalProjectDeadline) {
+        deadlineDate = new Date(cls.finalProjectDeadline);
+        isManual = true;
+      } else if (cls.startDate) {
+        deadlineDate = new Date(cls.startDate);
+        deadlineDate.setDate(deadlineDate.getDate() + 85);
+        const [h, m] = (cls.endTime || "10:00").split(":");
+        deadlineDate.setHours(parseInt(h) || 10, parseInt(m) || 0, 0, 0);
+      }
+    }
+
+    if (!deadlineDate || isNaN(deadlineDate.getTime())) {
+      return 'Chưa cấu hình lịch học hoặc hạn chót cho lớp này';
+    }
+
+    const pad = (n: number) => n.toString().padStart(2, '0');
+    const dateStr = `${pad(deadlineDate.getDate())}/${pad(deadlineDate.getMonth() + 1)}/${deadlineDate.getFullYear()}`;
+    const timeStr = `${pad(deadlineDate.getHours())}:${pad(deadlineDate.getMinutes())}`;
+    
+    return `${timeStr} ngày ${dateStr}${isManual ? ' (Thủ công)' : ''}${cls.allowLateUpload ? ' (Cho phép nộp muộn)' : ''}`;
   };
 
   // Re-validate selected files when files list or student name changes
@@ -658,24 +717,48 @@ function Upload() {
                   <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '0.75rem' }}>
                     Hỗ trợ tải lên nhiều file cùng lúc
                   </p>
-                  <div style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '0.4rem',
-                    background: 'rgba(16, 185, 129, 0.1)',
-                    color: 'var(--success)',
-                    padding: '4px 10px',
-                    borderRadius: '6px',
-                    fontSize: '0.8rem',
-                    fontWeight: '600',
-                    border: '1px solid rgba(16, 185, 129, 0.2)'
-                  }}>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                      <circle cx="12" cy="12" r="10" />
-                      <line x1="12" y1="16" x2="12" y2="12" />
-                      <line x1="12" y1="8" x2="12.01" y2="8" />
-                    </svg>
-                    Giới hạn dung lượng bài nộp: {getSelectedStudentLimit()} MB
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', justifyContent: 'center', marginTop: '0.5rem' }}>
+                    <div style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '0.4rem',
+                      background: 'rgba(16, 185, 129, 0.1)',
+                      color: 'var(--success)',
+                      padding: '4px 10px',
+                      borderRadius: '6px',
+                      fontSize: '0.8rem',
+                      fontWeight: '600',
+                      border: '1px solid rgba(16, 185, 129, 0.2)'
+                    }}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                        <circle cx="12" cy="12" r="10" />
+                        <line x1="12" y1="16" x2="12" y2="12" />
+                        <line x1="12" y1="8" x2="12.01" y2="8" />
+                      </svg>
+                      Giới hạn dung lượng bài nộp: {getSelectedStudentLimit()} MB
+                    </div>
+                    {getSelectedClassDeadline() && (
+                      <div style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '0.4rem',
+                        background: 'rgba(99, 102, 241, 0.1)',
+                        color: 'var(--primary)',
+                        padding: '4px 10px',
+                        borderRadius: '6px',
+                        fontSize: '0.8rem',
+                        fontWeight: '600',
+                        border: '1px solid rgba(99, 102, 241, 0.2)'
+                      }}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+                          <line x1="16" y1="2" x2="16" y2="6" />
+                          <line x1="8" y1="2" x2="8" y2="6" />
+                          <line x1="3" y1="10" x2="21" y2="10" />
+                        </svg>
+                        Hạn nộp bài: {getSelectedClassDeadline()}
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
