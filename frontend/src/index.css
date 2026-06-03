@@ -1305,3 +1305,46 @@ h1 {
 :root[data-theme='light'] .clear-search-btn:hover {
   background: rgba(0, 0, 0, 0.1);
 }
+
+/* ==========================================================================
+   ADDITIONAL RESPONSIVE IMPROVEMENTS
+   ========================================================================== */
+.mobile-header-actions-item {
+  display: none !important;
+}
+
+@media (max-width: 768px) {
+  .header-actions {
+    display: none !important;
+  }
+  .mobile-header-actions-item {
+    display: block !important;
+    width: 100%;
+  }
+}
+
+/* Presentation Arranger Responsive Grid */
+.arranger-grid {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 2rem;
+}
+
+@media (max-width: 768px) {
+  .arranger-grid {
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
+  }
+  
+  /* Make the waiting list sticky header or simple container without stickiness on mobile */
+  .arranger-grid > div:last-child > .glass-card {
+    position: static !important;
+  }
+}
+
+@media (max-width: 480px) {
+  .search-wrapper-container {
+    width: 100% !important;
+  }
+}
+

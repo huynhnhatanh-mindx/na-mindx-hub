@@ -451,7 +451,7 @@ export default function PresentationArranger() {
                   </p>
                 </div>
 
-                <div style={{ display: 'flex', gap: '0.75rem' }}>
+                <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
                   {isCompleted ? (
                     <>
                       <button className="btn btn-primary" onClick={handleExportImage} style={{ width: 'auto' }}>
@@ -484,7 +484,7 @@ export default function PresentationArranger() {
               </div>
 
               {/* Layout grid containing List and Waiting list */}
-              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '2rem' }}>
+              <div className="arranger-grid">
                 
                 {/* 1. Presentation Slots List */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>

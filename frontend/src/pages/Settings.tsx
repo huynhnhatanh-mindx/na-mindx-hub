@@ -160,7 +160,7 @@ export default function Settings() {
 
           <form onSubmit={handleSaveProfile} style={{ display: 'flex', flexDirection: 'column', gap: '1.75rem' }} autoComplete="off">
             {/* Account Metadata (Disabled Info) */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+            <div className="form-grid-2">
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                 <label className="form-label">Tên đăng nhập</label>
                 <input
@@ -210,7 +210,7 @@ export default function Settings() {
             </div>
 
             {/* Password Fields */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+            <div className="form-grid-2">
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                 <label className="form-label">Mật khẩu mới</label>
                 <input
