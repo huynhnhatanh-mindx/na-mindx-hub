@@ -112,11 +112,16 @@ function Upload() {
     window.addEventListener('beforeunload', handleBeforeUnload);
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [isUploading]);
+
+  useEffect(() => {
+    return () => {
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
       }
     };
-  }, [isUploading]);
+  }, []);
 
   // States for metadata dropdown options, dynamically loaded from backend/database
   const [teachersList, setTeachersList] = useState<string[]>([]);
