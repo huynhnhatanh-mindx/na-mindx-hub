@@ -6,7 +6,7 @@
     "features": [
       "Thêm trang Sắp xếp Thứ tự Thuyết trình theo Lớp, hỗ trợ phân chia vòng đăng ký và tự động đồng bộ hàng chờ thời gian thực.",
       "Tích hợp xuất bảng thứ tự thuyết trình thành hình ảnh PNG để tải về.",
-      "Cập nhật mật khẩu mặc định tự động tạo theo năm hiện tại (Mindx@<năm>) khi để trống."
+      "Cập nhật cơ chế gán mật khẩu mặc định an toàn khi để trống thông tin đăng ký."
     ]
   },
   {
