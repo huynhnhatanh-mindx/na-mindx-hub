@@ -76,20 +76,23 @@ const userSchema = new mongoose.Schema({
 const UserModel = mongoose.model('User', userSchema);
 
 // Audit Log Schema
+// QUAN TRONG: Audit log la bat bien - khong tao API xoa hoac sua audit logs.
+// Muc dich: Ghi nhan lich su thao tac de truy vet, khong ai (ke ca admin) co quyen xoa.
 const auditLogSchema = new mongoose.Schema({
-  action: { type: String, required: true },
-  entityType: { type: String, required: true },
-  details: { type: String, required: true },
-  performedBy: { type: String, required: true },
+  action: { type: String, required: true },   // CREATE, UPDATE, DELETE, BULK_DELETE, UPLOAD, PROFILE_UPDATE...
+  resource: { type: String, required: true }, // User, Class, Teacher, Student, Submission, Profile, Upload
+  details: { type: String, required: true },  // Mo ta chi tiet thao tac
+  user: { type: String, required: true },     // Username nguoi thuc hien
+  role: { type: String, default: 'unknown' }, // Quyen han: admin, teacher, student, system
   createdAt: { type: Date, default: Date.now }
 });
 const AuditLogModel = mongoose.model('AuditLog', auditLogSchema);
 
-// Helper function
-async function logAudit(action: string, entityType: string, details: string, performedBy: string) {
+// Ham ghi nhat ky hoat dong - su dung o moi endpoint anh huong den database
+async function logAudit(action: string, resource: string, details: string, user: string, role: string = 'unknown') {
   try {
     if (mongoose.connection.readyState === 1) {
-      const log = new AuditLogModel({ action, entityType, details, performedBy });
+      const log = new AuditLogModel({ action, resource, details, user, role });
       await log.save();
     }
   } catch (err) {
@@ -121,24 +124,40 @@ function normalizeUsername(name: string): string {
     .trim();
 }
 
+function escapeRegExp(string: string): string {
+  return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 async function createTeacherWithAccount(
   name: string,
   username?: string,
   password?: string,
-  displayName?: string
+  displayName?: string,
+  performedBy?: string,
+  performedByRole?: string
 ) {
   if (!useMongoDB) return;
   const nameClean = name.trim();
   if (nameClean === 'Chưa phân công' || nameClean === '') return;
 
-  // 1. Ensure teacher record exists
+  // 1. Ensure teacher record exists — log if newly created
   let teacher = await TeacherModel.findOne({ name: nameClean });
   if (!teacher) {
     teacher = new TeacherModel({ name: nameClean });
     await teacher.save();
+    // Ghi log nếu có người thực hiện (không phải auto-migration lúc khởi động)
+    if (performedBy) {
+      await logAudit(
+        'CREATE',
+        'Teacher',
+        `Tạo giáo viên mới: ${nameClean} (tạo kèm lúc thêm lớp học)`,
+        performedBy,
+        performedByRole || 'unknown'
+      );
+    }
   }
 
-  // 2. Ensure user account exists
+  // 2. Ensure user account exists — log if newly created
   let userExisting = await UserModel.findOne({ displayName: nameClean });
   if (!userExisting && username) {
     userExisting = await UserModel.findOne({ username: username.trim().toLowerCase() });
@@ -161,6 +180,16 @@ async function createTeacherWithAccount(
     });
     await newUser.save();
     console.log(`[Database]: Tự động tạo tài khoản ${finalUsername} cho giáo viên ${nameClean}`);
+    // Ghi log tạo tài khoản giáo viên nếu có người thực hiện
+    if (performedBy) {
+      await logAudit(
+        'CREATE',
+        'User',
+        `Tự động tạo tài khoản: ${finalUsername} (teacher - ${nameClean}, tạo kèm lúc thêm lớp/giáo viên)`,
+        performedBy,
+        performedByRole || 'unknown'
+      );
+    }
   }
 }
 
@@ -644,7 +673,7 @@ app.post('/api/auth/login', async (req: Request, res: Response) => {
 // API Cập nhật Thông tin Cá nhân
 app.put('/api/auth/profile', adminOrTeacherAuth, async (req: Request, res: Response) => {
   try {
-    const { username } = (req as any).user;
+    const { username, role } = (req as any).user;
     const displayName = sanitize(req.body.displayName);
     const password = sanitize(req.body.password);
     const email = sanitize(req.body.email);
@@ -661,17 +690,27 @@ app.put('/api/auth/profile', adminOrTeacherAuth, async (req: Request, res: Respo
     const oldDisplayName = user.displayName;
     const oldRole = user.role;
 
-    if (displayName && displayName.trim() !== '') {
+    const changes: string[] = [];
+    if (displayName && displayName.trim() !== '' && displayName.trim() !== oldDisplayName) {
+      changes.push(`Tên hiển thị: "${oldDisplayName}" → "${displayName.trim()}"`);
       user.displayName = displayName.trim();
     }
     if (password && password.trim() !== '') {
+      changes.push('Đã thay đổi mật khẩu');
       user.password = hashPassword(password);
     }
     if (typeof email === 'string') {
+      if (email.trim().toLowerCase() !== (user.email || '')) {
+        changes.push(`Email: "${user.email || '(chưa có)'}" → "${email.trim().toLowerCase() || '(xóa)'}"`);
+      }
       user.email = email.trim().toLowerCase();
     }
 
     await user.save();
+
+    // Ghi log thao tác cập nhật profile
+    const changeDetails = changes.length > 0 ? changes.join('; ') : 'Không có thay đổi nào';
+    await logAudit('PROFILE_UPDATE', 'Profile', `Cập nhật hồ sơ cá nhân (${username}): ${changeDetails}`, username, role);
 
     // Đồng bộ nếu là Giáo viên
     if (oldRole === 'teacher' && displayName && displayName.trim() !== oldDisplayName) {
@@ -760,7 +799,7 @@ app.post('/api/admin/users', adminAuth, async (req: Request, res: Response) => {
       }
     }
 
-    await logAudit('CREATE', 'User', `Tạo tài khoản: ${newUser.username}`, (req as any).user.username);
+    await logAudit('CREATE', 'User', `Tạo tài khoản: ${newUser.username} (${role}, tên: ${displayName})`, (req as any).user.username, (req as any).user.role);
     res.json({ message: 'Tạo tài khoản thành công.', user: { username: newUser.username, role: newUser.role, displayName: newUser.displayName, email: newUser.email } });
   } catch (err: any) {
     res.status(500).json({ error: 'Lỗi tạo tài khoản: ' + err.message });
@@ -829,7 +868,7 @@ app.put('/api/admin/users/:id', adminAuth, async (req: Request, res: Response) =
     if (typeof email === 'string') user.email = email.trim().toLowerCase();
     if (status) user.status = status;
     await user.save();
-    await logAudit('UPDATE', 'User', `Cập nhật tài khoản: ${user.username}`, (req as any).user.username);
+    await logAudit('UPDATE', 'User', `Cập nhật tài khoản: ${user.username}`, (req as any).user.username, (req as any).user.role);
 
     // Sync to Teacher collection
     if (oldRole === 'teacher' && user.role !== 'teacher') {
@@ -883,7 +922,7 @@ app.delete('/api/admin/users/:id', adminAuth, async (req: Request, res: Response
     const userDisplayName = user.displayName;
 
     await UserModel.findByIdAndDelete(req.params.id);
-    await logAudit('DELETE', 'User', `Xóa tài khoản: ${user.username}`, reqUser.username);
+    await logAudit('DELETE', 'User', `Xóa tài khoản: ${user.username} (${userRole}, tên: ${userDisplayName})`, reqUser.username, reqUser.role);
 
     // Sync deletion to Teachers
     if (userRole === 'teacher') {
@@ -926,7 +965,7 @@ app.post('/api/admin/users/bulk-delete', adminAuth, async (req: Request, res: Re
     }
 
     await UserModel.deleteMany({ _id: { $in: ids } });
-    await logAudit('BULK_DELETE', 'User', `Xóa ${ids.length} tài khoản`, reqUser.username);
+    await logAudit('BULK_DELETE', 'User', `Xóa ${ids.length} tài khoản hàng loạt`, reqUser.username, reqUser.role);
     res.json({ message: 'Xóa hàng loạt thành công.' });
   } catch (err: any) {
     res.status(500).json({ error: 'Lỗi xóa hàng loạt: ' + err.message });
@@ -953,7 +992,7 @@ app.post('/api/admin/users/bulk-update-status', adminAuth, async (req: Request, 
     }
     
     await UserModel.updateMany({ _id: { $in: ids } }, { status });
-    await logAudit('BULK_UPDATE_STATUS', 'User', `Cập nhật trạng thái ${status} cho ${ids.length} tài khoản`, reqUser.username);
+    await logAudit('BULK_UPDATE_STATUS', 'User', `Cập nhật trạng thái "${status}" cho ${ids.length} tài khoản`, reqUser.username, reqUser.role);
     res.json({ message: 'Cập nhật trạng thái hàng loạt thành công.' });
   } catch (err: any) {
     res.status(500).json({ error: 'Lỗi cập nhật hàng loạt: ' + err.message });
@@ -996,19 +1035,19 @@ app.post('/api/admin/classes', adminOrTeacherAuth, async (req: Request, res: Res
       return res.status(400).json({ error: 'Vui lòng cung cấp tên lớp và tên giáo viên.' });
     }
     const cleanClassName = name.trim().toUpperCase();
-    const existing = await ClassModel.findOne({ name: { $regex: new RegExp(`^${name.trim()}$`, 'i') } });
+    const existing = await ClassModel.findOne({ name: { $regex: new RegExp(`^${escapeRegExp(name.trim())}$`, 'i') } });
     if (existing) {
       return res.status(400).json({ error: 'Tên lớp học đã tồn tại.' });
     }
 
-    await createTeacherWithAccount(teacherName.trim(), newTeacherUsername, newTeacherPassword);
+    await createTeacherWithAccount(teacherName.trim(), newTeacherUsername, newTeacherPassword, undefined, (req as any).user.username, (req as any).user.role);
 
     const newClass = new ClassModel({
       name: cleanClassName,
       teacherName: teacherName.trim()
     });
     await newClass.save();
-    await logAudit('CREATE', 'Class', `Tạo lớp học: ${newClass.name}`, (req as any).user.username);
+    await logAudit('CREATE', 'Class', `Tạo lớp học: ${newClass.name} (giáo viên: ${teacherName.trim()})`, (req as any).user.username, (req as any).user.role);
     res.json({ message: 'Tạo lớp học thành công.', data: newClass });
   } catch (err: any) {
     res.status(500).json({ error: 'Lỗi tạo lớp học: ' + err.message });
@@ -1027,7 +1066,7 @@ app.put('/api/admin/classes/:id', adminOrTeacherAuth, async (req: Request, res: 
     }
 
     if (name && name.trim().toUpperCase() !== cls.name.toUpperCase()) {
-      const existing = await ClassModel.findOne({ name: { $regex: new RegExp(`^${name.trim()}$`, 'i') } });
+      const existing = await ClassModel.findOne({ name: { $regex: new RegExp(`^${escapeRegExp(name.trim())}$`, 'i') } });
       if (existing) {
         return res.status(400).json({ error: 'Tên lớp học mới đã tồn tại.' });
       }
@@ -1040,10 +1079,10 @@ app.put('/api/admin/classes/:id', adminOrTeacherAuth, async (req: Request, res: 
     }
     if (teacherName) {
       cls.teacherName = teacherName.trim();
-      await createTeacherWithAccount(teacherName.trim(), newTeacherUsername, newTeacherPassword);
+      await createTeacherWithAccount(teacherName.trim(), newTeacherUsername, newTeacherPassword, undefined, (req as any).user.username, (req as any).user.role);
     }
     await cls.save();
-    await logAudit('UPDATE', 'Class', `Cập nhật lớp học: ${cls.name}`, (req as any).user.username);
+    await logAudit('UPDATE', 'Class', `Cập nhật lớp học: ${cls.name}`, (req as any).user.username, (req as any).user.role);
     res.json({ message: 'Cập nhật lớp học thành công.', data: cls });
   } catch (err: any) {
     res.status(500).json({ error: 'Lỗi cập nhật lớp học: ' + err.message });
@@ -1057,7 +1096,7 @@ app.delete('/api/admin/classes/:id', adminOrTeacherAuth, async (req: Request, re
       return res.status(404).json({ error: 'Không tìm thấy lớp học.' });
     }
 
-    await logAudit('DELETE', 'Class', `Xóa lớp học: ${cls.name}`, (req as any).user.username);
+    await logAudit('DELETE', 'Class', `Xóa lớp học: ${cls.name}`, (req as any).user.username, (req as any).user.role);
 
     // Xóa liên kết lớp của các học viên thuộc lớp này
     await StudentModel.updateMany({ className: cls.name }, { className: 'Chưa phân công lớp' });
@@ -1078,7 +1117,7 @@ app.post('/api/admin/classes/bulk-delete', adminOrTeacherAuth, async (req: Reque
     await StudentModel.updateMany({ className: { $in: classNames } }, { className: 'Chưa phân công lớp' });
     
     await ClassModel.deleteMany({ _id: { $in: ids } });
-    await logAudit('BULK_DELETE', 'Class', `Xóa ${ids.length} lớp học`, (req as any).user.username);
+    await logAudit('BULK_DELETE', 'Class', `Xóa ${ids.length} lớp học hàng loạt`, (req as any).user.username, (req as any).user.role);
     res.json({ message: 'Xóa hàng loạt thành công.' });
   } catch (err: any) {
     res.status(500).json({ error: 'Lỗi xóa hàng loạt: ' + err.message });
@@ -1126,7 +1165,7 @@ app.post('/api/admin/teachers', adminAuth, async (req: Request, res: Response) =
     await createTeacherWithAccount(name.trim(), username, password);
     const savedTeacher = await TeacherModel.findOne({ name: name.trim() });
 
-    await logAudit('CREATE', 'Teacher', `Tạo giáo viên: ${savedTeacher?.name}`, (req as any).user.username);
+    await logAudit('CREATE', 'Teacher', `Tạo giáo viên: ${savedTeacher?.name}`, (req as any).user.username, (req as any).user.role);
     res.json({ message: 'Tạo giáo viên thành công.', data: savedTeacher });
   } catch (err: any) {
     res.status(500).json({ error: 'Lỗi tạo giáo viên: ' + err.message });
@@ -1176,7 +1215,7 @@ app.put('/api/admin/teachers/:id', adminAuth, async (req: Request, res: Response
         }
       }
     }
-    await logAudit('UPDATE', 'Teacher', `Cập nhật giáo viên: ${teacher.name}`, (req as any).user.username);
+    await logAudit('UPDATE', 'Teacher', `Cập nhật giáo viên: ${teacher.name}`, (req as any).user.username, (req as any).user.role);
     res.json({ message: 'Cập nhật giáo viên thành công.', data: teacher });
   } catch (err: any) {
     res.status(500).json({ error: 'Lỗi cập nhật giáo viên: ' + err.message });
@@ -1192,7 +1231,7 @@ app.delete('/api/admin/teachers/:id', adminAuth, async (req: Request, res: Respo
 
     const teacherName = teacher.name;
     await TeacherModel.findByIdAndDelete(req.params.id);
-    await logAudit('DELETE', 'Teacher', `Xóa giáo viên: ${teacherName}`, (req as any).user.username);
+    await logAudit('DELETE', 'Teacher', `Xóa giáo viên: ${teacherName}`, (req as any).user.username, (req as any).user.role);
 
     // Optionally delete the corresponding user account
     if (useMongoDB) {
@@ -1222,7 +1261,7 @@ app.post('/api/admin/teachers/bulk-delete', adminAuth, async (req: Request, res:
     await ClassModel.updateMany({ teacherName: { $in: teacherNames } }, { teacherName: 'Chưa phân công' });
     
     await TeacherModel.deleteMany({ _id: { $in: ids } });
-    await logAudit('BULK_DELETE', 'Teacher', `Xóa ${ids.length} giáo viên`, (req as any).user.username);
+    await logAudit('BULK_DELETE', 'Teacher', `Xóa ${ids.length} giáo viên hàng loạt`, (req as any).user.username, (req as any).user.role);
     res.json({ message: 'Xóa hàng loạt thành công.' });
   } catch (err: any) {
     res.status(500).json({ error: 'Lỗi xóa hàng loạt: ' + err.message });
@@ -1304,7 +1343,7 @@ app.post('/api/admin/students/bulk-update-status', adminOrTeacherAuth, async (re
       return res.status(400).json({ error: 'Dữ liệu không hợp lệ.' });
     }
     await StudentModel.updateMany({ _id: { $in: ids } }, { status });
-    await logAudit('BULK_UPDATE', 'Student', `Cập nhật trạng thái ${status} cho ${ids.length} học viên`, (req as any).user.username);
+    await logAudit('BULK_UPDATE_STATUS', 'Student', `Cập nhật trạng thái "${status}" cho ${ids.length} học viên`, (req as any).user.username, (req as any).user.role);
     res.json({ message: 'Cập nhật trạng thái hàng loạt thành công.' });
   } catch (err: any) {
     res.status(500).json({ error: 'Lỗi cập nhật hàng loạt: ' + err.message });
@@ -1316,7 +1355,7 @@ app.post('/api/admin/students/bulk-delete', adminOrTeacherAuth, async (req: Requ
     const { ids } = req.body;
     if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: 'Dữ liệu không hợp lệ.' });
     await StudentModel.deleteMany({ _id: { $in: ids } });
-    await logAudit('BULK_DELETE', 'Student', `Xóa ${ids.length} học viên`, (req as any).user.username);
+    await logAudit('BULK_DELETE', 'Student', `Xóa ${ids.length} học viên hàng loạt`, (req as any).user.username, (req as any).user.role);
     res.json({ message: 'Xóa hàng loạt thành công.' });
   } catch (err: any) {
     res.status(500).json({ error: 'Lỗi xóa hàng loạt: ' + err.message });
@@ -1344,7 +1383,7 @@ app.post('/api/admin/students', adminOrTeacherAuth, async (req: Request, res: Re
     // Auto-create class if not exists
     let finalClassName = className.trim().toUpperCase();
     if (useMongoDB) {
-      const classExisting = await ClassModel.findOne({ name: { $regex: new RegExp(`^${className.trim()}$`, 'i') } });
+      const classExisting = await ClassModel.findOne({ name: { $regex: new RegExp(`^${escapeRegExp(className.trim())}$`, 'i') } });
       if (!classExisting) {
         const newClass = new ClassModel({
           name: finalClassName,
@@ -1363,7 +1402,7 @@ app.post('/api/admin/students', adminOrTeacherAuth, async (req: Request, res: Re
       maxUploadSize: maxUploadSize
     });
     await newStudent.save();
-    await logAudit('CREATE', 'Student', `Tạo học viên: ${newStudent.name}`, (req as any).user.username);
+    await logAudit('CREATE', 'Student', `Tạo học viên: ${newStudent.name} (lớp: ${newStudent.className}, mã: ${newStudent.studentCode})`, (req as any).user.username, (req as any).user.role);
     res.json({ message: 'Tạo học viên thành công.', data: newStudent });
   } catch (err: any) {
     res.status(500).json({ error: 'Lỗi tạo học viên: ' + err.message });
@@ -1395,7 +1434,7 @@ app.put('/api/admin/students/:id', adminOrTeacherAuth, async (req: Request, res:
 
       // Auto-create class if not exists
       if (useMongoDB) {
-        const classExisting = await ClassModel.findOne({ name: { $regex: new RegExp(`^${className.trim()}$`, 'i') } });
+        const classExisting = await ClassModel.findOne({ name: { $regex: new RegExp(`^${escapeRegExp(className.trim())}$`, 'i') } });
         if (!classExisting) {
           const newClass = new ClassModel({
             name: finalClassName,
@@ -1418,7 +1457,7 @@ app.put('/api/admin/students/:id', adminOrTeacherAuth, async (req: Request, res:
     }
 
     await student.save();
-    await logAudit('UPDATE', 'Student', `Cập nhật học viên: ${student.name}`, (req as any).user.username);
+    await logAudit('UPDATE', 'Student', `Cập nhật học viên: ${student.name} (lớp: ${student.className})`, (req as any).user.username, (req as any).user.role);
     res.json({ message: 'Cập nhật học viên thành công.', data: student });
   } catch (err: any) {
     res.status(500).json({ error: 'Lỗi cập nhật học viên: ' + err.message });
@@ -1431,7 +1470,7 @@ app.delete('/api/admin/students/:id', adminOrTeacherAuth, async (req: Request, r
     if (!student) {
       return res.status(404).json({ error: 'Không tìm thấy học viên.' });
     }
-    await logAudit('DELETE', 'Student', `Xóa học viên: ${student.name}`, (req as any).user.username);
+    await logAudit('DELETE', 'Student', `Xóa học viên: ${student.name} (lớp: ${student.className})`, (req as any).user.username, (req as any).user.role);
     res.json({ message: 'Xóa học viên thành công.' });
   } catch (err: any) {
     res.status(500).json({ error: 'Lỗi xóa học viên: ' + err.message });
@@ -1472,7 +1511,7 @@ app.post('/api/admin/submissions/bulk-delete', adminAuth, async (req: Request, r
     if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: 'Dữ liệu không hợp lệ.' });
     
     await SubmissionModel.deleteMany({ _id: { $in: ids } });
-    await logAudit('BULK_DELETE', 'Submission', `Xóa ${ids.length} bản ghi bài nộp`, (req as any).user.username);
+    await logAudit('BULK_DELETE', 'Submission', `Xóa ${ids.length} bản ghi bài nộp hàng loạt`, (req as any).user.username, (req as any).user.role);
     res.json({ message: 'Xóa hàng loạt thành công.' });
   } catch (err: any) {
     res.status(500).json({ error: 'Lỗi xóa hàng loạt: ' + err.message });
@@ -1524,7 +1563,7 @@ app.delete('/api/admin/submissions/:id', adminAuth, async (req: Request, res: Re
       }
     }
 
-    await logAudit('DELETE', 'Submission', `Xóa bài nộp: ${submission.fileName}`, (req as any).user.username);
+    await logAudit('DELETE', 'Submission', `Xóa bài nộp: ${submission.fileName} (học viên: ${submission.fullName}, lớp: ${submission.className})`, (req as any).user.username, (req as any).user.role);
     res.json({ message: 'Xóa bài nộp thành công.' });
   } catch (err: any) {
     res.status(500).json({ error: 'Lỗi xóa bài nộp: ' + err.message });
@@ -1591,7 +1630,7 @@ app.get('/api/submissions', async (req: Request, res: Response) => {
         // Resolve studentCode to name and className
         const trimmedCode = (studentCode as string).trim();
         const student = await StudentModel.findOne({
-          studentCode: { $regex: new RegExp(`^${trimmedCode}$`, 'i') }
+          studentCode: { $regex: new RegExp(`^${escapeRegExp(trimmedCode)}$`, 'i') }
         });
 
         if (!student) {
@@ -1900,6 +1939,17 @@ app.post('/api/upload', (req: Request, res: Response, next: any) => {
       successMessage = 'Đã tải bài lên Google Drive thành công!';
     }
 
+    // Ghi nhận hành động nộp bài vào audit log
+    // Dùng tên học viên làm 'user' vì đây là hành động của học viên (không xác thực)
+    const fileNamesList = fileDetails.map(f => f.originalName).join(', ');
+    await logAudit(
+      'UPLOAD',
+      'Submission',
+      `Nộp bài: ${fullName} | Lớp: ${className} | ${stage} - ${session} | Lần ${attemptNumber} | File: ${fileNamesList}`,
+      fullName,
+      'student'
+    );
+
     sendProgress({
       status: 'success',
       message: successMessage,
@@ -1929,21 +1979,83 @@ app.post('/api/upload', (req: Request, res: Response, next: any) => {
   }
 });
 
-// API Audit Logs
-app.get('/api/admin/audit-logs', adminAuth, async (req: Request, res: Response) => {
+// API Audit Logs - Xem nhat ky hoat dong
+// CHINH SACH BAO MAT: Khong tao endpoint DELETE/PUT cho audit logs.
+// Audit log la bat bien de dam bao tinh toan ven cua lich su thao tac.
+app.get('/api/admin/audit-logs', adminOrTeacherAuth, async (req: Request, res: Response) => {
   try {
+    const { role, username } = (req as any).user;
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 10;
-    const response = await buildPaginatedResponse(AuditLogModel, {}, page, limit, { createdAt: -1 });
+    const search = req.query.search as string;
+    const resourceFilter = req.query.resource as string;
+
+    const query: any = {};
+    const conditions: any[] = [];
+
+    // Admin thấy toàn bộ log, Teacher chỉ thấy log của chính mình hoặc của admin
+    if (role === 'teacher') {
+      conditions.push({
+        $or: [
+          { user: username },
+          { role: 'admin' }
+        ]
+      });
+    }
+
+    // Bộ lọc tìm kiếm theo nội dung
+    if (search) {
+      conditions.push({
+        $or: [
+          { user: { $regex: search, $options: 'i' } },
+          { details: { $regex: search, $options: 'i' } },
+          { action: { $regex: search, $options: 'i' } }
+        ]
+      });
+    }
+
+    if (conditions.length > 0) {
+      query.$and = conditions;
+    }
+
+    // Bộ lọc theo loại tài nguyên
+    if (resourceFilter) {
+      query.resource = resourceFilter;
+    }
+
+    const response = await buildPaginatedResponse(AuditLogModel, query, page, limit, { createdAt: -1 });
     res.json(response);
   } catch (err: any) {
     res.status(500).json({ error: 'Lỗi tải nhật ký hoạt động: ' + err.message });
   }
 });
+// GHI CHU: Khong co endpoint DELETE /api/admin/audit-logs - Day la thiet ke co y dinh.
 
 // API Thống kê Dashboard
 app.get('/api/admin/dashboard-stats', adminOrTeacherAuth, async (req: Request, res: Response) => {
   try {
+    const { role, username } = (req as any).user;
+    
+    if (role === 'teacher') {
+      const user = await UserModel.findOne({ username });
+      const teacherName = user ? user.displayName : '';
+      
+      const teacherClasses = await ClassModel.find({ teacherName });
+      const classNames = teacherClasses.map(c => c.name);
+      
+      const totalClasses = teacherClasses.length;
+      const totalStudents = await StudentModel.countDocuments({ className: { $in: classNames } });
+      const totalSubmissions = await SubmissionModel.countDocuments({ teacher: teacherName });
+      
+      return res.json({
+        users: 0,
+        teachers: 0,
+        classes: totalClasses,
+        students: totalStudents,
+        submissions: totalSubmissions
+      });
+    }
+    
     const totalUsers = await UserModel.countDocuments({});
     const totalTeachers = await TeacherModel.countDocuments({});
     const totalClasses = await ClassModel.countDocuments({});

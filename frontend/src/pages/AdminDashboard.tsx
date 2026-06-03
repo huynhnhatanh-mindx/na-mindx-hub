@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Fragment } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 interface UserData {
@@ -57,6 +57,7 @@ export default function AdminDashboard() {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [dashboardStats, setDashboardStats] = useState<any>(null);
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [currentUser, setCurrentUser] = useState<any>(null);
@@ -224,7 +225,9 @@ export default function AdminDashboard() {
         setSubmissions(data);
         setTotalPages(totalPages);
       } else if (activeTab === 'audit_logs') {
-        const res = await fetchWithAuth(`${API_BASE_URL}/api/admin/audit-logs?${queryParams}`, { headers: getHeaders() });
+        const auditParams = new URLSearchParams({ page: currentPage.toString(), limit: '15' });
+        if (searchQuery) auditParams.append('search', searchQuery);
+        const res = await fetchWithAuth(`${API_BASE_URL}/api/admin/audit-logs?${auditParams}`, { headers: getHeaders() });
         if (!res.ok) throw new Error('Không thể tải nhật ký hoạt động.');
         const { data, totalPages } = await res.json();
         setAuditLogs(data);
@@ -235,6 +238,40 @@ export default function AdminDashboard() {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const getGroupedAuditLogs = () => {
+    if (!auditLogs || auditLogs.length === 0) return [];
+    const grouped: any[][] = [];
+    let currentGroup: any[] = [];
+    
+    for (let i = 0; i < auditLogs.length; i++) {
+      const log = auditLogs[i];
+      if (currentGroup.length === 0) {
+        currentGroup.push(log);
+      } else {
+        const lastLog = currentGroup[currentGroup.length - 1];
+        const timeDiff = Math.abs(new Date(log.createdAt).getTime() - new Date(lastLog.createdAt).getTime());
+        // Group if same user and within 15 seconds
+        if (log.user === lastLog.user && timeDiff <= 15000) {
+          currentGroup.push(log);
+        } else {
+          grouped.push(currentGroup);
+          currentGroup = [log];
+        }
+      }
+    }
+    if (currentGroup.length > 0) {
+      grouped.push(currentGroup);
+    }
+    return grouped;
+  };
+
+  const toggleGroup = (groupKey: string) => {
+    setExpandedGroups(prev => ({
+      ...prev,
+      [groupKey]: !prev[groupKey]
+    }));
   };
 
   const handleSearch = () => {
@@ -576,13 +613,13 @@ export default function AdminDashboard() {
           flexWrap: 'wrap'
         }}>
           {[
-            { id: 'overview', label: 'Tổng quan' },
-            { id: 'users', label: 'Quản lý Tài khoản' },
-            { id: 'classes', label: 'Quản lý Lớp học' },
-            { id: 'students', label: 'Quản lý Học viên' },
-            { id: 'submissions', label: 'Quản lý Bài nộp' },
-            { id: 'audit_logs', label: 'Nhật ký Hoạt động' }
-          ].filter(tab => currentUser?.role === 'admin' || (tab.id !== 'users' && tab.id !== 'audit_logs' && tab.id !== 'overview')).map((tab) => (
+            { id: 'overview', label: 'Tổng quan', adminOnly: false },
+            { id: 'users', label: 'Quản lý Tài khoản', adminOnly: true },
+            { id: 'classes', label: 'Quản lý Lớp học', adminOnly: false },
+            { id: 'students', label: 'Quản lý Học viên', adminOnly: false },
+            { id: 'submissions', label: 'Quản lý Bài nộp', adminOnly: false },
+            { id: 'audit_logs', label: 'Nhật ký Hoạt động', adminOnly: false }
+          ].filter(tab => currentUser?.role === 'admin' || !tab.adminOnly).map((tab) => (
             <button
               key={tab.id}
               onClick={() => {
@@ -616,6 +653,7 @@ export default function AdminDashboard() {
         <div className="glass-card" style={{ padding: '2.5rem' }}>
           
           {/* Header Controls for CRUD (Users, Classes, Students) */}
+          {/* Audit_logs tab: không có nút thêm/xóa — đây là thiết kế cố ý để bảo toàn tính bất biến của nhật ký */}
           {activeTab !== 'overview' && activeTab !== 'audit_logs' && (
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
               {/* Search */}
@@ -712,12 +750,16 @@ export default function AdminDashboard() {
               {/* --- TỔNG QUAN --- */}
               {activeTab === 'overview' && dashboardStats && (
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1.5rem', marginBottom: '2rem' }}>
-                  <div className="glass-card" style={{ padding: '1.5rem', textAlign: 'center' }}>
-                    <h3>Tài khoản</h3><h1 style={{ color: 'var(--primary)', fontSize: '3rem', margin: '0.5rem 0' }}>{dashboardStats.users}</h1>
-                  </div>
-                  <div className="glass-card" style={{ padding: '1.5rem', textAlign: 'center' }}>
-                    <h3>Giáo viên</h3><h1 style={{ color: 'var(--primary)', fontSize: '3rem', margin: '0.5rem 0' }}>{dashboardStats.teachers}</h1>
-                  </div>
+                  {currentUser?.role === 'admin' && (
+                    <>
+                      <div className="glass-card" style={{ padding: '1.5rem', textAlign: 'center' }}>
+                        <h3>Tài khoản</h3><h1 style={{ color: 'var(--primary)', fontSize: '3rem', margin: '0.5rem 0' }}>{dashboardStats.users}</h1>
+                      </div>
+                      <div className="glass-card" style={{ padding: '1.5rem', textAlign: 'center' }}>
+                        <h3>Giáo viên</h3><h1 style={{ color: 'var(--primary)', fontSize: '3rem', margin: '0.5rem 0' }}>{dashboardStats.teachers}</h1>
+                      </div>
+                    </>
+                  )}
                   <div className="glass-card" style={{ padding: '1.5rem', textAlign: 'center' }}>
                     <h3>Lớp học</h3><h1 style={{ color: 'var(--primary)', fontSize: '3rem', margin: '0.5rem 0' }}>{dashboardStats.classes}</h1>
                   </div>
@@ -732,28 +774,251 @@ export default function AdminDashboard() {
               
               {/* --- NHẬT KÝ HOẠT ĐỘNG --- */}
               {activeTab === 'audit_logs' && (
-                <table className="responsive-table" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
-                  <thead>
-                    <tr style={{ borderBottom: '1px solid var(--card-border)', color: 'var(--text-primary)', fontSize: '0.9rem', fontWeight: '700' }}>
-                      <th style={{ padding: '1rem' }}>Thời gian</th>
-                      <th style={{ padding: '1rem' }}>Người dùng</th>
-                      <th style={{ padding: '1rem' }}>Hành động</th>
-                      <th style={{ padding: '1rem' }}>Mục tiêu</th>
-                      <th style={{ padding: '1rem' }}>Chi tiết</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {auditLogs.map((log: any) => (
-                      <tr key={log._id} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)', fontSize: '0.875rem' }}>
-                        <td data-label="Thời gian" style={{ padding: '1rem' }}>{new Date(log.createdAt).toLocaleString('vi-VN')}</td>
-                        <td data-label="Người dùng" style={{ padding: '1rem', fontWeight: 'bold' }}>{log.user}</td>
-                        <td data-label="Hành động" style={{ padding: '1rem', color: 'var(--primary)' }}>{log.action}</td>
-                        <td data-label="Mục tiêu" style={{ padding: '1rem' }}>{log.resource}</td>
-                        <td data-label="Chi tiết" style={{ padding: '1rem' }}>{log.details}</td>
+                <div>
+                  {/* Info banner */}
+                  <div style={{
+                    background: 'rgba(99, 102, 241, 0.06)',
+                    border: '1px solid rgba(99, 102, 241, 0.2)',
+                    borderRadius: '10px',
+                    padding: '0.85rem 1.25rem',
+                    marginBottom: '1.5rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.75rem',
+                    fontSize: '0.85rem',
+                    color: 'var(--text-secondary)'
+                  }}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" strokeWidth="2">
+                      <circle cx="12" cy="12" r="10" />
+                      <line x1="12" y1="8" x2="12" y2="12" />
+                      <line x1="12" y1="16" x2="12.01" y2="16" />
+                    </svg>
+                    <span>
+                      <strong style={{ color: 'var(--text-primary)' }}>Nhật ký chỉ đọc</strong> —
+                      {currentUser?.role === 'admin'
+                        ? ' Hiển thị toàn bộ hoạt động hệ thống. Nhật ký được bảo vệ và không thể xóa.'
+                        : ' Hiển thị hoạt động của tài khoản bạn. Nhật ký được bảo vệ và không thể xóa.'}
+                    </span>
+                  </div>
+
+                  <table className="responsive-table" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+                    <thead>
+                      <tr style={{ borderBottom: '1px solid var(--card-border)', color: 'var(--text-primary)', fontSize: '0.9rem', fontWeight: '700' }}>
+                        <th style={{ padding: '1rem', whiteSpace: 'nowrap' }}>Thời gian</th>
+                        <th style={{ padding: '1rem', whiteSpace: 'nowrap' }}>Người thực hiện</th>
+                        <th style={{ padding: '1rem', whiteSpace: 'nowrap' }}>Hành động</th>
+                        <th style={{ padding: '1rem', whiteSpace: 'nowrap' }}>Loại đối tượng</th>
+                        <th style={{ padding: '1rem' }}>Chi tiết</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {auditLogs.length === 0 ? (
+                        <tr>
+                          <td colSpan={5} style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)' }}>
+                            Chưa có nhật ký hoạt động nào.
+                          </td>
+                        </tr>
+                      ) : getGroupedAuditLogs().map((group: any[]) => {
+                        const firstLog = group[0];
+                        const groupKey = firstLog._id;
+                        const isExpanded = !!expandedGroups[groupKey];
+                        
+                        const actionColors: Record<string, string> = {
+                          'CREATE': '#10b981',
+                          'UPDATE': '#6366f1',
+                          'PROFILE_UPDATE': '#6366f1',
+                          'DELETE': '#ef4444',
+                          'BULK_DELETE': '#ef4444',
+                          'BULK_UPDATE_STATUS': '#f59e0b',
+                          'UPLOAD': '#06b6d4',
+                          'BULK_UPDATE': '#f59e0b'
+                        };
+                        const roleBadgeColor: Record<string, {bg: string, color: string}> = {
+                          'admin': { bg: 'rgba(168, 85, 247, 0.15)', color: '#c084fc' },
+                          'teacher': { bg: 'rgba(99, 102, 241, 0.15)', color: '#818cf8' },
+                          'student': { bg: 'rgba(16, 185, 129, 0.15)', color: '#34d399' },
+                        };
+                        const roleBadge = roleBadgeColor[firstLog.role] || { bg: 'rgba(255,255,255,0.05)', color: 'var(--text-muted)' };
+
+                        if (group.length === 1) {
+                          const log = firstLog;
+                          const actionColor = actionColors[log.action] || 'var(--text-secondary)';
+                          return (
+                            <tr
+                              key={log._id}
+                              style={{ borderBottom: '1px solid rgba(255,255,255,0.03)', fontSize: '0.875rem' }}
+                              onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.01)')}
+                              onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}
+                            >
+                              <td data-label="Thời gian" style={{ padding: '1rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+                                {new Date(log.createdAt).toLocaleString('vi-VN')}
+                              </td>
+                              <td data-label="Người thực hiện" style={{ padding: '1rem' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                                  <span style={{ fontWeight: '600', color: 'var(--text-primary)' }}>{log.user}</span>
+                                  {log.role && (
+                                    <span style={{
+                                      fontSize: '0.7rem',
+                                      fontWeight: '700',
+                                      padding: '1px 6px',
+                                      borderRadius: '99px',
+                                      background: roleBadge.bg,
+                                      color: roleBadge.color
+                                    }}>
+                                      {log.role}
+                                    </span>
+                                  )}
+                                </div>
+                              </td>
+                              <td data-label="Hành động" style={{ padding: '1rem' }}>
+                                <span style={{
+                                  display: 'inline-block',
+                                  padding: '2px 8px',
+                                  borderRadius: '4px',
+                                  fontSize: '0.75rem',
+                                  fontWeight: '700',
+                                  background: `${actionColor}20`,
+                                  color: actionColor,
+                                  whiteSpace: 'nowrap'
+                                }}>
+                                  {log.action}
+                                </span>
+                              </td>
+                              <td data-label="Loại đối tượng" style={{ padding: '1rem' }}>
+                                <span style={{ color: 'var(--text-secondary)' }}>{log.resource}</span>
+                              </td>
+                              <td data-label="Chi tiết" style={{ padding: '1rem', color: 'var(--text-secondary)', maxWidth: '350px', wordBreak: 'break-word' }}>
+                                {log.details}
+                              </td>
+                            </tr>
+                          );
+                        }
+
+                        // Group of multiple logs
+                        const uniqueActions = Array.from(new Set(group.map(l => l.action)));
+                        const uniqueResources = Array.from(new Set(group.map(l => l.resource)));
+
+                        return (
+                          <Fragment key={groupKey}>
+                            <tr
+                              style={{
+                                borderBottom: '1px solid rgba(255,255,255,0.03)',
+                                fontSize: '0.875rem',
+                                backgroundColor: 'rgba(99, 102, 241, 0.05)',
+                                cursor: 'pointer'
+                              }}
+                              onClick={() => toggleGroup(groupKey)}
+                              onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'rgba(99, 102, 241, 0.08)')}
+                              onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'rgba(99, 102, 241, 0.05)')}
+                            >
+                              <td data-label="Thời gian" style={{ padding: '1rem', color: 'var(--text-muted)', whiteSpace: 'nowrap', fontWeight: '600' }}>
+                                <span style={{ marginRight: '0.5rem', display: 'inline-block', transition: 'transform 0.2s', transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)' }}>▶</span>
+                                {new Date(firstLog.createdAt).toLocaleString('vi-VN')}
+                              </td>
+                              <td data-label="Người thực hiện" style={{ padding: '1rem' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                                  <span style={{ fontWeight: '600', color: 'var(--text-primary)' }}>{firstLog.user}</span>
+                                  {firstLog.role && (
+                                    <span style={{
+                                      fontSize: '0.7rem',
+                                      fontWeight: '700',
+                                      padding: '1px 6px',
+                                      borderRadius: '99px',
+                                      background: roleBadge.bg,
+                                      color: roleBadge.color
+                                    }}>
+                                      {firstLog.role}
+                                    </span>
+                                  )}
+                                </div>
+                              </td>
+                              <td data-label="Hành động" style={{ padding: '1rem' }}>
+                                <div style={{ display: 'flex', gap: '0.25rem', flexWrap: 'wrap' }}>
+                                  {uniqueActions.map(action => {
+                                    const actionColor = actionColors[action] || 'var(--text-secondary)';
+                                    return (
+                                      <span key={action} style={{
+                                        display: 'inline-block',
+                                        padding: '2px 8px',
+                                        borderRadius: '4px',
+                                        fontSize: '0.75rem',
+                                        fontWeight: '700',
+                                        background: `${actionColor}20`,
+                                        color: actionColor,
+                                        whiteSpace: 'nowrap'
+                                      }}>
+                                        {action}
+                                      </span>
+                                    );
+                                  })}
+                                </div>
+                              </td>
+                              <td data-label="Loại đối tượng" style={{ padding: '1rem' }}>
+                                <span style={{ color: 'var(--text-primary)', fontWeight: '600' }}>
+                                  {uniqueResources.join(', ')}
+                                </span>
+                              </td>
+                              <td data-label="Chi tiết" style={{ padding: '1rem', maxWidth: '350px', wordBreak: 'break-word' }}>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                                  <div style={{ color: 'var(--text-primary)', fontWeight: '600', fontSize: '0.85rem' }}>
+                                    {`[Gộp ${group.length} thao tác bởi ${firstLog.user}]:`}
+                                  </div>
+                                  <div style={{ color: 'var(--text-secondary)', fontSize: '0.8rem', fontWeight: 'normal', whiteSpace: 'pre-wrap', lineHeight: '1.4' }}>
+                                    {group.map((l, i) => `${i + 1}. ${l.details}`).join('\n')}
+                                  </div>
+                                  <div style={{ fontSize: '0.75rem', color: 'var(--primary)', marginTop: '0.25rem', fontWeight: '700' }}>
+                                    {isExpanded ? '▲ Thu gọn chi tiết' : '▼ Mở rộng chi tiết'}
+                                  </div>
+                                </div>
+                              </td>
+                            </tr>
+                            {isExpanded && group.map((log: any) => {
+                              const actionColor = actionColors[log.action] || 'var(--text-secondary)';
+                              return (
+                                <tr
+                                  key={log._id}
+                                  style={{
+                                    borderBottom: '1px solid rgba(255,255,255,0.02)',
+                                    fontSize: '0.85rem',
+                                    background: 'rgba(255, 255, 255, 0.015)'
+                                  }}
+                                >
+                                  <td data-label="Thời gian" style={{ padding: '0.75rem 1rem 0.75rem 2rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+                                    <span style={{ color: 'rgba(255,255,255,0.2)', marginRight: '0.5rem' }}>└─</span>
+                                    {new Date(log.createdAt).toLocaleTimeString('vi-VN')}
+                                  </td>
+                                  <td data-label="Người thực hiện" style={{ padding: '0.75rem 1rem', color: 'var(--text-muted)' }}>
+                                    <span style={{ opacity: 0.5 }}>{log.user}</span>
+                                  </td>
+                                  <td data-label="Hành động" style={{ padding: '0.75rem 1rem' }}>
+                                    <span style={{
+                                      display: 'inline-block',
+                                      padding: '2px 6px',
+                                      borderRadius: '4px',
+                                      fontSize: '0.75rem',
+                                      fontWeight: '600',
+                                      background: `${actionColor}15`,
+                                      color: actionColor,
+                                      whiteSpace: 'nowrap'
+                                    }}>
+                                      {log.action}
+                                    </span>
+                                  </td>
+                                  <td data-label="Loại đối tượng" style={{ padding: '0.75rem 1rem' }}>
+                                    <span style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>{log.resource}</span>
+                                  </td>
+                                  <td data-label="Chi tiết" style={{ padding: '0.75rem 1rem', color: 'var(--text-secondary)', maxWidth: '350px', wordBreak: 'break-word' }}>
+                                    {log.details}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </Fragment>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               )}
 
               {/* --- BẢNG TÀI KHOẢN --- */}
@@ -837,6 +1102,7 @@ export default function AdminDashboard() {
                 <table className="responsive-table" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
                   <thead>
                     <tr style={{ borderBottom: '1px solid var(--card-border)', color: 'var(--text-primary)', fontSize: '0.9rem', fontWeight: '700' }}>
+                      <th style={{ padding: '1rem', width: '40px' }}><input type="checkbox" onChange={(e) => handleSelectAll(e, students)} checked={students.length > 0 && selectedIds.length === students.length} /></th>
                       <th style={{ padding: '1rem' }}>Tên học viên</th>
                       <th style={{ padding: '1rem' }}>Mã lớp học</th>
                       <th style={{ padding: '1rem' }}>Mã tra cứu học viên</th>
@@ -849,6 +1115,7 @@ export default function AdminDashboard() {
                   <tbody>
                     {students.map((item) => (
                       <tr key={item._id} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)', fontSize: '0.875rem' }}>
+                        <td style={{ padding: '1rem' }}><input type="checkbox" checked={selectedIds.includes(item._id)} onChange={() => handleSelectRow(item._id)} /></td>
                         <td data-label="Tên học viên" style={{ padding: '1rem', color: 'var(--text-primary)', fontWeight: '600' }}>{item.name}</td>
                         <td data-label="Mã lớp học" style={{ padding: '1rem' }}>
                           <span style={{ background: 'rgba(99, 102, 241, 0.1)', color: 'var(--primary)', padding: '2px 8px', borderRadius: '4px', fontSize: '0.8rem', fontWeight: '600' }}>
@@ -1138,6 +1405,51 @@ export default function AdminDashboard() {
                       </div>
                     </>
                   )}
+                </>
+              )}
+
+              {/* --- Teacher Form Fields --- */}
+              {activeTab === 'teachers' && (
+                <>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                    <label className="form-label">Tên giáo viên</label>
+                    <input
+                      type="text"
+                      value={teacherNameInput}
+                      onChange={(e) => setTeacherNameInput(e.target.value)}
+                      placeholder="Ví dụ: Nguyễn Văn A"
+                      className="form-input-field"
+                      required
+                      autoComplete="off"
+                    />
+                  </div>
+                  {!editingId && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                      <label className="form-label">Tên đăng nhập tài khoản giáo viên</label>
+                      <input
+                        type="text"
+                        value={newTeacherUsername}
+                        onChange={(e) => setNewTeacherUsername(e.target.value)}
+                        placeholder="Ví dụ: nguyenvana"
+                        className="form-input-field"
+                        required
+                        autoComplete="off"
+                      />
+                    </div>
+                  )}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                    <label className="form-label">
+                      {editingId ? 'Mật khẩu mới (Để trống nếu không đổi)' : 'Mật khẩu tài khoản giáo viên'}
+                    </label>
+                    <input
+                      type="password"
+                      value={newTeacherPassword}
+                      onChange={(e) => setNewTeacherPassword(e.target.value)}
+                      placeholder={editingId ? 'Mật khẩu mới...' : 'Để trống nếu lấy mặc định là 123456...'}
+                      className="form-input-field"
+                      autoComplete="new-password"
+                    />
+                  </div>
                 </>
               )}
 
