@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Link } from 'react-router-dom';
+import { formatDateTime } from '../utils/date';
 import ComboBox from '../components/ComboBox';
 
 interface UploadResponseFile {
@@ -386,12 +387,7 @@ function Upload() {
       return 'Chưa cấu hình lịch học hoặc hạn chót cho lớp này';
     }
 
-    const pad = (n: number) => n.toString().padStart(2, '0');
-    const formatDt = (d: Date) => {
-      const dateStr = `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`;
-      const timeStr = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
-      return `${timeStr} ngày ${dateStr}`;
-    };
+    const formatDt = (d: Date) => formatDateTime(d);
 
     return `Từ ${formatDt(startDate)} đến ${formatDt(deadlineDate)}${isManual ? ' (Thủ công)' : ''}${cls.allowLateUpload ? ' (Cho phép nộp muộn)' : ''}`;
   };

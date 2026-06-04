@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
+import { formatDateTime } from '../utils/date';
 
 interface Submission {
   _id: string;
@@ -194,20 +195,7 @@ export default function Submissions() {
     setFilteredSubmissions(filtered);
   }, [searchTerm, selectedClass, selectedStage, submissions]);
 
-  const formatDate = (dateStr: string) => {
-    try {
-      const date = new Date(dateStr);
-      return date.toLocaleString('vi-VN', {
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit'
-      });
-    } catch (e) {
-      return dateStr;
-    }
-  };
+  const formatDate = (dateStr: string) => formatDateTime(dateStr);
 
   return (
     <>

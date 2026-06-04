@@ -1,5 +1,14 @@
 [
   {
+    "version": "1.3.0",
+    "date": "2026-06-05",
+    "title": "Cải tiến Định dạng Hiển thị Thời gian & Tối ưu Trải nghiệm người dùng",
+    "features": [
+      "Thống nhất định dạng hiển thị ngày tháng năm và giờ phút thành ngày/tháng/năm giờ:phút (dd/mm/yyyy hh:mm) trên toàn hệ thống.",
+      "Tối ưu hóa giao diện trang Lịch sử Phiên bản (Changelog) với tính năng thu gọn các phiên bản cũ."
+    ]
+  },
+  {
     "version": "1.2.0",
     "date": "2026-06-03",
     "title": "Tính năng Xếp lịch Thuyết trình & Cải tiến Mật khẩu",

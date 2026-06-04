@@ -1,5 +1,6 @@
 import { useState, useEffect, Fragment } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { formatDateTime } from '../utils/date';
 
 interface UserData {
   _id: string;
@@ -404,16 +405,7 @@ export default function AdminDashboard() {
 
     if (!startVal || !endVal) return 'Chưa cấu hình';
 
-    const formatDt = (dtStr: string) => {
-      try {
-        const hasTimezone = dtStr.includes('Z') || /([+-]\d{2}:\d{2}|[+-]\d{2})$/.test(dtStr);
-        const d = new Date(hasTimezone ? dtStr : `${dtStr}:00+07:00`);
-        if (isNaN(d.getTime())) return dtStr;
-        return d.toLocaleString('vi-VN');
-      } catch {
-        return dtStr;
-      }
-    };
+    const formatDt = (dtStr: string) => formatDateTime(dtStr);
 
     return (
       <span style={{ color: isAuto ? '#aaa' : 'var(--success)', fontWeight: isAuto ? '400' : '600' }}>
@@ -722,14 +714,7 @@ export default function AdminDashboard() {
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
   };
 
-  const formatDate = (dateStr: string) => {
-    try {
-      const date = new Date(dateStr);
-      return date.toLocaleString('vi-VN');
-    } catch (e) {
-      return dateStr;
-    }
-  };
+  const formatDate = (dateStr: string) => formatDateTime(dateStr);
 
   return (
     <>
@@ -999,7 +984,7 @@ export default function AdminDashboard() {
                               onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}
                             >
                               <td data-label="Thời gian" style={{ padding: '1rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
-                                {new Date(log.createdAt).toLocaleString('vi-VN')}
+                                {formatDateTime(log.createdAt)}
                               </td>
                               <td data-label="Người thực hiện" style={{ padding: '1rem' }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
@@ -1061,7 +1046,7 @@ export default function AdminDashboard() {
                             >
                               <td data-label="Thời gian" style={{ padding: '1rem', color: 'var(--text-muted)', whiteSpace: 'nowrap', fontWeight: '600' }}>
                                 <span style={{ marginRight: '0.5rem', display: 'inline-block', transition: 'transform 0.2s', transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)' }}>▶</span>
-                                {new Date(firstLog.createdAt).toLocaleString('vi-VN')}
+                                {formatDateTime(firstLog.createdAt)}
                               </td>
                               <td data-label="Người thực hiện" style={{ padding: '1rem' }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
