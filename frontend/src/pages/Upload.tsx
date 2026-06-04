@@ -310,10 +310,21 @@ function Upload() {
     const isTheory = stageLower.includes('ly thuyet') || stageLower.includes('lý thuyết') || stageLower.includes('theory');
     if (isTheory) return 'Không áp dụng hạn chót (luôn được phép nộp)';
 
+    let startDate: Date | null = null;
     let deadlineDate: Date | null = null;
     let isManual = false;
 
     if (stageLower.includes('checkpoint 1')) {
+      if (cls.checkpoint1StartDate) {
+        startDate = new Date(cls.checkpoint1StartDate);
+        isManual = true;
+      } else if (cls.startDate) {
+        startDate = new Date(cls.startDate);
+        startDate.setDate(startDate.getDate() + 28);
+        const [h, m] = (cls.startTime || "08:00").split(":");
+        startDate.setHours(parseInt(h) || 8, parseInt(m) || 0, 0, 0);
+      }
+
       if (cls.checkpoint1Deadline) {
         deadlineDate = new Date(cls.checkpoint1Deadline);
         isManual = true;
@@ -324,6 +335,16 @@ function Upload() {
         deadlineDate.setHours(parseInt(h) || 10, parseInt(m) || 0, 0, 0);
       }
     } else if (stageLower.includes('checkpoint 2')) {
+      if (cls.checkpoint2StartDate) {
+        startDate = new Date(cls.checkpoint2StartDate);
+        isManual = true;
+      } else if (cls.startDate) {
+        startDate = new Date(cls.startDate);
+        startDate.setDate(startDate.getDate() + 56);
+        const [h, m] = (cls.startTime || "08:00").split(":");
+        startDate.setHours(parseInt(h) || 8, parseInt(m) || 0, 0, 0);
+      }
+
       if (cls.checkpoint2Deadline) {
         deadlineDate = new Date(cls.checkpoint2Deadline);
         isManual = true;
@@ -334,26 +355,39 @@ function Upload() {
         deadlineDate.setHours(parseInt(h) || 10, parseInt(m) || 0, 0, 0);
       }
     } else if (stageLower.includes('san pham cuoi khoa') || stageLower.includes('sản phẩm cuối khóa')) {
+      if (cls.finalProjectStartDate) {
+        startDate = new Date(cls.finalProjectStartDate);
+        isManual = true;
+      } else if (cls.startDate) {
+        startDate = new Date(cls.startDate);
+        startDate.setDate(startDate.getDate() + 84);
+        const [h, m] = (cls.startTime || "08:00").split(":");
+        startDate.setHours(parseInt(h) || 8, parseInt(m) || 0, 0, 0);
+      }
+
       if (cls.finalProjectDeadline) {
         deadlineDate = new Date(cls.finalProjectDeadline);
         isManual = true;
       } else if (cls.startDate) {
         deadlineDate = new Date(cls.startDate);
-        deadlineDate.setDate(deadlineDate.getDate() + 85);
+        deadlineDate.setDate(deadlineDate.getDate() + 84);
         const [h, m] = (cls.endTime || "10:00").split(":");
         deadlineDate.setHours(parseInt(h) || 10, parseInt(m) || 0, 0, 0);
       }
     }
 
-    if (!deadlineDate || isNaN(deadlineDate.getTime())) {
+    if (!startDate || isNaN(startDate.getTime()) || !deadlineDate || isNaN(deadlineDate.getTime())) {
       return 'Chưa cấu hình lịch học hoặc hạn chót cho lớp này';
     }
 
     const pad = (n: number) => n.toString().padStart(2, '0');
-    const dateStr = `${pad(deadlineDate.getDate())}/${pad(deadlineDate.getMonth() + 1)}/${deadlineDate.getFullYear()}`;
-    const timeStr = `${pad(deadlineDate.getHours())}:${pad(deadlineDate.getMinutes())}`;
-    
-    return `${timeStr} ngày ${dateStr}${isManual ? ' (Thủ công)' : ''}${cls.allowLateUpload ? ' (Cho phép nộp muộn)' : ''}`;
+    const formatDt = (d: Date) => {
+      const dateStr = `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`;
+      const timeStr = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+      return `${timeStr} ngày ${dateStr}`;
+    };
+
+    return `Từ ${formatDt(startDate)} đến ${formatDt(deadlineDate)}${isManual ? ' (Thủ công)' : ''}${cls.allowLateUpload ? ' (Cho phép nộp muộn)' : ''}`;
   };
 
   // Re-validate selected files when files list or student name changes

@@ -35,8 +35,11 @@ const classSchema = new mongoose.Schema({
   startDate: { type: Date },
   startTime: { type: String, default: "08:00" },
   endTime: { type: String, default: "10:00" },
+  checkpoint1StartDate: { type: Date },
   checkpoint1Deadline: { type: Date },
+  checkpoint2StartDate: { type: Date },
   checkpoint2Deadline: { type: Date },
+  finalProjectStartDate: { type: Date },
   finalProjectDeadline: { type: Date },
   allowLateUpload: { type: Boolean, default: false }
 });
@@ -1164,8 +1167,11 @@ app.post('/api/admin/classes', adminOrTeacherAuth, async (req: Request, res: Res
     const startDate = req.body.startDate ? parseVietnamDate(req.body.startDate) : undefined;
     const startTime = sanitize(req.body.startTime) || "08:00";
     const endTime = sanitize(req.body.endTime) || "10:00";
+    const checkpoint1StartDate = req.body.checkpoint1StartDate ? parseVietnamDate(req.body.checkpoint1StartDate) : undefined;
     const checkpoint1Deadline = req.body.checkpoint1Deadline ? parseVietnamDate(req.body.checkpoint1Deadline) : undefined;
+    const checkpoint2StartDate = req.body.checkpoint2StartDate ? parseVietnamDate(req.body.checkpoint2StartDate) : undefined;
     const checkpoint2Deadline = req.body.checkpoint2Deadline ? parseVietnamDate(req.body.checkpoint2Deadline) : undefined;
+    const finalProjectStartDate = req.body.finalProjectStartDate ? parseVietnamDate(req.body.finalProjectStartDate) : undefined;
     const finalProjectDeadline = req.body.finalProjectDeadline ? parseVietnamDate(req.body.finalProjectDeadline) : undefined;
     const allowLateUpload = req.body.allowLateUpload === true;
 
@@ -1186,8 +1192,11 @@ app.post('/api/admin/classes', adminOrTeacherAuth, async (req: Request, res: Res
       startDate,
       startTime,
       endTime,
+      checkpoint1StartDate,
       checkpoint1Deadline,
+      checkpoint2StartDate,
       checkpoint2Deadline,
+      finalProjectStartDate,
       finalProjectDeadline,
       allowLateUpload
     });
@@ -1209,8 +1218,11 @@ app.put('/api/admin/classes/:id', adminOrTeacherAuth, async (req: Request, res: 
     const startDate = req.body.startDate === null || req.body.startDate === '' ? null : (req.body.startDate ? parseVietnamDate(req.body.startDate) : undefined);
     const startTime = req.body.startTime !== undefined ? sanitize(req.body.startTime) : undefined;
     const endTime = req.body.endTime !== undefined ? sanitize(req.body.endTime) : undefined;
+    const checkpoint1StartDate = req.body.checkpoint1StartDate === null || req.body.checkpoint1StartDate === '' ? null : (req.body.checkpoint1StartDate ? parseVietnamDate(req.body.checkpoint1StartDate) : undefined);
     const checkpoint1Deadline = req.body.checkpoint1Deadline === null || req.body.checkpoint1Deadline === '' ? null : (req.body.checkpoint1Deadline ? parseVietnamDate(req.body.checkpoint1Deadline) : undefined);
+    const checkpoint2StartDate = req.body.checkpoint2StartDate === null || req.body.checkpoint2StartDate === '' ? null : (req.body.checkpoint2StartDate ? parseVietnamDate(req.body.checkpoint2StartDate) : undefined);
     const checkpoint2Deadline = req.body.checkpoint2Deadline === null || req.body.checkpoint2Deadline === '' ? null : (req.body.checkpoint2Deadline ? parseVietnamDate(req.body.checkpoint2Deadline) : undefined);
+    const finalProjectStartDate = req.body.finalProjectStartDate === null || req.body.finalProjectStartDate === '' ? null : (req.body.finalProjectStartDate ? parseVietnamDate(req.body.finalProjectStartDate) : undefined);
     const finalProjectDeadline = req.body.finalProjectDeadline === null || req.body.finalProjectDeadline === '' ? null : (req.body.finalProjectDeadline ? parseVietnamDate(req.body.finalProjectDeadline) : undefined);
     const allowLateUpload = req.body.allowLateUpload !== undefined ? req.body.allowLateUpload === true : undefined;
 
@@ -1239,8 +1251,11 @@ app.put('/api/admin/classes/:id', adminOrTeacherAuth, async (req: Request, res: 
     if (startDate !== undefined) (cls as any).startDate = startDate;
     if (startTime !== undefined) (cls as any).startTime = startTime;
     if (endTime !== undefined) (cls as any).endTime = endTime;
+    if (checkpoint1StartDate !== undefined) (cls as any).checkpoint1StartDate = checkpoint1StartDate;
     if (checkpoint1Deadline !== undefined) (cls as any).checkpoint1Deadline = checkpoint1Deadline;
+    if (checkpoint2StartDate !== undefined) (cls as any).checkpoint2StartDate = checkpoint2StartDate;
     if (checkpoint2Deadline !== undefined) (cls as any).checkpoint2Deadline = checkpoint2Deadline;
+    if (finalProjectStartDate !== undefined) (cls as any).finalProjectStartDate = finalProjectStartDate;
     if (finalProjectDeadline !== undefined) (cls as any).finalProjectDeadline = finalProjectDeadline;
     if (allowLateUpload !== undefined) (cls as any).allowLateUpload = allowLateUpload;
 
@@ -1939,35 +1954,39 @@ app.post('/api/upload', (req: Request, res: Response, next: any) => {
         const isTheory = stageLower.includes('ly thuyet') || stageLower.includes('lý thuyết') || stageLower.includes('theory');
         
         if (!isTheory) {
-          let deadline: Date | null = null;
+          let startDeadline: Date | null = null;
+          let endDeadline: Date | null = null;
+
           if (stageLower.includes('checkpoint 1')) {
-            if (cls.checkpoint1Deadline) {
-              deadline = parseVietnamDate(cls.checkpoint1Deadline);
-            } else if (cls.startDate) {
-              deadline = calculateVietnamDeadline(cls.startDate, 28, cls.endTime || "10:00");
-            }
+            startDeadline = (cls as any).checkpoint1StartDate ? parseVietnamDate((cls as any).checkpoint1StartDate) : (cls.startDate ? calculateVietnamDeadline(cls.startDate, 28, cls.startTime || "08:00") : null);
+            endDeadline = cls.checkpoint1Deadline ? parseVietnamDate(cls.checkpoint1Deadline) : (cls.startDate ? calculateVietnamDeadline(cls.startDate, 28, cls.endTime || "10:00") : null);
           } else if (stageLower.includes('checkpoint 2')) {
-            if (cls.checkpoint2Deadline) {
-              deadline = parseVietnamDate(cls.checkpoint2Deadline);
-            } else if (cls.startDate) {
-              deadline = calculateVietnamDeadline(cls.startDate, 56, cls.endTime || "10:00");
-            }
+            startDeadline = (cls as any).checkpoint2StartDate ? parseVietnamDate((cls as any).checkpoint2StartDate) : (cls.startDate ? calculateVietnamDeadline(cls.startDate, 56, cls.startTime || "08:00") : null);
+            endDeadline = cls.checkpoint2Deadline ? parseVietnamDate(cls.checkpoint2Deadline) : (cls.startDate ? calculateVietnamDeadline(cls.startDate, 56, cls.endTime || "10:00") : null);
           } else if (stageLower.includes('san pham cuoi khoa') || stageLower.includes('sản phẩm cuối khóa')) {
-            if (cls.finalProjectDeadline) {
-              deadline = parseVietnamDate(cls.finalProjectDeadline);
-            } else if (cls.startDate) {
-              deadline = calculateVietnamDeadline(cls.startDate, 85, cls.endTime || "10:00");
-            }
+            startDeadline = (cls as any).finalProjectStartDate ? parseVietnamDate((cls as any).finalProjectStartDate) : (cls.startDate ? calculateVietnamDeadline(cls.startDate, 84, cls.startTime || "08:00") : null);
+            endDeadline = cls.finalProjectDeadline ? parseVietnamDate(cls.finalProjectDeadline) : (cls.startDate ? calculateVietnamDeadline(cls.startDate, 84, cls.endTime || "10:00") : null);
           }
 
-          if (deadline && new Date() > deadline && !cls.allowLateUpload) {
-            // Delete temporary files written by Multer
+          if (startDeadline && new Date() < startDeadline) {
             for (const f of files) {
               if (fs.existsSync(f.path)) {
                 fs.unlinkSync(f.path);
               }
             }
-            const formattedDeadline = formatVietnamDateTime(deadline);
+            const formattedStart = formatVietnamDateTime(startDeadline);
+            return res.status(403).json({
+              error: `Chưa đến thời gian mở cổng nộp bài cho giai đoạn này (${stage}). Cổng nộp bài sẽ mở vào lúc: ${formattedStart}.`
+            });
+          }
+
+          if (endDeadline && new Date() > endDeadline && !cls.allowLateUpload) {
+            for (const f of files) {
+              if (fs.existsSync(f.path)) {
+                fs.unlinkSync(f.path);
+              }
+            }
+            const formattedDeadline = formatVietnamDateTime(endDeadline);
             return res.status(403).json({
               error: `Đã quá hạn nộp bài cho giai đoạn này (${stage}). Hạn chót là: ${formattedDeadline}. Cổng nộp bài đã đóng.`
             });
