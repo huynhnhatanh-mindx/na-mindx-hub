@@ -406,9 +406,6 @@ export default function AdminDashboard() {
     setClassStartDate('');
     setClassStartTime('08:00');
     setClassEndTime('10:00');
-    setClassCheckpoint1Deadline('');
-    setClassCheckpoint2Deadline('');
-    setClassFinalProjectDeadline('');
     setClassAllowLateUpload(false);
     setLateOverrideCp1('');
     setLateOverrideCp2('');
@@ -446,9 +443,6 @@ export default function AdminDashboard() {
       setClassStartDate(toLocalYYYYMMDD(item.startDate));
       setClassStartTime(item.startTime || '08:00');
       setClassEndTime(item.endTime || '10:00');
-      setClassCheckpoint1Deadline(toLocalYYYYMMDDTHHMM(item.checkpoint1Deadline));
-      setClassCheckpoint2Deadline(toLocalYYYYMMDDTHHMM(item.checkpoint2Deadline));
-      setClassFinalProjectDeadline(toLocalYYYYMMDDTHHMM(item.finalProjectDeadline));
       setClassAllowLateUpload(!!item.allowLateUpload);
       // If allowLateUpload is on, check if there were manual overrides stored
       // We compare stored deadlines with auto-computed to detect overrides
