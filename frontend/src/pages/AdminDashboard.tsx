@@ -19,15 +19,9 @@ interface ClassData {
   startDate?: string;
   startTime?: string;
   endTime?: string;
-  checkpoint1Open?: string;
   checkpoint1Deadline?: string;
-  checkpoint1LateDeadline?: string;
-  checkpoint2Open?: string;
   checkpoint2Deadline?: string;
-  checkpoint2LateDeadline?: string;
-  finalProjectOpen?: string;
   finalProjectDeadline?: string;
-  finalProjectLateDeadline?: string;
   allowLateUpload?: boolean;
 }
 
@@ -109,17 +103,12 @@ export default function AdminDashboard() {
   const [classStartDate, setClassStartDate] = useState('');
   const [classStartTime, setClassStartTime] = useState('08:00');
   const [classEndTime, setClassEndTime] = useState('10:00');
+
   const [classAllowLateUpload, setClassAllowLateUpload] = useState(false);
-  // Per-checkpoint: open, close (deadline), late deadline
-  const [cp1Open, setCp1Open] = useState('');
-  const [cp1Deadline, setCp1Deadline] = useState('');
-  const [cp1LateDeadline, setCp1LateDeadline] = useState('');
-  const [cp2Open, setCp2Open] = useState('');
-  const [cp2Deadline, setCp2Deadline] = useState('');
-  const [cp2LateDeadline, setCp2LateDeadline] = useState('');
-  const [spckOpen, setSpckOpen] = useState('');
-  const [spckDeadline, setSpckDeadline] = useState('');
-  const [spckLateDeadline, setSpckLateDeadline] = useState('');
+  // Late upload override deadlines (only used when allowLateUpload is checked)
+  const [lateOverrideCp1, setLateOverrideCp1] = useState('');
+  const [lateOverrideCp2, setLateOverrideCp2] = useState('');
+  const [lateOverrideSpck, setLateOverrideSpck] = useState('');
 
   // Student form states
   const [studentName, setStudentName] = useState('');
@@ -418,9 +407,9 @@ export default function AdminDashboard() {
     setClassStartTime('08:00');
     setClassEndTime('10:00');
     setClassAllowLateUpload(false);
-    setCp1Open(''); setCp1Deadline(''); setCp1LateDeadline('');
-    setCp2Open(''); setCp2Deadline(''); setCp2LateDeadline('');
-    setSpckOpen(''); setSpckDeadline(''); setSpckLateDeadline('');
+    setLateOverrideCp1('');
+    setLateOverrideCp2('');
+    setLateOverrideSpck('');
     setStudentName('');
     setStudentClass('');
     setStudentCode('');
@@ -455,16 +444,20 @@ export default function AdminDashboard() {
       setClassStartTime(item.startTime || '08:00');
       setClassEndTime(item.endTime || '10:00');
       setClassAllowLateUpload(!!item.allowLateUpload);
-      // Load per-checkpoint open/close/late deadlines
-      setCp1Open(toLocalYYYYMMDDTHHMM(item.checkpoint1Open));
-      setCp1Deadline(toLocalYYYYMMDDTHHMM(item.checkpoint1Deadline));
-      setCp1LateDeadline(toLocalYYYYMMDDTHHMM(item.checkpoint1LateDeadline));
-      setCp2Open(toLocalYYYYMMDDTHHMM(item.checkpoint2Open));
-      setCp2Deadline(toLocalYYYYMMDDTHHMM(item.checkpoint2Deadline));
-      setCp2LateDeadline(toLocalYYYYMMDDTHHMM(item.checkpoint2LateDeadline));
-      setSpckOpen(toLocalYYYYMMDDTHHMM(item.finalProjectOpen));
-      setSpckDeadline(toLocalYYYYMMDDTHHMM(item.finalProjectDeadline));
-      setSpckLateDeadline(toLocalYYYYMMDDTHHMM(item.finalProjectLateDeadline));
+      // If allowLateUpload is on, check if there were manual overrides stored
+      // We compare stored deadlines with auto-computed to detect overrides
+      const sd = toLocalYYYYMMDD(item.startDate);
+      const et = item.endTime || '10:00';
+      const autoC1 = calcAutoDeadline(sd, 28, et);
+      const autoC2 = calcAutoDeadline(sd, 56, et);
+      const autoSp = calcAutoDeadline(sd, 85, et);
+      const storedC1 = toLocalYYYYMMDDTHHMM(item.checkpoint1Deadline);
+      const storedC2 = toLocalYYYYMMDDTHHMM(item.checkpoint2Deadline);
+      const storedSp = toLocalYYYYMMDDTHHMM(item.finalProjectDeadline);
+      // If stored deadline differs from auto, it's an override
+      setLateOverrideCp1(storedC1 && storedC1 !== autoC1 ? storedC1 : '');
+      setLateOverrideCp2(storedC2 && storedC2 !== autoC2 ? storedC2 : '');
+      setLateOverrideSpck(storedSp && storedSp !== autoSp ? storedSp : '');
       
       const teacherExists = teachers.includes(item.teacherName);
       if (teacherExists || !item.teacherName) {
@@ -552,6 +545,38 @@ export default function AdminDashboard() {
         password: newTeacherPassword // Mật khẩu (mới) khi tạo hoặc cập nhật giáo viên
       };
     } else if (activeTab === 'classes') {
+      // Determine the effective deadlines to send:
+      // If allowLateUpload is ON and an override is set, use the override.
+      // Otherwise, send null so the backend will auto-compute from startDate + offset.
+      let effectiveCp1: string | null = null;
+      let effectiveCp2: string | null = null;
+      let effectiveSpck: string | null = null;
+
+      if (classAllowLateUpload) {
+        // Validate overrides: must be > auto-calculated deadline
+        if (lateOverrideCp1) {
+          if (autoCp1 && lateOverrideCp1 <= autoCp1) {
+            setError('Hạn gia hạn CP1 phải lớn hơn hạn chót tự động.');
+            return;
+          }
+          effectiveCp1 = lateOverrideCp1;
+        }
+        if (lateOverrideCp2) {
+          if (autoCp2 && lateOverrideCp2 <= autoCp2) {
+            setError('Hạn gia hạn CP2 phải lớn hơn hạn chót tự động.');
+            return;
+          }
+          effectiveCp2 = lateOverrideCp2;
+        }
+        if (lateOverrideSpck) {
+          if (autoSpck && lateOverrideSpck <= autoSpck) {
+            setError('Hạn gia hạn SPCK phải lớn hơn hạn chót tự động.');
+            return;
+          }
+          effectiveSpck = lateOverrideSpck;
+        }
+      }
+
       url = `${API_BASE_URL}/api/admin/classes${editingId ? `/${editingId}` : ''}`;
       body = {
         name: className,
@@ -561,15 +586,9 @@ export default function AdminDashboard() {
         startDate: classStartDate || null,
         startTime: classStartTime || "08:00",
         endTime: classEndTime || "10:00",
-        checkpoint1Open: cp1Open || null,
-        checkpoint1Deadline: cp1Deadline || null,
-        checkpoint1LateDeadline: cp1LateDeadline || null,
-        checkpoint2Open: cp2Open || null,
-        checkpoint2Deadline: cp2Deadline || null,
-        checkpoint2LateDeadline: cp2LateDeadline || null,
-        finalProjectOpen: spckOpen || null,
-        finalProjectDeadline: spckDeadline || null,
-        finalProjectLateDeadline: spckLateDeadline || null,
+        checkpoint1Deadline: effectiveCp1,
+        checkpoint2Deadline: effectiveCp2,
+        finalProjectDeadline: effectiveSpck,
         allowLateUpload: classAllowLateUpload
       };
     } else if (activeTab === 'students') {
@@ -675,35 +694,18 @@ export default function AdminDashboard() {
 
   const toLocalYYYYMMDD = (dateStr: string | Date | undefined | null) => {
     if (!dateStr) return '';
-    const d = new Date(dateStr as any);
+    const d = new Date(dateStr);
     if (isNaN(d.getTime())) return '';
-    const formatter = new Intl.DateTimeFormat('en-US', {
-      timeZone: 'Asia/Ho_Chi_Minh',
-      year: 'numeric', month: '2-digit', day: '2-digit'
-    });
-    const parts = formatter.formatToParts(d);
-    const year = parts.find(p => p.type === 'year')?.value || '2026';
-    const month = parts.find(p => p.type === 'month')?.value || '01';
-    const day = parts.find(p => p.type === 'day')?.value || '01';
-    return `${year}-${month}-${day}`;
+    const pad = (n: number) => n.toString().padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
   };
 
   const toLocalYYYYMMDDTHHMM = (dateStr: string | Date | undefined | null) => {
     if (!dateStr) return '';
-    const d = new Date(dateStr as any);
+    const d = new Date(dateStr);
     if (isNaN(d.getTime())) return '';
-    const formatter = new Intl.DateTimeFormat('en-US', {
-      timeZone: 'Asia/Ho_Chi_Minh',
-      year: 'numeric', month: '2-digit', day: '2-digit',
-      hour: '2-digit', minute: '2-digit', hour12: false
-    });
-    const parts = formatter.formatToParts(d);
-    const year = parts.find(p => p.type === 'year')?.value || '2026';
-    const month = parts.find(p => p.type === 'month')?.value || '01';
-    const day = parts.find(p => p.type === 'day')?.value || '01';
-    const hour = parts.find(p => p.type === 'hour')?.value || '00';
-    const minute = parts.find(p => p.type === 'minute')?.value || '00';
-    return `${year}-${month}-${day}T${hour}:${minute}`;
+    const pad = (n: number) => n.toString().padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
   };
 
   const formatDate = (dateStr: string) => {
@@ -1610,8 +1612,45 @@ export default function AdminDashboard() {
                     </>
                   )}
                   
-                  {/* === Date & time base inputs === */}
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginTop: '0.5rem' }}>
+                  {/* === Read-only auto-calculated deadlines (shown FIRST) === */}
+                  <div style={{
+                    marginTop: '0.5rem',
+                    padding: '1rem',
+                    borderRadius: '12px',
+                    background: 'rgba(255, 255, 255, 0.03)',
+                    border: '1px solid rgba(255, 255, 255, 0.08)'
+                  }}>
+                    <div style={{ fontSize: '0.8rem', fontWeight: '600', color: 'var(--text-secondary)', marginBottom: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                      📅 Hạn chót tự động (chỉ xem)
+                    </div>
+                    {[{ label: 'Checkpoint 1 (Buổi 5)', value: autoCp1, offset: '+28 ngày' },
+                      { label: 'Checkpoint 2 (Buổi 9)', value: autoCp2, offset: '+56 ngày' },
+                      { label: 'SPCK (Buổi 10-14)', value: autoSpck, offset: '+85 ngày' }
+                    ].map((item, idx) => (
+                      <div key={idx} style={{
+                        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                        padding: '0.5rem 0.75rem', marginBottom: idx < 2 ? '0.5rem' : 0,
+                        borderRadius: '8px',
+                        background: item.value ? 'rgba(99, 102, 241, 0.08)' : 'rgba(255, 255, 255, 0.02)',
+                        border: `1px solid ${item.value ? 'rgba(99, 102, 241, 0.15)' : 'rgba(255, 255, 255, 0.05)'}`
+                      }}>
+                        <div>
+                          <span style={{ fontSize: '0.85rem', fontWeight: '500', color: '#ccc' }}>{item.label}</span>
+                          <span style={{ fontSize: '0.7rem', color: '#666', marginLeft: '0.5rem' }}>({item.offset})</span>
+                        </div>
+                        <span style={{
+                          fontSize: '0.85rem', fontWeight: '600',
+                          color: item.value ? '#a5b4fc' : '#666',
+                          fontFamily: 'monospace'
+                        }}>
+                          {formatDeadlineDisplay(item.value)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* === Date & time inputs === */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginTop: '0.75rem' }}>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                       <label className="form-label">Ngày bắt đầu lớp học</label>
                       <input
@@ -1630,7 +1669,9 @@ export default function AdminDashboard() {
                           onChange={(e) => {
                             setClassAllowLateUpload(e.target.checked);
                             if (!e.target.checked) {
-                              setCp1LateDeadline(''); setCp2LateDeadline(''); setSpckLateDeadline('');
+                              setLateOverrideCp1('');
+                              setLateOverrideCp2('');
+                              setLateOverrideSpck('');
                             }
                           }}
                           style={{ width: '1.2rem', height: '1.2rem', cursor: 'pointer' }}
@@ -1643,56 +1684,62 @@ export default function AdminDashboard() {
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginTop: '0.5rem' }}>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                       <label className="form-label">Giờ học bắt đầu</label>
-                      <input type="time" value={classStartTime} onChange={(e) => setClassStartTime(e.target.value)} className="form-input-field" required />
+                      <input
+                        type="time"
+                        value={classStartTime}
+                        onChange={(e) => setClassStartTime(e.target.value)}
+                        className="form-input-field"
+                        required
+                      />
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                       <label className="form-label">Giờ học kết thúc</label>
-                      <input type="time" value={classEndTime} onChange={(e) => setClassEndTime(e.target.value)} className="form-input-field" required />
+                      <input
+                        type="time"
+                        value={classEndTime}
+                        onChange={(e) => setClassEndTime(e.target.value)}
+                        className="form-input-field"
+                        required
+                      />
                     </div>
                   </div>
 
-                  {/* === Per-checkpoint deadline cards === */}
-                  {[
-                    { title: 'Checkpoint 1', subtitle: 'Buổi 5', autoDeadline: autoCp1, offset: '+28 ngày', color: '#818cf8',
-                      open: cp1Open, setOpen: setCp1Open, deadline: cp1Deadline, setDeadline: setCp1Deadline, late: cp1LateDeadline, setLate: setCp1LateDeadline },
-                    { title: 'Checkpoint 2', subtitle: 'Buổi 9', autoDeadline: autoCp2, offset: '+56 ngày', color: '#38bdf8',
-                      open: cp2Open, setOpen: setCp2Open, deadline: cp2Deadline, setDeadline: setCp2Deadline, late: cp2LateDeadline, setLate: setCp2LateDeadline },
-                    { title: 'SPCK', subtitle: 'Buổi 10-14', autoDeadline: autoSpck, offset: '+85 ngày', color: '#f472b6',
-                      open: spckOpen, setOpen: setSpckOpen, deadline: spckDeadline, setDeadline: setSpckDeadline, late: spckLateDeadline, setLate: setSpckLateDeadline }
-                  ].map((cp, idx) => (
-                    <div key={idx} style={{
-                      marginTop: '0.75rem', padding: '1rem', borderRadius: '12px',
-                      background: 'rgba(255,255,255,0.03)', border: `1px solid ${cp.color}22`
+                  {/* === Allow Late Upload: Override Deadline fields === */}
+                  {classAllowLateUpload && (
+                    <div style={{
+                      marginTop: '0.75rem',
+                      padding: '1rem',
+                      borderRadius: '12px',
+                      background: 'rgba(251, 191, 36, 0.05)',
+                      border: '1px solid rgba(251, 191, 36, 0.15)'
                     }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.6rem', flexWrap: 'wrap', gap: '0.3rem' }}>
-                        <span style={{ fontSize: '0.9rem', fontWeight: '600', color: cp.color }}>{cp.title} <span style={{ fontSize: '0.75rem', color: '#888', fontWeight: '400' }}>({cp.subtitle})</span></span>
-                        <span style={{ fontSize: '0.7rem', padding: '0.2rem 0.6rem', borderRadius: '6px', background: `${cp.color}15`, color: cp.color, fontFamily: 'monospace' }}>
-                          Mặc định đóng: {formatDeadlineDisplay(cp.autoDeadline)} ({cp.offset})
-                        </span>
+                      <div style={{ fontSize: '0.8rem', fontWeight: '600', color: '#fbbf24', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                        ⚠️ Gia hạn nộp muộn
                       </div>
-                      <div style={{ display: 'grid', gridTemplateColumns: classAllowLateUpload ? '1fr 1fr 1fr' : '1fr 1fr', gap: '0.5rem' }}>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
-                          <label className="form-label" style={{ fontSize: '0.75rem' }}>🟢 Mở nộp bài</label>
-                          <input type="datetime-local" value={cp.open} onChange={(e) => cp.setOpen(e.target.value)} className="form-input-field" style={{ fontSize: '0.82rem' }} />
+                      <p style={{ fontSize: '0.75rem', color: '#999', marginBottom: '0.75rem', lineHeight: 1.5 }}>
+                        Để trống = không giới hạn thời gian nộp muộn. Nếu đặt ngày giờ, hạn gia hạn phải lớn hơn hạn chót tự động.
+                      </p>
+                      {[{ label: 'Gia hạn CP1', value: lateOverrideCp1, setter: setLateOverrideCp1, auto: autoCp1 },
+                        { label: 'Gia hạn CP2', value: lateOverrideCp2, setter: setLateOverrideCp2, auto: autoCp2 },
+                        { label: 'Gia hạn SPCK', value: lateOverrideSpck, setter: setLateOverrideSpck, auto: autoSpck }
+                      ].map((item, idx) => (
+                        <div key={idx} style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', marginBottom: idx < 2 ? '0.5rem' : 0 }}>
+                          <label className="form-label" style={{ fontSize: '0.8rem' }}>
+                            {item.label}
+                            {!item.value && <span style={{ fontSize: '0.7rem', color: '#666', marginLeft: '0.5rem' }}>(Không giới hạn)</span>}
+                          </label>
+                          <input
+                            type="datetime-local"
+                            value={item.value}
+                            onChange={(e) => item.setter(e.target.value)}
+                            min={item.auto || undefined}
+                            className="form-input-field"
+                            style={{ fontSize: '0.85rem' }}
+                          />
                         </div>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
-                          <label className="form-label" style={{ fontSize: '0.75rem' }}>🔴 Đóng nộp bài</label>
-                          <input type="datetime-local" value={cp.deadline} onChange={(e) => cp.setDeadline(e.target.value)} className="form-input-field" style={{ fontSize: '0.82rem' }} />
-                        </div>
-                        {classAllowLateUpload && (
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
-                            <label className="form-label" style={{ fontSize: '0.75rem' }}>⚠️ Hạn nộp muộn</label>
-                            <input type="datetime-local" value={cp.late} onChange={(e) => cp.setLate(e.target.value)} className="form-input-field" style={{ fontSize: '0.82rem' }} />
-                          </div>
-                        )}
-                      </div>
-                      {!cp.open && !cp.deadline && (
-                        <p style={{ fontSize: '0.7rem', color: '#666', marginTop: '0.4rem', fontStyle: 'italic' }}>
-                          Để trống = sử dụng giá trị mặc định (mở: ngày bắt đầu lớp, đóng: {cp.offset} kể từ ngày bắt đầu)
-                        </p>
-                      )}
+                      ))}
                     </div>
-                  ))}
+                  )}
                 </>
               )}
 
