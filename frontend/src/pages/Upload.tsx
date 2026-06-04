@@ -310,66 +310,71 @@ function Upload() {
     const isTheory = stageLower.includes('ly thuyet') || stageLower.includes('lý thuyết') || stageLower.includes('theory');
     if (isTheory) return 'Không áp dụng hạn chót (luôn được phép nộp)';
 
+    const parseSafeDate = (dtStr: string): Date => {
+      const hasTimezone = dtStr.includes('Z') || /([+-]\d{2}:\d{2}|[+-]\d{2})$/.test(dtStr);
+      return new Date(hasTimezone ? dtStr : `${dtStr}:00+07:00`);
+    };
+
     let startDate: Date | null = null;
     let deadlineDate: Date | null = null;
     let isManual = false;
 
     if (stageLower.includes('checkpoint 1')) {
       if (cls.checkpoint1StartDate) {
-        startDate = new Date(cls.checkpoint1StartDate);
+        startDate = parseSafeDate(cls.checkpoint1StartDate);
         isManual = true;
       } else if (cls.startDate) {
-        startDate = new Date(cls.startDate);
+        startDate = parseSafeDate(cls.startDate);
         startDate.setDate(startDate.getDate() + 28);
         const [h, m] = (cls.startTime || "08:00").split(":");
         startDate.setHours(parseInt(h) || 8, parseInt(m) || 0, 0, 0);
       }
 
       if (cls.checkpoint1Deadline) {
-        deadlineDate = new Date(cls.checkpoint1Deadline);
+        deadlineDate = parseSafeDate(cls.checkpoint1Deadline);
         isManual = true;
       } else if (cls.startDate) {
-        deadlineDate = new Date(cls.startDate);
+        deadlineDate = parseSafeDate(cls.startDate);
         deadlineDate.setDate(deadlineDate.getDate() + 28);
         const [h, m] = (cls.endTime || "10:00").split(":");
         deadlineDate.setHours(parseInt(h) || 10, parseInt(m) || 0, 0, 0);
       }
     } else if (stageLower.includes('checkpoint 2')) {
       if (cls.checkpoint2StartDate) {
-        startDate = new Date(cls.checkpoint2StartDate);
+        startDate = parseSafeDate(cls.checkpoint2StartDate);
         isManual = true;
       } else if (cls.startDate) {
-        startDate = new Date(cls.startDate);
+        startDate = parseSafeDate(cls.startDate);
         startDate.setDate(startDate.getDate() + 56);
         const [h, m] = (cls.startTime || "08:00").split(":");
         startDate.setHours(parseInt(h) || 8, parseInt(m) || 0, 0, 0);
       }
 
       if (cls.checkpoint2Deadline) {
-        deadlineDate = new Date(cls.checkpoint2Deadline);
+        deadlineDate = parseSafeDate(cls.checkpoint2Deadline);
         isManual = true;
       } else if (cls.startDate) {
-        deadlineDate = new Date(cls.startDate);
+        deadlineDate = parseSafeDate(cls.startDate);
         deadlineDate.setDate(deadlineDate.getDate() + 56);
         const [h, m] = (cls.endTime || "10:00").split(":");
         deadlineDate.setHours(parseInt(h) || 10, parseInt(m) || 0, 0, 0);
       }
     } else if (stageLower.includes('san pham cuoi khoa') || stageLower.includes('sản phẩm cuối khóa')) {
       if (cls.finalProjectStartDate) {
-        startDate = new Date(cls.finalProjectStartDate);
+        startDate = parseSafeDate(cls.finalProjectStartDate);
         isManual = true;
       } else if (cls.startDate) {
-        startDate = new Date(cls.startDate);
+        startDate = parseSafeDate(cls.startDate);
         startDate.setDate(startDate.getDate() + 84);
         const [h, m] = (cls.startTime || "08:00").split(":");
         startDate.setHours(parseInt(h) || 8, parseInt(m) || 0, 0, 0);
       }
 
       if (cls.finalProjectDeadline) {
-        deadlineDate = new Date(cls.finalProjectDeadline);
+        deadlineDate = parseSafeDate(cls.finalProjectDeadline);
         isManual = true;
       } else if (cls.startDate) {
-        deadlineDate = new Date(cls.startDate);
+        deadlineDate = parseSafeDate(cls.startDate);
         deadlineDate.setDate(deadlineDate.getDate() + 84);
         const [h, m] = (cls.endTime || "10:00").split(":");
         deadlineDate.setHours(parseInt(h) || 10, parseInt(m) || 0, 0, 0);

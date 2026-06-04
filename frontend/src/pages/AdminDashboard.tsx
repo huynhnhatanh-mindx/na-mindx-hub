@@ -406,9 +406,10 @@ export default function AdminDashboard() {
 
     const formatDt = (dtStr: string) => {
       try {
-        const d = new Date(`${dtStr}:00+07:00`);
+        const hasTimezone = dtStr.includes('Z') || /([+-]\d{2}:\d{2}|[+-]\d{2})$/.test(dtStr);
+        const d = new Date(hasTimezone ? dtStr : `${dtStr}:00+07:00`);
         if (isNaN(d.getTime())) return dtStr;
-        return d.toLocaleString('vi-VN', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+        return d.toLocaleString('vi-VN');
       } catch {
         return dtStr;
       }
@@ -1716,8 +1717,8 @@ export default function AdminDashboard() {
                         <div style={{ fontSize: '0.85rem', fontWeight: '700', color: cp.titleColor, marginBottom: '0.6rem' }}>
                           {cp.title}
                         </div>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+                        <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+                          <div style={{ flex: '1 1 180px', display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
                             <label className="form-label" style={{ fontSize: '0.75rem', color: '#bbb' }}>🟢 Mở nộp bài</label>
                             <input
                               type="datetime-local"
@@ -1727,7 +1728,7 @@ export default function AdminDashboard() {
                               style={{ fontSize: '0.82rem', padding: '6px 10px' }}
                             />
                           </div>
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+                          <div style={{ flex: '1 1 180px', display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
                             <label className="form-label" style={{ fontSize: '0.75rem', color: '#bbb' }}>🔴 Hạn chót nộp</label>
                             <input
                               type="datetime-local"
