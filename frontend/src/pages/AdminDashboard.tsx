@@ -107,6 +107,10 @@ export default function AdminDashboard() {
   const [classCheckpoint2Deadline, setClassCheckpoint2Deadline] = useState('');
   const [classFinalProjectDeadline, setClassFinalProjectDeadline] = useState('');
   const [classAllowLateUpload, setClassAllowLateUpload] = useState(false);
+  // Late upload override deadlines (only used when allowLateUpload is checked)
+  const [lateOverrideCp1, setLateOverrideCp1] = useState('');
+  const [lateOverrideCp2, setLateOverrideCp2] = useState('');
+  const [lateOverrideSpck, setLateOverrideSpck] = useState('');
 
   // Student form states
   const [studentName, setStudentName] = useState('');
@@ -351,6 +355,43 @@ export default function AdminDashboard() {
     }
   };
 
+  // Helper: calculate auto deadline on the frontend (mirrors backend logic)
+  const calcAutoDeadline = (startDateStr: string, daysOffset: number, endTimeStr: string): string => {
+    if (!startDateStr) return '';
+    // Parse the date as Vietnam time (the input is a YYYY-MM-DD string from the date picker)
+    const baseDate = new Date(`${startDateStr}T00:00:00+07:00`);
+    if (isNaN(baseDate.getTime())) return '';
+    const targetDate = new Date(baseDate.getTime() + daysOffset * 24 * 60 * 60 * 1000);
+    // Format in Vietnam timezone
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Asia/Ho_Chi_Minh',
+      year: 'numeric', month: '2-digit', day: '2-digit'
+    });
+    const parts = formatter.formatToParts(targetDate);
+    const year = parts.find(p => p.type === 'year')?.value || '2026';
+    const month = parts.find(p => p.type === 'month')?.value || '01';
+    const day = parts.find(p => p.type === 'day')?.value || '01';
+    const [h, m] = (endTimeStr || '10:00').split(':');
+    return `${year}-${month}-${day}T${(h || '10').padStart(2, '0')}:${(m || '00').padStart(2, '0')}`;
+  };
+
+  // Computed auto-deadline strings (recalculated on every render from state)
+  const autoCp1 = calcAutoDeadline(classStartDate, 28, classEndTime);
+  const autoCp2 = calcAutoDeadline(classStartDate, 56, classEndTime);
+  const autoSpck = calcAutoDeadline(classStartDate, 85, classEndTime);
+
+  // Format a datetime-local string for Vietnamese display
+  const formatDeadlineDisplay = (dtStr: string): string => {
+    if (!dtStr) return 'Chưa xác định (chọn ngày bắt đầu & giờ kết thúc)';
+    try {
+      const d = new Date(`${dtStr}:00+07:00`);
+      if (isNaN(d.getTime())) return dtStr;
+      return d.toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+    } catch {
+      return dtStr;
+    }
+  };
+
   const handleOpenCreateModal = () => {
     setEditingId(null);
     setUserUsername('');
@@ -371,6 +412,9 @@ export default function AdminDashboard() {
     setClassCheckpoint2Deadline('');
     setClassFinalProjectDeadline('');
     setClassAllowLateUpload(false);
+    setLateOverrideCp1('');
+    setLateOverrideCp2('');
+    setLateOverrideSpck('');
     setStudentName('');
     setStudentClass('');
     setStudentCode('');
@@ -408,6 +452,20 @@ export default function AdminDashboard() {
       setClassCheckpoint2Deadline(toLocalYYYYMMDDTHHMM(item.checkpoint2Deadline));
       setClassFinalProjectDeadline(toLocalYYYYMMDDTHHMM(item.finalProjectDeadline));
       setClassAllowLateUpload(!!item.allowLateUpload);
+      // If allowLateUpload is on, check if there were manual overrides stored
+      // We compare stored deadlines with auto-computed to detect overrides
+      const sd = toLocalYYYYMMDD(item.startDate);
+      const et = item.endTime || '10:00';
+      const autoC1 = calcAutoDeadline(sd, 28, et);
+      const autoC2 = calcAutoDeadline(sd, 56, et);
+      const autoSp = calcAutoDeadline(sd, 85, et);
+      const storedC1 = toLocalYYYYMMDDTHHMM(item.checkpoint1Deadline);
+      const storedC2 = toLocalYYYYMMDDTHHMM(item.checkpoint2Deadline);
+      const storedSp = toLocalYYYYMMDDTHHMM(item.finalProjectDeadline);
+      // If stored deadline differs from auto, it's an override
+      setLateOverrideCp1(storedC1 && storedC1 !== autoC1 ? storedC1 : '');
+      setLateOverrideCp2(storedC2 && storedC2 !== autoC2 ? storedC2 : '');
+      setLateOverrideSpck(storedSp && storedSp !== autoSp ? storedSp : '');
       
       const teacherExists = teachers.includes(item.teacherName);
       if (teacherExists || !item.teacherName) {
@@ -495,6 +553,38 @@ export default function AdminDashboard() {
         password: newTeacherPassword // Mật khẩu (mới) khi tạo hoặc cập nhật giáo viên
       };
     } else if (activeTab === 'classes') {
+      // Determine the effective deadlines to send:
+      // If allowLateUpload is ON and an override is set, use the override.
+      // Otherwise, send null so the backend will auto-compute from startDate + offset.
+      let effectiveCp1: string | null = null;
+      let effectiveCp2: string | null = null;
+      let effectiveSpck: string | null = null;
+
+      if (classAllowLateUpload) {
+        // Validate overrides: must be > auto-calculated deadline
+        if (lateOverrideCp1) {
+          if (autoCp1 && lateOverrideCp1 <= autoCp1) {
+            setError('Hạn gia hạn CP1 phải lớn hơn hạn chót tự động.');
+            return;
+          }
+          effectiveCp1 = lateOverrideCp1;
+        }
+        if (lateOverrideCp2) {
+          if (autoCp2 && lateOverrideCp2 <= autoCp2) {
+            setError('Hạn gia hạn CP2 phải lớn hơn hạn chót tự động.');
+            return;
+          }
+          effectiveCp2 = lateOverrideCp2;
+        }
+        if (lateOverrideSpck) {
+          if (autoSpck && lateOverrideSpck <= autoSpck) {
+            setError('Hạn gia hạn SPCK phải lớn hơn hạn chót tự động.');
+            return;
+          }
+          effectiveSpck = lateOverrideSpck;
+        }
+      }
+
       url = `${API_BASE_URL}/api/admin/classes${editingId ? `/${editingId}` : ''}`;
       body = {
         name: className,
@@ -504,9 +594,9 @@ export default function AdminDashboard() {
         startDate: classStartDate || null,
         startTime: classStartTime || "08:00",
         endTime: classEndTime || "10:00",
-        checkpoint1Deadline: classCheckpoint1Deadline || null,
-        checkpoint2Deadline: classCheckpoint2Deadline || null,
-        finalProjectDeadline: classFinalProjectDeadline || null,
+        checkpoint1Deadline: effectiveCp1,
+        checkpoint2Deadline: effectiveCp2,
+        finalProjectDeadline: effectiveSpck,
         allowLateUpload: classAllowLateUpload
       };
     } else if (activeTab === 'students') {
@@ -1530,7 +1620,45 @@ export default function AdminDashboard() {
                     </>
                   )}
                   
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginTop: '0.5rem' }}>
+                  {/* === Read-only auto-calculated deadlines (shown FIRST) === */}
+                  <div style={{
+                    marginTop: '0.5rem',
+                    padding: '1rem',
+                    borderRadius: '12px',
+                    background: 'rgba(255, 255, 255, 0.03)',
+                    border: '1px solid rgba(255, 255, 255, 0.08)'
+                  }}>
+                    <div style={{ fontSize: '0.8rem', fontWeight: '600', color: 'var(--text-secondary)', marginBottom: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                      📅 Hạn chót tự động (chỉ xem)
+                    </div>
+                    {[{ label: 'Checkpoint 1 (Buổi 5)', value: autoCp1, offset: '+28 ngày' },
+                      { label: 'Checkpoint 2 (Buổi 9)', value: autoCp2, offset: '+56 ngày' },
+                      { label: 'SPCK (Buổi 10-14)', value: autoSpck, offset: '+85 ngày' }
+                    ].map((item, idx) => (
+                      <div key={idx} style={{
+                        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                        padding: '0.5rem 0.75rem', marginBottom: idx < 2 ? '0.5rem' : 0,
+                        borderRadius: '8px',
+                        background: item.value ? 'rgba(99, 102, 241, 0.08)' : 'rgba(255, 255, 255, 0.02)',
+                        border: `1px solid ${item.value ? 'rgba(99, 102, 241, 0.15)' : 'rgba(255, 255, 255, 0.05)'}`
+                      }}>
+                        <div>
+                          <span style={{ fontSize: '0.85rem', fontWeight: '500', color: '#ccc' }}>{item.label}</span>
+                          <span style={{ fontSize: '0.7rem', color: '#666', marginLeft: '0.5rem' }}>({item.offset})</span>
+                        </div>
+                        <span style={{
+                          fontSize: '0.85rem', fontWeight: '600',
+                          color: item.value ? '#a5b4fc' : '#666',
+                          fontFamily: 'monospace'
+                        }}>
+                          {formatDeadlineDisplay(item.value)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* === Date & time inputs === */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginTop: '0.75rem' }}>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                       <label className="form-label">Ngày bắt đầu lớp học</label>
                       <input
@@ -1546,7 +1674,14 @@ export default function AdminDashboard() {
                         <input
                           type="checkbox"
                           checked={classAllowLateUpload}
-                          onChange={(e) => setClassAllowLateUpload(e.target.checked)}
+                          onChange={(e) => {
+                            setClassAllowLateUpload(e.target.checked);
+                            if (!e.target.checked) {
+                              setLateOverrideCp1('');
+                              setLateOverrideCp2('');
+                              setLateOverrideSpck('');
+                            }
+                          }}
                           style={{ width: '1.2rem', height: '1.2rem', cursor: 'pointer' }}
                         />
                         <span style={{ fontSize: '0.85rem', color: '#ccc' }}>Cho phép nộp sau hạn chót</span>
@@ -1577,44 +1712,42 @@ export default function AdminDashboard() {
                     </div>
                   </div>
 
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '0.5rem' }}>
-                    <label className="form-label" style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span>Hạn chót Checkpoint 1 (Buổi 5)</span>
-                      <span style={{ fontSize: '0.75rem', color: '#888' }}>(Mặc định: +28 ngày kể từ ngày bắt đầu, lúc giờ kết thúc)</span>
-                    </label>
-                    <input
-                      type="datetime-local"
-                      value={classCheckpoint1Deadline}
-                      onChange={(e) => setClassCheckpoint1Deadline(e.target.value)}
-                      className="form-input-field"
-                    />
-                  </div>
-
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '0.5rem' }}>
-                    <label className="form-label" style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span>Hạn chót Checkpoint 2 (Buổi 9)</span>
-                      <span style={{ fontSize: '0.75rem', color: '#888' }}>(Mặc định: +56 ngày kể từ ngày bắt đầu, lúc giờ kết thúc)</span>
-                    </label>
-                    <input
-                      type="datetime-local"
-                      value={classCheckpoint2Deadline}
-                      onChange={(e) => setClassCheckpoint2Deadline(e.target.value)}
-                      className="form-input-field"
-                    />
-                  </div>
-
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '0.5rem' }}>
-                    <label className="form-label" style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span>Hạn chót SPCK (Buổi 10-14)</span>
-                      <span style={{ fontSize: '0.75rem', color: '#888' }}>(Mặc định: +85 ngày kể từ ngày bắt đầu, lúc giờ kết thúc)</span>
-                    </label>
-                    <input
-                      type="datetime-local"
-                      value={classFinalProjectDeadline}
-                      onChange={(e) => setClassFinalProjectDeadline(e.target.value)}
-                      className="form-input-field"
-                    />
-                  </div>
+                  {/* === Allow Late Upload: Override Deadline fields === */}
+                  {classAllowLateUpload && (
+                    <div style={{
+                      marginTop: '0.75rem',
+                      padding: '1rem',
+                      borderRadius: '12px',
+                      background: 'rgba(251, 191, 36, 0.05)',
+                      border: '1px solid rgba(251, 191, 36, 0.15)'
+                    }}>
+                      <div style={{ fontSize: '0.8rem', fontWeight: '600', color: '#fbbf24', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                        ⚠️ Gia hạn nộp muộn
+                      </div>
+                      <p style={{ fontSize: '0.75rem', color: '#999', marginBottom: '0.75rem', lineHeight: 1.5 }}>
+                        Để trống = không giới hạn thời gian nộp muộn. Nếu đặt ngày giờ, hạn gia hạn phải lớn hơn hạn chót tự động.
+                      </p>
+                      {[{ label: 'Gia hạn CP1', value: lateOverrideCp1, setter: setLateOverrideCp1, auto: autoCp1 },
+                        { label: 'Gia hạn CP2', value: lateOverrideCp2, setter: setLateOverrideCp2, auto: autoCp2 },
+                        { label: 'Gia hạn SPCK', value: lateOverrideSpck, setter: setLateOverrideSpck, auto: autoSpck }
+                      ].map((item, idx) => (
+                        <div key={idx} style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', marginBottom: idx < 2 ? '0.5rem' : 0 }}>
+                          <label className="form-label" style={{ fontSize: '0.8rem' }}>
+                            {item.label}
+                            {!item.value && <span style={{ fontSize: '0.7rem', color: '#666', marginLeft: '0.5rem' }}>(Không giới hạn)</span>}
+                          </label>
+                          <input
+                            type="datetime-local"
+                            value={item.value}
+                            onChange={(e) => item.setter(e.target.value)}
+                            min={item.auto || undefined}
+                            className="form-input-field"
+                            style={{ fontSize: '0.85rem' }}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </>
               )}
 
