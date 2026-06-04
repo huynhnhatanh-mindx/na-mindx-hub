@@ -57,6 +57,101 @@ interface SubmissionData {
   createdAt: string;
 }
 
+const DateInput = ({ value, onChange, className, style }: {
+  value: string;
+  onChange: (val: string) => void;
+  className?: string;
+  style?: React.CSSProperties;
+}) => {
+  const [isFocused, setIsFocused] = useState(false);
+
+  if (isFocused) {
+    return (
+      <input
+        type="date"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onBlur={() => setIsFocused(false)}
+        className={className}
+        style={style}
+        ref={(el) => {
+          if (el) {
+            el.focus();
+            try {
+              el.showPicker();
+            } catch (e) {}
+          }
+        }}
+      />
+    );
+  }
+
+  let displayValue = '';
+  if (value) {
+    const d = new Date(value);
+    if (!isNaN(d.getTime())) {
+      const pad = (n: number) => n.toString().padStart(2, '0');
+      displayValue = `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`;
+    }
+  }
+
+  return (
+    <input
+      type="text"
+      value={displayValue}
+      placeholder="Chọn ngày..."
+      onFocus={() => setIsFocused(true)}
+      onClick={() => setIsFocused(true)}
+      className={className}
+      style={style}
+      readOnly
+    />
+  );
+};
+
+const DateTimeInput = ({ value, onChange, className, style }: {
+  value: string;
+  onChange: (val: string) => void;
+  className?: string;
+  style?: React.CSSProperties;
+}) => {
+  const [isFocused, setIsFocused] = useState(false);
+
+  if (isFocused) {
+    return (
+      <input
+        type="datetime-local"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onBlur={() => setIsFocused(false)}
+        className={className}
+        style={style}
+        ref={(el) => {
+          if (el) {
+            el.focus();
+            try {
+              el.showPicker();
+            } catch (e) {}
+          }
+        }}
+      />
+    );
+  }
+
+  return (
+    <input
+      type="text"
+      value={value ? formatDateTime(value) : ''}
+      placeholder="Chọn ngày và giờ..."
+      onFocus={() => setIsFocused(true)}
+      onClick={() => setIsFocused(true)}
+      className={className}
+      style={style}
+      readOnly
+    />
+  );
+};
+
 export default function AdminDashboard() {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'teachers' | 'classes' | 'students' | 'submissions' | 'audit_logs'>('overview');
@@ -1570,11 +1665,9 @@ export default function AdminDashboard() {
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginTop: '0.75rem' }}>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                       <label className="form-label">Ngày bắt đầu lớp học</label>
-                      <input
-                        type="date"
+                      <DateInput
                         value={classStartDate}
-                        onChange={(e) => {
-                          const val = e.target.value;
+                        onChange={(val) => {
                           setClassStartDate(val);
                           if (val) {
                             setClassCp1StartDate(calcAutoDeadline(val, 28, classStartTime));
@@ -1594,16 +1687,6 @@ export default function AdminDashboard() {
                         }}
                         className="form-input-field"
                       />
-                      {classStartDate && (
-                        <span style={{ fontSize: '0.72rem', color: '#38bdf8', marginTop: '2px', fontWeight: '500' }}>
-                          Hiển thị: {(() => {
-                            const d = new Date(classStartDate);
-                            if (isNaN(d.getTime())) return '';
-                            const pad = (n: number) => n.toString().padStart(2, '0');
-                            return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`;
-                          })()}
-                        </span>
-                      )}
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                       <label className="form-label">Cổng nộp muộn</label>
@@ -1715,33 +1798,21 @@ export default function AdminDashboard() {
                         <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
                           <div style={{ flex: '1 1 180px', display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
                             <label className="form-label" style={{ fontSize: '0.75rem', color: '#bbb' }}>🟢 Mở nộp bài</label>
-                            <input
-                              type="datetime-local"
+                            <DateTimeInput
                               value={cp.startVal}
-                              onChange={(e) => cp.startSetter(e.target.value)}
+                              onChange={cp.startSetter}
                               className="form-input-field"
                               style={{ fontSize: '0.82rem', padding: '6px 10px' }}
                             />
-                            {cp.startVal && (
-                              <span style={{ fontSize: '0.72rem', color: '#a5b4fc', marginTop: '2px', fontWeight: '500' }}>
-                                Hiển thị: {formatDateTime(cp.startVal)}
-                              </span>
-                            )}
                           </div>
                           <div style={{ flex: '1 1 180px', display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
                             <label className="form-label" style={{ fontSize: '0.75rem', color: '#bbb' }}>🔴 Hạn chót nộp</label>
-                            <input
-                              type="datetime-local"
+                            <DateTimeInput
                               value={cp.endVal}
-                              onChange={(e) => cp.endSetter(e.target.value)}
+                              onChange={cp.endSetter}
                               className="form-input-field"
                               style={{ fontSize: '0.82rem', padding: '6px 10px' }}
                             />
-                            {cp.endVal && (
-                              <span style={{ fontSize: '0.72rem', color: '#fca5a5', marginTop: '2px', fontWeight: '500' }}>
-                                Hiển thị: {formatDateTime(cp.endVal)}
-                              </span>
-                            )}
                           </div>
                         </div>
                       </div>
