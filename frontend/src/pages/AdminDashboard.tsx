@@ -1594,6 +1594,16 @@ export default function AdminDashboard() {
                         }}
                         className="form-input-field"
                       />
+                      {classStartDate && (
+                        <span style={{ fontSize: '0.72rem', color: '#38bdf8', marginTop: '2px', fontWeight: '500' }}>
+                          Hiển thị: {(() => {
+                            const d = new Date(classStartDate);
+                            if (isNaN(d.getTime())) return '';
+                            const pad = (n: number) => n.toString().padStart(2, '0');
+                            return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`;
+                          })()}
+                        </span>
+                      )}
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                       <label className="form-label">Cổng nộp muộn</label>
@@ -1682,7 +1692,7 @@ export default function AdminDashboard() {
                         titleColor: '#a7f3d0'
                       },
                       { 
-                        title: 'Sản phẩm cuối khóa (Buổi 13-14)', 
+                        title: 'Sản phẩm cuối khóa (Buổi 10-14)', 
                         startVal: classSpckStartDate, 
                         startSetter: setClassSpckStartDate,
                         endVal: classSpckDeadline, 
@@ -1712,6 +1722,11 @@ export default function AdminDashboard() {
                               className="form-input-field"
                               style={{ fontSize: '0.82rem', padding: '6px 10px' }}
                             />
+                            {cp.startVal && (
+                              <span style={{ fontSize: '0.72rem', color: '#a5b4fc', marginTop: '2px', fontWeight: '500' }}>
+                                Hiển thị: {formatDateTime(cp.startVal)}
+                              </span>
+                            )}
                           </div>
                           <div style={{ flex: '1 1 180px', display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
                             <label className="form-label" style={{ fontSize: '0.75rem', color: '#bbb' }}>🔴 Hạn chót nộp</label>
@@ -1722,6 +1737,11 @@ export default function AdminDashboard() {
                               className="form-input-field"
                               style={{ fontSize: '0.82rem', padding: '6px 10px' }}
                             />
+                            {cp.endVal && (
+                              <span style={{ fontSize: '0.72rem', color: '#fca5a5', marginTop: '2px', fontWeight: '500' }}>
+                                Hiển thị: {formatDateTime(cp.endVal)}
+                              </span>
+                            )}
                           </div>
                         </div>
                       </div>
