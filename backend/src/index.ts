@@ -1964,8 +1964,8 @@ app.post('/api/upload', (req: Request, res: Response, next: any) => {
             startDeadline = (cls as any).checkpoint2StartDate ? parseVietnamDate((cls as any).checkpoint2StartDate) : (cls.startDate ? calculateVietnamDeadline(cls.startDate, 56, cls.startTime || "08:00") : null);
             endDeadline = cls.checkpoint2Deadline ? parseVietnamDate(cls.checkpoint2Deadline) : (cls.startDate ? calculateVietnamDeadline(cls.startDate, 56, cls.endTime || "10:00") : null);
           } else if (stageLower.includes('san pham cuoi khoa') || stageLower.includes('sản phẩm cuối khóa')) {
-            startDeadline = (cls as any).finalProjectStartDate ? parseVietnamDate((cls as any).finalProjectStartDate) : (cls.startDate ? calculateVietnamDeadline(cls.startDate, 84, cls.startTime || "08:00") : null);
-            endDeadline = cls.finalProjectDeadline ? parseVietnamDate(cls.finalProjectDeadline) : (cls.startDate ? calculateVietnamDeadline(cls.startDate, 84, cls.endTime || "10:00") : null);
+            startDeadline = (cls as any).finalProjectStartDate ? parseVietnamDate((cls as any).finalProjectStartDate) : (cls.startDate ? calculateVietnamDeadline(cls.startDate, 0, cls.startTime || "08:00") : null);
+            endDeadline = cls.finalProjectDeadline ? parseVietnamDate(cls.finalProjectDeadline) : (cls.startDate ? calculateVietnamDeadline(cls.startDate, 85, cls.endTime || "10:00") : null);
           }
 
           if (startDeadline && new Date() < startDeadline) {

@@ -397,8 +397,8 @@ export default function AdminDashboard() {
       endVal = item.checkpoint2Deadline || calcAutoDeadline(sd, 56, et);
       isAuto = !item.checkpoint2StartDate && !item.checkpoint2Deadline;
     } else {
-      startVal = item.finalProjectStartDate || calcAutoDeadline(sd, 84, st);
-      endVal = item.finalProjectDeadline || calcAutoDeadline(sd, 84, et);
+      startVal = item.finalProjectStartDate || calcAutoDeadline(sd, 0, st);
+      endVal = item.finalProjectDeadline || calcAutoDeadline(sd, 85, et);
       isAuto = !item.finalProjectStartDate && !item.finalProjectDeadline;
     }
 
@@ -486,8 +486,8 @@ export default function AdminDashboard() {
       setClassCp1Deadline(toLocalYYYYMMDDTHHMM(item.checkpoint1Deadline) || calcAutoDeadline(sd, 28, et));
       setClassCp2StartDate(toLocalYYYYMMDDTHHMM(item.checkpoint2StartDate) || calcAutoDeadline(sd, 56, st));
       setClassCp2Deadline(toLocalYYYYMMDDTHHMM(item.checkpoint2Deadline) || calcAutoDeadline(sd, 56, et));
-      setClassSpckStartDate(toLocalYYYYMMDDTHHMM(item.finalProjectStartDate) || calcAutoDeadline(sd, 84, st));
-      setClassSpckDeadline(toLocalYYYYMMDDTHHMM(item.finalProjectDeadline) || calcAutoDeadline(sd, 84, et));
+      setClassSpckStartDate(toLocalYYYYMMDDTHHMM(item.finalProjectStartDate) || calcAutoDeadline(sd, 0, st));
+      setClassSpckDeadline(toLocalYYYYMMDDTHHMM(item.finalProjectDeadline) || calcAutoDeadline(sd, 85, et));
       
       const teacherExists = teachers.includes(item.teacherName);
       if (teacherExists || !item.teacherName) {
@@ -1596,8 +1596,8 @@ export default function AdminDashboard() {
                             setClassCp1Deadline(calcAutoDeadline(val, 28, classEndTime));
                             setClassCp2StartDate(calcAutoDeadline(val, 56, classStartTime));
                             setClassCp2Deadline(calcAutoDeadline(val, 56, classEndTime));
-                            setClassSpckStartDate(calcAutoDeadline(val, 84, classStartTime));
-                            setClassSpckDeadline(calcAutoDeadline(val, 84, classEndTime));
+                            setClassSpckStartDate(calcAutoDeadline(val, 0, classStartTime));
+                            setClassSpckDeadline(calcAutoDeadline(val, 85, classEndTime));
                           } else {
                             setClassCp1StartDate('');
                             setClassCp1Deadline('');
@@ -1636,7 +1636,7 @@ export default function AdminDashboard() {
                           if (classStartDate) {
                             setClassCp1StartDate(calcAutoDeadline(classStartDate, 28, val));
                             setClassCp2StartDate(calcAutoDeadline(classStartDate, 56, val));
-                            setClassSpckStartDate(calcAutoDeadline(classStartDate, 84, val));
+                            setClassSpckStartDate(calcAutoDeadline(classStartDate, 0, val));
                           }
                         }}
                         className="form-input-field"
@@ -1654,7 +1654,7 @@ export default function AdminDashboard() {
                           if (classStartDate) {
                             setClassCp1Deadline(calcAutoDeadline(classStartDate, 28, val));
                             setClassCp2Deadline(calcAutoDeadline(classStartDate, 56, val));
-                            setClassSpckDeadline(calcAutoDeadline(classStartDate, 84, val));
+                            setClassSpckDeadline(calcAutoDeadline(classStartDate, 85, val));
                           }
                         }}
                         className="form-input-field"

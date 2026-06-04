@@ -365,7 +365,7 @@ function Upload() {
         isManual = true;
       } else if (cls.startDate) {
         startDate = parseSafeDate(cls.startDate);
-        startDate.setDate(startDate.getDate() + 84);
+        // Start date is class start date at start time (0 days offset)
         const [h, m] = (cls.startTime || "08:00").split(":");
         startDate.setHours(parseInt(h) || 8, parseInt(m) || 0, 0, 0);
       }
@@ -375,7 +375,8 @@ function Upload() {
         isManual = true;
       } else if (cls.startDate) {
         deadlineDate = parseSafeDate(cls.startDate);
-        deadlineDate.setDate(deadlineDate.getDate() + 84);
+        // End date is session 13 end time + 24 hours (85 days offset)
+        deadlineDate.setDate(deadlineDate.getDate() + 85);
         const [h, m] = (cls.endTime || "10:00").split(":");
         deadlineDate.setHours(parseInt(h) || 10, parseInt(m) || 0, 0, 0);
       }
