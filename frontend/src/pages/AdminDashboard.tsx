@@ -103,9 +103,7 @@ export default function AdminDashboard() {
   const [classStartDate, setClassStartDate] = useState('');
   const [classStartTime, setClassStartTime] = useState('08:00');
   const [classEndTime, setClassEndTime] = useState('10:00');
-  const [classCheckpoint1Deadline, setClassCheckpoint1Deadline] = useState('');
-  const [classCheckpoint2Deadline, setClassCheckpoint2Deadline] = useState('');
-  const [classFinalProjectDeadline, setClassFinalProjectDeadline] = useState('');
+
   const [classAllowLateUpload, setClassAllowLateUpload] = useState(false);
   // Late upload override deadlines (only used when allowLateUpload is checked)
   const [lateOverrideCp1, setLateOverrideCp1] = useState('');
