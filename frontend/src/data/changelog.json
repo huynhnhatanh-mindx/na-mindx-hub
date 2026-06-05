@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.4.0",
+    "date": "2026-06-05",
+    "title": "Nâng cấp Trải nghiệm Người dùng, Bảo mật & Đồng bộ Lưu trữ",
+    "features": [
+      "Hệ thống thông báo Toast và modal xác nhận custom với hiệu ứng kính mờ (glassmorphism) thay thế cho các hộp thoại mặc định của trình duyệt.",
+      "Tính năng giới hạn thời gian nộp bài liên tục (cooldown 15 giây) bảo vệ hệ thống khỏi tải lên trùng lặp.",
+      "Đồng bộ xóa tệp tin vật lý trên Google Drive cá nhân của Giáo viên hoặc Drive hệ thống/MEGA khi thực hiện xóa bài nộp.",
+      "Tùy chọn bật/tắt nhận email thông báo khi học viên nộp bài mới trong phần Cài đặt cá nhân (mặc định là Tắt).",
+      "Ràng buộc cấp quyền quản lý tệp tin Google Drive (drive.file scope) khi thực hiện liên kết Google OAuth.",
+      "Đồng nhất thư viện icon giao diện sử dụng Lucide Icons.",
+      "Loại bỏ tính năng lưu trữ Nhật ký hoạt động (Audit Logs) cũ để tối ưu hóa hiệu năng hệ thống."
+    ]
+  },
+  {
     "version": "1.3.0",
     "date": "2026-06-05",
     "title": "Cải tiến Định dạng Hiển thị Thời gian & Tối ưu Trải nghiệm người dùng",

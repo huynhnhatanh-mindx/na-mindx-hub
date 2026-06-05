@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { ChevronDown } from 'lucide-react';
 
 interface ComboBoxProps {
   label: string;
@@ -114,17 +115,10 @@ export default function ComboBox({
             opacity: disabled ? 0.5 : 1
           }}
         >
-          <svg
+          <ChevronDown
+            size={16}
             className={`combobox-arrow ${isOpen ? 'open' : ''}`}
-            width="16"
-            height="16"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-          >
-            <polyline points="6 9 12 15 18 9" />
-          </svg>
+          />
         </button>
       </div>
       

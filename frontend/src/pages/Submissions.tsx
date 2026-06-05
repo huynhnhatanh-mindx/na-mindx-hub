@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { formatDateTime } from '../utils/date';
+import { ArrowLeft, Search, Link2 } from 'lucide-react';
 
 interface Submission {
   _id: string;
@@ -238,10 +239,7 @@ export default function Submissions() {
             }}
               className="back-link"
             >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                <line x1="19" y1="12" x2="5" y2="12" />
-                <polyline points="12 19 5 12 12 5" />
-              </svg>
+              <ArrowLeft size={18} strokeWidth={2.5} />
               Quay lại trang chủ
             </Link>
 
@@ -269,18 +267,11 @@ export default function Submissions() {
                     className="form-input-field"
                     style={{ paddingLeft: '2.5rem' }}
                   />
-                  <svg 
-                    width="16" 
-                    height="16" 
-                    viewBox="0 0 24 24" 
-                    fill="none" 
-                    stroke="var(--text-secondary)" 
-                    strokeWidth="2"
+                  <Search 
+                    size={16}
+                    color="var(--text-secondary)"
                     style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)' }}
-                  >
-                    <circle cx="11" cy="11" r="8" />
-                    <line x1="21" y1="21" x2="16.65" y2="16.65" />
-                  </svg>
+                  />
                 </div>
 
                 {/* Class Filter Dropdown */}
@@ -393,10 +384,7 @@ export default function Submissions() {
                   cursor: 'pointer'
                 }}
               >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                  <circle cx="11" cy="11" r="8" />
-                  <line x1="21" y1="21" x2="16.65" y2="16.65" />
-                </svg>
+                <Search size={16} strokeWidth={2.5} />
                 Tra cứu
               </button>
             </form>
@@ -477,10 +465,7 @@ export default function Submissions() {
                             onMouseEnter={(e) => (e.currentTarget.style.textDecoration = 'underline')}
                             onMouseLeave={(e) => (e.currentTarget.style.textDecoration = 'none')}
                           >
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                              <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
-                              <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
-                            </svg>
+                            <Link2 size={14} />
                             <span style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                               {sub.fileName}
                             </span>
@@ -510,10 +495,7 @@ export default function Submissions() {
               background: 'rgba(0, 0, 0, 0.1)',
               marginTop: '1rem'
             }}>
-              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="1.5" style={{ marginBottom: '1rem', opacity: 0.3 }}>
-                <circle cx="11" cy="11" r="8" />
-                <line x1="21" y1="21" x2="16.65" y2="16.65" />
-              </svg>
+              <Search size={48} color="var(--text-muted)" style={{ marginBottom: '1rem', opacity: 0.3 }} />
               <h3 style={{ fontSize: '1.1rem', fontWeight: '600', color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>
                 Tra Cứu Lịch Sử Nộp Bài
               </h3>

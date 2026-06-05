@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
+import { User, Lock, ArrowRight, ShieldAlert } from 'lucide-react';
 
 export default function Login() {
   const [username, setUsername] = useState('');
@@ -41,8 +42,10 @@ export default function Login() {
       // Dispatch storage event to notify Header component immediately
       window.dispatchEvent(new Event('storage'));
 
-      // Redirect to Admin dashboard or home
-      if (data.user.role === 'admin' || data.user.role === 'teacher') {
+      // Redirect to Google onboarding if teacher needs Google setup, else to admin
+      if (data.user.role === 'teacher' && data.user.requiresGoogleAuth) {
+        navigate('/google-setup');
+      } else if (data.user.role === 'admin' || data.user.role === 'teacher') {
         navigate('/admin');
       } else {
         navigate('/');
@@ -77,28 +80,41 @@ export default function Login() {
           <form onSubmit={handleLogin}>
             <div className="form-group" style={{ marginBottom: '1.5rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
               <label className="form-label">Tên đăng nhập</label>
-              <input
-                type="text"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                placeholder="Nhập tài khoản admin..."
-                className="form-input-field"
-                required
-                disabled={isLoading}
-              />
+              <div style={{ position: 'relative' }}>
+                <input
+                  type="text"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  placeholder="Nhập tài khoản đăng nhập..."
+                  className="form-input-field"
+                  style={{ paddingLeft: '38px' }}
+                  required
+                  disabled={isLoading}
+                />
+                <User size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', opacity: 0.8 }} />
+              </div>
             </div>
 
             <div className="form-group" style={{ marginBottom: '2rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-              <label className="form-label">Mật khẩu</label>
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="Nhập mật khẩu..."
-                className="form-input-field"
-                required
-                disabled={isLoading}
-              />
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <label className="form-label" style={{ margin: 0 }}>Mật khẩu</label>
+                <Link to="/forgot-password" style={{ fontSize: '0.8rem', color: 'var(--primary)', textDecoration: 'none', fontWeight: '600', transition: 'var(--transition-fast)' }} className="back-link">
+                  Quên mật khẩu?
+                </Link>
+              </div>
+              <div style={{ position: 'relative' }}>
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Nhập mật khẩu..."
+                  className="form-input-field"
+                  style={{ paddingLeft: '38px' }}
+                  required
+                  disabled={isLoading}
+                />
+                <Lock size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', opacity: 0.8 }} />
+              </div>
             </div>
 
             {error && (
@@ -110,9 +126,13 @@ export default function Login() {
                 color: '#fce8e6',
                 fontSize: '0.85rem',
                 marginBottom: '1.5rem',
-                textAlign: 'center'
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '0.5rem'
               }}>
-                {error}
+                <ShieldAlert size={16} style={{ color: '#ef4444' }} />
+                <span>{error}</span>
               </div>
             )}
 
@@ -124,10 +144,15 @@ export default function Login() {
                 width: '100%',
                 height: '3rem',
                 fontSize: '1rem',
-                cursor: isLoading ? 'not-allowed' : 'pointer'
+                cursor: isLoading ? 'not-allowed' : 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '0.5rem'
               }}
             >
-              {isLoading ? 'Đang xác thực...' : 'Đăng nhập'}
+              <span>{isLoading ? 'Đang xác thực...' : 'Đăng nhập'}</span>
+              {!isLoading && <ArrowRight size={18} />}
             </button>
           </form>
           
@@ -144,7 +169,7 @@ export default function Login() {
           }}>
             💡 <strong>Lưu ý:</strong> Trang đăng nhập chỉ dành riêng cho <strong>Quản trị viên</strong> và <strong>Giáo viên</strong>. Tài khoản đăng nhập sẽ do Quản trị viên hệ thống (Admin) khởi tạo và cấp phát.
             <div style={{ marginTop: '0.5rem' }}>
-              <Link to="/contact-admin" style={{ color: 'var(--primary)', textDecoration: 'none', fontWeight: '600' }}>
+              <Link to="/contact-admin" style={{ color: 'var(--primary)', textDecoration: 'none', fontWeight: '600' }} className="back-link">
                 Liên hệ Quản trị viên
               </Link>
             </div>

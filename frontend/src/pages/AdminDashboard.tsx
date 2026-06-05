@@ -1,6 +1,8 @@
-import { useState, useEffect, Fragment } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { formatDateTime } from '../utils/date';
+import { Search, Plus } from 'lucide-react';
+import { useToast } from '../components/Toast';
 
 interface UserData {
   _id: string;
@@ -26,6 +28,8 @@ interface ClassData {
   checkpoint2Deadline?: string;
   finalProjectStartDate?: string;
   finalProjectDeadline?: string;
+  presentationStartDate?: string;
+  presentationDeadline?: string;
   allowLateUpload?: boolean;
 }
 
@@ -154,7 +158,8 @@ const DateTimeInput = ({ value, onChange, className, style }: {
 
 export default function AdminDashboard() {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'teachers' | 'classes' | 'students' | 'submissions' | 'audit_logs'>('overview');
+  const { showToast, showConfirm } = useToast();
+  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'teachers' | 'classes' | 'students' | 'submissions'>('overview');
   
   // Pagination & Bulk
   const [currentPage, setCurrentPage] = useState(1);
@@ -163,8 +168,6 @@ export default function AdminDashboard() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [dashboardStats, setDashboardStats] = useState<any>(null);
-  const [auditLogs, setAuditLogs] = useState<any[]>([]);
-  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [currentUser, setCurrentUser] = useState<any>(null);
@@ -211,6 +214,8 @@ export default function AdminDashboard() {
   const [classCp2Deadline, setClassCp2Deadline] = useState('');
   const [classSpckStartDate, setClassSpckStartDate] = useState('');
   const [classSpckDeadline, setClassSpckDeadline] = useState('');
+  const [classPresentationStartDate, setClassPresentationStartDate] = useState('');
+  const [classPresentationDeadline, setClassPresentationDeadline] = useState('');
 
   // Student form states
   const [studentName, setStudentName] = useState('');
@@ -220,6 +225,7 @@ export default function AdminDashboard() {
   const [newClassName, setNewClassName] = useState('');
   const [studentMaxUploadSize, setStudentMaxUploadSize] = useState<number>(20);
   const [studentStatus, setStudentStatus] = useState('active');
+
 
   // Check login on load
   useEffect(() => {
@@ -235,6 +241,13 @@ export default function AdminDashboard() {
         navigate('/');
         return;
       }
+      
+      // Nếu là giáo viên chưa liên kết Google, bắt buộc chuyển hướng sang google-setup
+      if (user.role === 'teacher' && (user.requiresGoogleAuth || !user.email)) {
+        navigate('/google-setup');
+        return;
+      }
+
       setCurrentUser(user);
       if (user.role === 'teacher') {
         setActiveTab('classes');
@@ -343,14 +356,6 @@ export default function AdminDashboard() {
         const { data, totalPages } = await res.json();
         setSubmissions(data);
         setTotalPages(totalPages);
-      } else if (activeTab === 'audit_logs') {
-        const auditParams = new URLSearchParams({ page: currentPage.toString(), limit: '15' });
-        if (searchQuery) auditParams.append('search', searchQuery);
-        const res = await fetchWithAuth(`${API_BASE_URL}/api/admin/audit-logs?${auditParams}`, { headers: getHeaders() });
-        if (!res.ok) throw new Error('Không thể tải nhật ký hoạt động.');
-        const { data, totalPages } = await res.json();
-        setAuditLogs(data);
-        setTotalPages(totalPages);
       }
     } catch (err: any) {
       setError(err.message || 'Đã xảy ra lỗi khi kết nối.');
@@ -359,39 +364,6 @@ export default function AdminDashboard() {
     }
   };
 
-  const getGroupedAuditLogs = () => {
-    if (!auditLogs || auditLogs.length === 0) return [];
-    const grouped: any[][] = [];
-    let currentGroup: any[] = [];
-    
-    for (let i = 0; i < auditLogs.length; i++) {
-      const log = auditLogs[i];
-      if (currentGroup.length === 0) {
-        currentGroup.push(log);
-      } else {
-        const lastLog = currentGroup[currentGroup.length - 1];
-        const timeDiff = Math.abs(new Date(log.createdAt).getTime() - new Date(lastLog.createdAt).getTime());
-        // Group if same user and within 15 seconds
-        if (log.user === lastLog.user && timeDiff <= 15000) {
-          currentGroup.push(log);
-        } else {
-          grouped.push(currentGroup);
-          currentGroup = [log];
-        }
-      }
-    }
-    if (currentGroup.length > 0) {
-      grouped.push(currentGroup);
-    }
-    return grouped;
-  };
-
-  const toggleGroup = (groupKey: string) => {
-    setExpandedGroups(prev => ({
-      ...prev,
-      [groupKey]: !prev[groupKey]
-    }));
-  };
 
   const handleSearch = () => {
     setSearchQuery(searchInput);
@@ -403,6 +375,40 @@ export default function AdminDashboard() {
     setSearchQuery('');
     setCurrentPage(1);
   };
+
+  const handleAdminUnlinkGoogle = async () => {
+    if (!editingId) return;
+    const ok = await showConfirm("Bạn có chắc chắn muốn hủy liên kết tài khoản Google của giáo viên này?");
+    if (!ok) {
+      return;
+    }
+    
+    setIsLoading(true);
+    setError('');
+    
+    try {
+      const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+      const res = await fetchWithAuth(`${API_BASE_URL}/api/admin/users/${editingId}/unlink`, {
+        method: 'POST',
+        headers: getHeaders()
+      });
+      
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.error || 'Hủy liên kết thất bại.');
+      }
+      
+      setUserEmail('');
+      showToast('Đã hủy liên kết Google của giáo viên thành công!', 'success');
+      fetchData(); // Tải lại danh sách
+    } catch (err: any) {
+      showToast(err.message || 'Lỗi khi hủy liên kết.', 'error');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+
 
   const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>, data: any[]) => {
     if (e.target.checked) {
@@ -417,7 +423,8 @@ export default function AdminDashboard() {
   };
 
   const handleBulkDelete = async () => {
-    if (!window.confirm(`Bạn có chắc muốn xóa ${selectedIds.length} mục này?`)) return;
+    const ok = await showConfirm(`Bạn có chắc muốn xóa ${selectedIds.length} mục này?`);
+    if (!ok) return;
     try {
       const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
       const res = await fetchWithAuth(`${API_BASE_URL}/api/admin/${activeTab}/bulk-delete`, {
@@ -430,9 +437,10 @@ export default function AdminDashboard() {
         throw new Error(errorData.error || 'Thao tác thất bại');
       }
       setSelectedIds([]);
+      showToast('Xóa thành công!', 'success');
       fetchData();
     } catch (err: any) {
-      alert(err.message);
+      showToast(err.message, 'error');
     }
   };
 
@@ -449,9 +457,10 @@ export default function AdminDashboard() {
         throw new Error(errorData.error || 'Thao tác thất bại');
       }
       setSelectedIds([]);
+      showToast('Cập nhật trạng thái thành công!', 'success');
       fetchData();
     } catch (err: any) {
-      alert(err.message);
+      showToast(err.message, 'error');
     }
   };
 
@@ -475,7 +484,7 @@ export default function AdminDashboard() {
     return `${year}-${month}-${day}T${(h || '10').padStart(2, '0')}:${(m || '00').padStart(2, '0')}`;
   };
 
-  const getMilestoneRangeDisplay = (item: ClassData, type: 'cp1' | 'cp2' | 'spck') => {
+  const getMilestoneRangeDisplay = (item: ClassData, type: 'cp1' | 'cp2' | 'spck' | 'presentation') => {
     let startVal = '';
     let endVal = '';
     let isAuto = false;
@@ -492,10 +501,14 @@ export default function AdminDashboard() {
       startVal = item.checkpoint2StartDate || calcAutoDeadline(sd, 56, st);
       endVal = item.checkpoint2Deadline || calcAutoDeadline(sd, 56, et);
       isAuto = !item.checkpoint2StartDate && !item.checkpoint2Deadline;
-    } else {
+    } else if (type === 'spck') {
       startVal = item.finalProjectStartDate || calcAutoDeadline(sd, 0, st);
       endVal = item.finalProjectDeadline || calcAutoDeadline(sd, 85, et);
       isAuto = !item.finalProjectStartDate && !item.finalProjectDeadline;
+    } else {
+      startVal = item.presentationStartDate || calcAutoDeadline(sd, 0, st);
+      endVal = item.presentationDeadline || calcAutoDeadline(sd, 91, et);
+      isAuto = !item.presentationStartDate && !item.presentationDeadline;
     }
 
     if (!startVal || !endVal) return 'Chưa cấu hình';
@@ -532,6 +545,8 @@ export default function AdminDashboard() {
     setClassCp2Deadline('');
     setClassSpckStartDate('');
     setClassSpckDeadline('');
+    setClassPresentationStartDate('');
+    setClassPresentationDeadline('');
     setStudentName('');
     setStudentClass('');
     setStudentCode('');
@@ -575,6 +590,8 @@ export default function AdminDashboard() {
       setClassCp2Deadline(toLocalYYYYMMDDTHHMM(item.checkpoint2Deadline) || calcAutoDeadline(sd, 56, et));
       setClassSpckStartDate(toLocalYYYYMMDDTHHMM(item.finalProjectStartDate) || calcAutoDeadline(sd, 0, st));
       setClassSpckDeadline(toLocalYYYYMMDDTHHMM(item.finalProjectDeadline) || calcAutoDeadline(sd, 85, et));
+      setClassPresentationStartDate(toLocalYYYYMMDDTHHMM(item.presentationStartDate) || calcAutoDeadline(sd, 0, st));
+      setClassPresentationDeadline(toLocalYYYYMMDDTHHMM(item.presentationDeadline) || calcAutoDeadline(sd, 91, et));
       
       const teacherExists = teachers.includes(item.teacherName);
       if (teacherExists || !item.teacherName) {
@@ -674,6 +691,10 @@ export default function AdminDashboard() {
         setError('Hạn chót SPCK phải lớn hơn thời gian mở nộp SPCK.');
         return;
       }
+      if (classPresentationStartDate && classPresentationDeadline && classPresentationDeadline <= classPresentationStartDate) {
+        setError('Hạn chót Thuyết trình phải lớn hơn thời gian mở nộp Thuyết trình.');
+        return;
+      }
 
       url = `${API_BASE_URL}/api/admin/classes${editingId ? `/${editingId}` : ''}`;
       body = {
@@ -690,6 +711,8 @@ export default function AdminDashboard() {
         checkpoint2Deadline: classCp2Deadline || null,
         finalProjectStartDate: classSpckStartDate || null,
         finalProjectDeadline: classSpckDeadline || null,
+        presentationStartDate: classPresentationStartDate || null,
+        presentationDeadline: classPresentationDeadline || null,
         allowLateUpload: classAllowLateUpload
       };
     } else if (activeTab === 'students') {
@@ -726,17 +749,21 @@ export default function AdminDashboard() {
             
             if (isSelf) {
               if (userUsername.trim().toLowerCase() !== originalUser.username) {
-                alert('Tên đăng nhập của bạn đã thay đổi. Vui lòng đăng nhập lại.');
+                showToast('Tên đăng nhập của bạn đã thay đổi. Vui lòng đăng nhập lại.', 'warning');
                 localStorage.removeItem('token');
                 localStorage.removeItem('user');
-                window.location.href = '/login';
+                setTimeout(() => {
+                  window.location.href = '/login';
+                }, 1500);
                 return;
               }
               if (userRole !== currentUser.role) {
-                alert('Quyền của bạn đã bị thay đổi (xuống cấp). Vui lòng đăng nhập lại.');
+                showToast('Quyền của bạn đã bị thay đổi (xuống cấp). Vui lòng đăng nhập lại.', 'warning');
                 localStorage.removeItem('token');
                 localStorage.removeItem('user');
-                window.location.href = '/login';
+                setTimeout(() => {
+                  window.location.href = '/login';
+                }, 1500);
                 return;
               }
 
@@ -755,7 +782,7 @@ export default function AdminDashboard() {
         }
       }
 
-      alert(editingId ? 'Cập nhật thành công!' : 'Tạo mới thành công!');
+      showToast(editingId ? 'Cập nhật thành công!' : 'Tạo mới thành công!', 'success');
       setShowModal(false);
       fetchData();
     } catch (err: any) {
@@ -764,7 +791,8 @@ export default function AdminDashboard() {
   };
 
   const handleDeleteItem = async (id: string) => {
-    if (!window.confirm('Bạn có chắc chắn muốn xóa bản ghi này?')) return;
+    const ok = await showConfirm('Bạn có chắc chắn muốn xóa bản ghi này?');
+    if (!ok) return;
     setError('');
     const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
@@ -786,10 +814,10 @@ export default function AdminDashboard() {
         throw new Error(errData.error || 'Xóa thất bại.');
       }
 
-      alert('Xóa thành công!');
+      showToast('Xóa thành công!', 'success');
       fetchData();
     } catch (err: any) {
-      alert(err.message || 'Đã xảy ra lỗi khi xóa.');
+      showToast(err.message || 'Đã xảy ra lỗi khi xóa.', 'error');
     }
   };
 
@@ -845,8 +873,7 @@ export default function AdminDashboard() {
             { id: 'users', label: 'Quản lý Tài khoản', adminOnly: true },
             { id: 'classes', label: 'Quản lý Lớp học', adminOnly: false },
             { id: 'students', label: 'Quản lý Học viên', adminOnly: false },
-            { id: 'submissions', label: 'Quản lý Bài nộp', adminOnly: false },
-            { id: 'audit_logs', label: 'Nhật ký Hoạt động', adminOnly: false }
+            { id: 'submissions', label: 'Quản lý Bài nộp', adminOnly: false }
           ].filter(tab => currentUser?.role === 'admin' || !tab.adminOnly).map((tab) => (
             <button
               key={tab.id}
@@ -880,21 +907,13 @@ export default function AdminDashboard() {
         {/* Dashboard Card */}
         <div className="glass-card" style={{ padding: '2.5rem' }}>
           
-          {/* Header Controls for CRUD (Users, Classes, Students) */}
-          {/* Audit_logs tab: không có nút thêm/xóa — đây là thiết kế cố ý để bảo toàn tính bất biến của nhật ký */}
-          {activeTab !== 'overview' && activeTab !== 'audit_logs' && (
+          {/* Header Controls for CRUD */}
+          {activeTab !== 'overview' && (
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
               {/* Search */}
               <div className="search-wrapper-container">
-                <svg
-                  width="16"
-                  height="16"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
+                <Search
+                  size={16}
                   style={{
                     position: 'absolute',
                     left: '12px',
@@ -902,10 +921,7 @@ export default function AdminDashboard() {
                     opacity: 0.7,
                     pointerEvents: 'none'
                   }}
-                >
-                  <circle cx="11" cy="11" r="8" />
-                  <line x1="21" y1="21" x2="16.65" y2="16.65" />
-                </svg>
+                />
                 <input
                   type="text"
                   placeholder="Tìm kiếm..."
@@ -935,7 +951,7 @@ export default function AdminDashboard() {
 
               {/* Action Buttons */}
               <div style={{ display: 'flex', gap: '0.5rem' }}>
-                {selectedIds.length > 0 && activeTab !== 'submissions' && (
+                {selectedIds.length > 0 && (activeTab !== 'submissions' || currentUser?.role === 'admin') && (
                    <button className="btn btn-danger" onClick={handleBulkDelete} style={{ height: 'auto', padding: '0 1rem' }}>Xóa {selectedIds.length} mục</button>
                 )}
                 {selectedIds.length > 0 && (activeTab === 'users' || activeTab === 'students') && (
@@ -956,10 +972,7 @@ export default function AdminDashboard() {
                       gap: '0.5rem'
                     }}
                   >
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                      <line x1="12" y1="5" x2="12" y2="19" />
-                      <line x1="5" y1="12" x2="19" y2="12" />
-                    </svg>
+                    <Plus size={16} strokeWidth={2.5} />
                     Thêm mới
                   </button>
                 )}
@@ -1000,254 +1013,6 @@ export default function AdminDashboard() {
                 </div>
               )}
               
-              {/* --- NHẬT KÝ HOẠT ĐỘNG --- */}
-              {activeTab === 'audit_logs' && (
-                <div>
-                  {/* Info banner */}
-                  <div style={{
-                    background: 'rgba(99, 102, 241, 0.06)',
-                    border: '1px solid rgba(99, 102, 241, 0.2)',
-                    borderRadius: '10px',
-                    padding: '0.85rem 1.25rem',
-                    marginBottom: '1.5rem',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.75rem',
-                    fontSize: '0.85rem',
-                    color: 'var(--text-secondary)'
-                  }}>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" strokeWidth="2">
-                      <circle cx="12" cy="12" r="10" />
-                      <line x1="12" y1="8" x2="12" y2="12" />
-                      <line x1="12" y1="16" x2="12.01" y2="16" />
-                    </svg>
-                    <span>
-                      <strong style={{ color: 'var(--text-primary)' }}>Nhật ký chỉ đọc</strong> —
-                      {currentUser?.role === 'admin'
-                        ? ' Hiển thị toàn bộ hoạt động hệ thống. Nhật ký được bảo vệ và không thể xóa.'
-                        : ' Hiển thị hoạt động của tài khoản bạn. Nhật ký được bảo vệ và không thể xóa.'}
-                    </span>
-                  </div>
-
-                  <table className="responsive-table" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
-                    <thead>
-                      <tr style={{ borderBottom: '1px solid var(--card-border)', color: 'var(--text-primary)', fontSize: '0.9rem', fontWeight: '700' }}>
-                        <th style={{ padding: '1rem', whiteSpace: 'nowrap' }}>Thời gian</th>
-                        <th style={{ padding: '1rem', whiteSpace: 'nowrap' }}>Người thực hiện</th>
-                        <th style={{ padding: '1rem', whiteSpace: 'nowrap' }}>Hành động</th>
-                        <th style={{ padding: '1rem', whiteSpace: 'nowrap' }}>Loại đối tượng</th>
-                        <th style={{ padding: '1rem' }}>Chi tiết</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {auditLogs.length === 0 ? (
-                        <tr>
-                          <td colSpan={5} style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)' }}>
-                            Chưa có nhật ký hoạt động nào.
-                          </td>
-                        </tr>
-                      ) : getGroupedAuditLogs().map((group: any[]) => {
-                        const firstLog = group[0];
-                        const groupKey = firstLog._id;
-                        const isExpanded = !!expandedGroups[groupKey];
-                        
-                        const actionColors: Record<string, string> = {
-                          'CREATE': '#10b981',
-                          'UPDATE': '#6366f1',
-                          'PROFILE_UPDATE': '#6366f1',
-                          'DELETE': '#ef4444',
-                          'BULK_DELETE': '#ef4444',
-                          'BULK_UPDATE_STATUS': '#f59e0b',
-                          'UPLOAD': '#06b6d4',
-                          'BULK_UPDATE': '#f59e0b'
-                        };
-                        const roleBadgeColor: Record<string, {bg: string, color: string}> = {
-                          'admin': { bg: 'rgba(168, 85, 247, 0.15)', color: '#c084fc' },
-                          'teacher': { bg: 'rgba(99, 102, 241, 0.15)', color: '#818cf8' },
-                          'student': { bg: 'rgba(16, 185, 129, 0.15)', color: '#34d399' },
-                        };
-                        const roleBadge = roleBadgeColor[firstLog.role] || { bg: 'rgba(255,255,255,0.05)', color: 'var(--text-muted)' };
-
-                        if (group.length === 1) {
-                          const log = firstLog;
-                          const actionColor = actionColors[log.action] || 'var(--text-secondary)';
-                          return (
-                            <tr
-                              key={log._id}
-                              style={{ borderBottom: '1px solid rgba(255,255,255,0.03)', fontSize: '0.875rem' }}
-                              onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.01)')}
-                              onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}
-                            >
-                              <td data-label="Thời gian" style={{ padding: '1rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
-                                {formatDateTime(log.createdAt)}
-                              </td>
-                              <td data-label="Người thực hiện" style={{ padding: '1rem' }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-                                  <span style={{ fontWeight: '600', color: 'var(--text-primary)' }}>{log.user}</span>
-                                  {log.role && (
-                                    <span style={{
-                                      fontSize: '0.7rem',
-                                      fontWeight: '700',
-                                      padding: '1px 6px',
-                                      borderRadius: '99px',
-                                      background: roleBadge.bg,
-                                      color: roleBadge.color
-                                    }}>
-                                      {log.role}
-                                    </span>
-                                  )}
-                                </div>
-                              </td>
-                              <td data-label="Hành động" style={{ padding: '1rem' }}>
-                                <span style={{
-                                  display: 'inline-block',
-                                  padding: '2px 8px',
-                                  borderRadius: '4px',
-                                  fontSize: '0.75rem',
-                                  fontWeight: '700',
-                                  background: `${actionColor}20`,
-                                  color: actionColor,
-                                  whiteSpace: 'nowrap'
-                                }}>
-                                  {log.action}
-                                </span>
-                              </td>
-                              <td data-label="Loại đối tượng" style={{ padding: '1rem' }}>
-                                <span style={{ color: 'var(--text-secondary)' }}>{log.resource}</span>
-                              </td>
-                              <td data-label="Chi tiết" style={{ padding: '1rem', color: 'var(--text-secondary)', maxWidth: '350px', wordBreak: 'break-word' }}>
-                                {log.details}
-                              </td>
-                            </tr>
-                          );
-                        }
-
-                        // Group of multiple logs
-                        const uniqueActions = Array.from(new Set(group.map(l => l.action)));
-                        const uniqueResources = Array.from(new Set(group.map(l => l.resource)));
-
-                        return (
-                          <Fragment key={groupKey}>
-                            <tr
-                              style={{
-                                borderBottom: '1px solid rgba(255,255,255,0.03)',
-                                fontSize: '0.875rem',
-                                backgroundColor: 'rgba(99, 102, 241, 0.05)',
-                                cursor: 'pointer'
-                              }}
-                              onClick={() => toggleGroup(groupKey)}
-                              onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'rgba(99, 102, 241, 0.08)')}
-                              onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'rgba(99, 102, 241, 0.05)')}
-                            >
-                              <td data-label="Thời gian" style={{ padding: '1rem', color: 'var(--text-muted)', whiteSpace: 'nowrap', fontWeight: '600' }}>
-                                <span style={{ marginRight: '0.5rem', display: 'inline-block', transition: 'transform 0.2s', transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)' }}>▶</span>
-                                {formatDateTime(firstLog.createdAt)}
-                              </td>
-                              <td data-label="Người thực hiện" style={{ padding: '1rem' }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-                                  <span style={{ fontWeight: '600', color: 'var(--text-primary)' }}>{firstLog.user}</span>
-                                  {firstLog.role && (
-                                    <span style={{
-                                      fontSize: '0.7rem',
-                                      fontWeight: '700',
-                                      padding: '1px 6px',
-                                      borderRadius: '99px',
-                                      background: roleBadge.bg,
-                                      color: roleBadge.color
-                                    }}>
-                                      {firstLog.role}
-                                    </span>
-                                  )}
-                                </div>
-                              </td>
-                              <td data-label="Hành động" style={{ padding: '1rem' }}>
-                                <div style={{ display: 'flex', gap: '0.25rem', flexWrap: 'wrap' }}>
-                                  {uniqueActions.map(action => {
-                                    const actionColor = actionColors[action] || 'var(--text-secondary)';
-                                    return (
-                                      <span key={action} style={{
-                                        display: 'inline-block',
-                                        padding: '2px 8px',
-                                        borderRadius: '4px',
-                                        fontSize: '0.75rem',
-                                        fontWeight: '700',
-                                        background: `${actionColor}20`,
-                                        color: actionColor,
-                                        whiteSpace: 'nowrap'
-                                      }}>
-                                        {action}
-                                      </span>
-                                    );
-                                  })}
-                                </div>
-                              </td>
-                              <td data-label="Loại đối tượng" style={{ padding: '1rem' }}>
-                                <span style={{ color: 'var(--text-primary)', fontWeight: '600' }}>
-                                  {uniqueResources.join(', ')}
-                                </span>
-                              </td>
-                              <td data-label="Chi tiết" style={{ padding: '1rem', maxWidth: '350px', wordBreak: 'break-word' }}>
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-                                  <div style={{ color: 'var(--text-primary)', fontWeight: '600', fontSize: '0.85rem' }}>
-                                    {`[Gộp ${group.length} thao tác bởi ${firstLog.user}]:`}
-                                  </div>
-                                  <div style={{ color: 'var(--text-secondary)', fontSize: '0.8rem', fontWeight: 'normal', whiteSpace: 'pre-wrap', lineHeight: '1.4' }}>
-                                    {group.map((l, i) => `${i + 1}. ${l.details}`).join('\n')}
-                                  </div>
-                                  <div style={{ fontSize: '0.75rem', color: 'var(--primary)', marginTop: '0.25rem', fontWeight: '700' }}>
-                                    {isExpanded ? '▲ Thu gọn chi tiết' : '▼ Mở rộng chi tiết'}
-                                  </div>
-                                </div>
-                              </td>
-                            </tr>
-                            {isExpanded && group.map((log: any) => {
-                              const actionColor = actionColors[log.action] || 'var(--text-secondary)';
-                              return (
-                                <tr
-                                  key={log._id}
-                                  style={{
-                                    borderBottom: '1px solid rgba(255,255,255,0.02)',
-                                    fontSize: '0.85rem',
-                                    background: 'rgba(255, 255, 255, 0.015)'
-                                  }}
-                                >
-                                  <td data-label="Thời gian" style={{ padding: '0.75rem 1rem 0.75rem 2rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
-                                    <span style={{ color: 'rgba(255,255,255,0.2)', marginRight: '0.5rem' }}>└─</span>
-                                    {new Date(log.createdAt).toLocaleTimeString('vi-VN')}
-                                  </td>
-                                  <td data-label="Người thực hiện" style={{ padding: '0.75rem 1rem', color: 'var(--text-muted)' }}>
-                                    <span style={{ opacity: 0.5 }}>{log.user}</span>
-                                  </td>
-                                  <td data-label="Hành động" style={{ padding: '0.75rem 1rem' }}>
-                                    <span style={{
-                                      display: 'inline-block',
-                                      padding: '2px 6px',
-                                      borderRadius: '4px',
-                                      fontSize: '0.75rem',
-                                      fontWeight: '600',
-                                      background: `${actionColor}15`,
-                                      color: actionColor,
-                                      whiteSpace: 'nowrap'
-                                    }}>
-                                      {log.action}
-                                    </span>
-                                  </td>
-                                  <td data-label="Loại đối tượng" style={{ padding: '0.75rem 1rem' }}>
-                                    <span style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>{log.resource}</span>
-                                  </td>
-                                  <td data-label="Chi tiết" style={{ padding: '0.75rem 1rem', color: 'var(--text-secondary)', maxWidth: '350px', wordBreak: 'break-word' }}>
-                                    {log.details}
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                          </Fragment>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
 
               {/* --- BẢNG TÀI KHOẢN --- */}
               {activeTab === 'users' && (
@@ -1329,6 +1094,7 @@ export default function AdminDashboard() {
                           <div><strong style={{ color: '#ccc' }}>CP1:</strong> {getMilestoneRangeDisplay(item, 'cp1')}</div>
                           <div><strong style={{ color: '#ccc' }}>CP2:</strong> {getMilestoneRangeDisplay(item, 'cp2')}</div>
                           <div><strong style={{ color: '#ccc' }}>SPCK:</strong> {getMilestoneRangeDisplay(item, 'spck')}</div>
+                          <div><strong style={{ color: '#ccc' }}>Thuyết trình:</strong> {getMilestoneRangeDisplay(item, 'presentation')}</div>
                         </td>
                         <td data-label="Sĩ số" style={{ padding: '1rem', textAlign: 'center' }}>
                           <span style={{ 
@@ -1459,7 +1225,6 @@ export default function AdminDashboard() {
                   Không có bản ghi nào.
                 </div>
               )}
-
             </div>
           )}
 
@@ -1561,15 +1326,49 @@ export default function AdminDashboard() {
                     </select>
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                    <label className="form-label">Email</label>
-                    <input
-                      type="email"
-                      value={userEmail}
-                      onChange={(e) => setUserEmail(e.target.value)}
-                      placeholder="Ví dụ: giaovien@gmail.com"
-                      className="form-input-field"
-                      autoComplete="off"
-                    />
+                    <label className="form-label">Email (Đọc duy nhất)</label>
+                    <div style={{ display: 'flex', gap: '0.5rem', width: '100%' }}>
+                      <input
+                        type="email"
+                        value={userEmail}
+                        placeholder="Chưa liên kết tài khoản Google..."
+                        className="form-input-field"
+                        readOnly
+                        style={{ flex: 1, opacity: 0.8, cursor: 'not-allowed', backgroundColor: 'rgba(255,255,255,0.02)' }}
+                      />
+                      {editingId && userRole === 'teacher' && userEmail && (
+                        <button
+                          type="button"
+                          onClick={handleAdminUnlinkGoogle}
+                          className="btn btn-danger"
+                          style={{
+                            height: '2.7rem',
+                            padding: '0 1rem',
+                            fontSize: '0.85rem',
+                            whiteSpace: 'nowrap',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '0.5rem',
+                            background: 'rgba(239, 68, 68, 0.15)',
+                            border: '1px solid rgba(239, 68, 68, 0.3)',
+                            color: '#ff8a8a',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          <svg viewBox="0 0 24 24" width="16" height="16" style={{ flexShrink: 0 }}>
+                            <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                            <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                            <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+                            <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+                          </svg>
+                          Hủy liên kết Google
+                        </button>
+                      )}
+                    </div>
+                    <small style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '2px', lineHeight: '1.4' }}>
+                      💡 Email này được liên kết tự động sau khi Giáo viên đăng nhập bằng Google lần đầu tiên. Email này dùng để nhận thông báo nộp bài và khôi phục mật khẩu.
+                    </small>
                   </div>
                 </>
               )}
@@ -1676,6 +1475,8 @@ export default function AdminDashboard() {
                             setClassCp2Deadline(calcAutoDeadline(val, 56, classEndTime));
                             setClassSpckStartDate(calcAutoDeadline(val, 0, classStartTime));
                             setClassSpckDeadline(calcAutoDeadline(val, 85, classEndTime));
+                            setClassPresentationStartDate(calcAutoDeadline(val, 0, classStartTime));
+                            setClassPresentationDeadline(calcAutoDeadline(val, 91, classEndTime));
                           } else {
                             setClassCp1StartDate('');
                             setClassCp1Deadline('');
@@ -1683,6 +1484,8 @@ export default function AdminDashboard() {
                             setClassCp2Deadline('');
                             setClassSpckStartDate('');
                             setClassSpckDeadline('');
+                            setClassPresentationStartDate('');
+                            setClassPresentationDeadline('');
                           }
                         }}
                         className="form-input-field"
@@ -1715,6 +1518,7 @@ export default function AdminDashboard() {
                             setClassCp1StartDate(calcAutoDeadline(classStartDate, 28, val));
                             setClassCp2StartDate(calcAutoDeadline(classStartDate, 56, val));
                             setClassSpckStartDate(calcAutoDeadline(classStartDate, 0, val));
+                            setClassPresentationStartDate(calcAutoDeadline(classStartDate, 0, val));
                           }
                         }}
                         className="form-input-field"
@@ -1733,6 +1537,7 @@ export default function AdminDashboard() {
                             setClassCp1Deadline(calcAutoDeadline(classStartDate, 28, val));
                             setClassCp2Deadline(calcAutoDeadline(classStartDate, 56, val));
                             setClassSpckDeadline(calcAutoDeadline(classStartDate, 85, val));
+                            setClassPresentationDeadline(calcAutoDeadline(classStartDate, 91, val));
                           }
                         }}
                         className="form-input-field"
@@ -1783,11 +1588,21 @@ export default function AdminDashboard() {
                         color: 'rgba(236, 72, 153, 0.08)',
                         borderColor: 'rgba(236, 72, 153, 0.2)',
                         titleColor: '#fbcfe8'
+                      },
+                      { 
+                        title: 'Bài thuyết trình (Buổi tự do)', 
+                        startVal: classPresentationStartDate, 
+                        startSetter: setClassPresentationStartDate,
+                        endVal: classPresentationDeadline, 
+                        endSetter: setClassPresentationDeadline,
+                        color: 'rgba(59, 130, 246, 0.08)',
+                        borderColor: 'rgba(59, 130, 246, 0.2)',
+                        titleColor: '#93c5fd'
                       }
                     ].map((cp, idx) => (
                       <div key={idx} style={{
                         padding: '0.85rem',
-                        marginBottom: idx < 2 ? '0.75rem' : 0,
+                        marginBottom: idx < 3 ? '0.75rem' : 0,
                         borderRadius: '10px',
                         background: cp.color,
                         border: `1px solid ${cp.borderColor}`

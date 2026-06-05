@@ -1,13 +1,17 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
+import { ArrowLeft } from 'lucide-react';
+import { useToast } from '../components/Toast';
 
 export default function Settings() {
   const navigate = useNavigate();
+  const { showToast, showConfirm } = useToast();
   const [currentUser, setCurrentUser] = useState<any>(null);
   
   // Profile settings state
   const [displayName, setDisplayName] = useState('');
   const [email, setEmail] = useState('');
+  const [emailNotificationsEnabled, setEmailNotificationsEnabled] = useState(false);
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   
@@ -32,9 +36,45 @@ export default function Settings() {
       setCurrentUser(user);
       setDisplayName(user.displayName || '');
       setEmail(user.email || '');
+      setEmailNotificationsEnabled(user.emailNotificationsEnabled || false);
     } catch (e) {
       navigate('/login');
     }
+
+    // Fetch fresh user profile from backend to ensure data (especially linked email) is fully up-to-date
+    const fetchFreshProfile = async () => {
+      const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/auth/profile`, {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.user) {
+            setCurrentUser(data.user);
+            setDisplayName(data.user.displayName || '');
+            setEmail(data.user.email || '');
+            setEmailNotificationsEnabled(data.user.emailNotificationsEnabled || false);
+            
+            // Sync to localStorage
+            const localUser = JSON.parse(localStorage.getItem('user') || '{}');
+            const mergedUser = { ...localUser, ...data.user };
+            localStorage.setItem('user', JSON.stringify(mergedUser));
+            window.dispatchEvent(new Event('storage'));
+
+            // Redirect if teacher needs to link Google
+            if (data.user.role === 'teacher' && (data.user.requiresGoogleAuth || !data.user.email)) {
+              navigate('/google-setup');
+            }
+          }
+        }
+      } catch (err) {
+        console.error('Lỗi khi đồng bộ thông tin tài khoản từ server:', err);
+      }
+    };
+    fetchFreshProfile();
 
     const savedTheme = (localStorage.getItem('theme') as 'dark' | 'light') || 'dark';
     setTheme(savedTheme);
@@ -85,7 +125,8 @@ export default function Settings() {
         body: JSON.stringify({
           displayName: displayName.trim(),
           password: password ? password : undefined,
-          email: email.trim()
+          email: email.trim(),
+          emailNotificationsEnabled: emailNotificationsEnabled
         })
       });
 
@@ -100,7 +141,8 @@ export default function Settings() {
       const updatedUser = {
         ...currentUser,
         displayName: resData.user.displayName,
-        email: resData.user.email
+        email: resData.user.email,
+        emailNotificationsEnabled: resData.user.emailNotificationsEnabled
       };
       localStorage.setItem('user', JSON.stringify(updatedUser));
       setCurrentUser(updatedUser);
@@ -113,6 +155,71 @@ export default function Settings() {
       window.dispatchEvent(new Event('storage'));
     } catch (err: any) {
       setError(err.message || 'Đã xảy ra lỗi khi cập nhật.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleUnlinkGoogle = async () => {
+    const isTeacher = currentUser?.role === 'teacher';
+    const confirmMessage = isTeacher
+      ? "Bạn có chắc chắn muốn hủy liên kết tài khoản Google? Việc này sẽ đưa bạn về màn hình kích hoạt để liên kết lại."
+      : "Bạn có chắc chắn muốn hủy liên kết tài khoản Google?";
+      
+    const ok = await showConfirm(confirmMessage);
+    if (!ok) {
+      return;
+    }
+
+    setIsLoading(true);
+    setError('');
+    setSuccess('');
+
+    const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+    const token = localStorage.getItem('token');
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/auth/google/unlink`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.error || 'Hủy liên kết thất bại.');
+      }
+
+      // Cập nhật localStorage
+      const updatedUser = {
+        ...currentUser,
+        requiresGoogleAuth: isTeacher,
+        email: '',
+        emailNotificationsEnabled: false
+      };
+      localStorage.setItem('user', JSON.stringify(updatedUser));
+      setCurrentUser(updatedUser);
+      setEmail('');
+      setEmailNotificationsEnabled(false);
+
+      // Gửi event storage để Header cập nhật lập tức
+      window.dispatchEvent(new Event('storage'));
+
+      showToast('Đã hủy liên kết tài khoản Google thành công!', 'success');
+      setSuccess('Đã hủy liên kết tài khoản Google thành công!');
+
+      // Redirect về google-setup sau 1.5 giây chỉ dành cho giáo viên
+      if (isTeacher) {
+        setTimeout(() => {
+          navigate('/google-setup');
+        }, 1500);
+      }
+
+    } catch (err: any) {
+      showToast(err.message || 'Đã xảy ra lỗi khi hủy liên kết.', 'error');
+      setError(err.message || 'Đã xảy ra lỗi khi hủy liên kết.');
     } finally {
       setIsLoading(false);
     }
@@ -151,10 +258,7 @@ export default function Settings() {
           }}
             className="back-link"
           >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-              <line x1="19" y1="12" x2="5" y2="12" />
-              <polyline points="12 19 5 12 12 5" />
-            </svg>
+            <ArrowLeft size={18} />
             Quay lại trang chủ
           </Link>
 
@@ -196,17 +300,153 @@ export default function Settings() {
 
             {/* Email Input */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-              <label className="form-label">Email nhận thông báo khi có bài nộp mới</label>
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="Ví dụ: giaovien@gmail.com"
-                className="form-input-field"
-              />
-              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-                *(Dành cho Giáo viên để nhận thông báo trực tiếp khi học viên nộp bài)
+              <label className="form-label">Email tài khoản (Liên kết qua Google và chỉ đọc)</label>
+              <div style={{ display: 'flex', gap: '0.5rem', width: '100%' }}>
+                <input
+                  type="email"
+                  value={email}
+                  placeholder="Chưa liên kết email..."
+                  className="form-input-field"
+                  style={{ flex: 1, opacity: 0.7, cursor: 'not-allowed', backgroundColor: 'rgba(255, 255, 255, 0.02)' }}
+                  readOnly
+                />
+                {(currentUser?.role === 'teacher' || currentUser?.role === 'admin') && (
+                  email ? (
+                    <button
+                      type="button"
+                      onClick={handleUnlinkGoogle}
+                      className="btn btn-danger"
+                      disabled={isLoading}
+                      style={{
+                        height: '2.7rem',
+                        padding: '0 1rem',
+                        fontSize: '0.85rem',
+                        whiteSpace: 'nowrap',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '0.5rem',
+                        background: 'rgba(239, 68, 68, 0.15)',
+                        border: '1px solid rgba(239, 68, 68, 0.3)',
+                        color: '#ff8a8a',
+                        cursor: isLoading ? 'not-allowed' : 'pointer',
+                        width: 'auto'
+                      }}
+                    >
+                      <svg viewBox="0 0 24 24" width="16" height="16" style={{ flexShrink: 0 }}>
+                        <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                        <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                        <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+                        <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+                      </svg>
+                      Hủy liên kết Google
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => navigate('/google-setup')}
+                      className="btn"
+                      disabled={isLoading}
+                      style={{
+                        height: '2.7rem',
+                        padding: '0 1rem',
+                        fontSize: '0.85rem',
+                        whiteSpace: 'nowrap',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '0.5rem',
+                        background: 'rgba(99, 102, 241, 0.15)',
+                        border: '1px solid rgba(99, 102, 241, 0.3)',
+                        color: '#818cf8',
+                        cursor: isLoading ? 'not-allowed' : 'pointer',
+                        width: 'auto'
+                      }}
+                    >
+                      <svg viewBox="0 0 24 24" width="16" height="16" style={{ flexShrink: 0 }}>
+                        <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                        <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                        <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+                        <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+                      </svg>
+                      Liên kết Google
+                    </button>
+                  )
+                )}
+              </div>
+              <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '2px', lineHeight: '1.4' }}>
+                💡 <strong>Công dụng email:</strong> Email này dùng để nhận thông báo tự động khi học viên nộp bài mới và để khôi phục mật khẩu khi {currentUser?.role === 'admin' ? 'bạn' : 'thầy/cô'} quên. Email được tự động đồng bộ khi {currentUser?.role === 'admin' ? 'bạn' : 'thầy/cô'} liên kết tài khoản Google.
               </span>
+
+              {/* Tùy chọn nhận thông báo email */}
+              <div style={{
+                marginTop: '1.25rem',
+                padding: '1.25rem',
+                borderRadius: '14px',
+                background: 'rgba(255, 255, 255, 0.02)',
+                border: '1px solid var(--card-border)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '1rem',
+                transition: 'var(--transition-smooth)'
+              }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem', userSelect: 'none' }}>
+                  <span style={{ fontSize: '0.95rem', fontWeight: '600', color: 'var(--text-primary)' }}>
+                    Nhận thông báo qua email
+                  </span>
+                  <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: '1.4' }}>
+                    Tự động gửi email thông báo cho {currentUser?.role === 'admin' ? 'bạn' : 'thầy/cô'} bất cứ khi nào học viên nộp bài mới.
+                  </span>
+                </div>
+                <label className="switch" style={{
+                  position: 'relative',
+                  display: 'inline-block',
+                  width: '46px',
+                  height: '24px',
+                  flexShrink: 0
+                }}>
+                  <input
+                    type="checkbox"
+                    checked={emailNotificationsEnabled}
+                    disabled={!email}
+                    onChange={(e) => setEmailNotificationsEnabled(e.target.checked)}
+                    style={{ opacity: 0, width: 0, height: 0 }}
+                  />
+                  <span className="slider" style={{
+                    position: 'absolute',
+                    cursor: email ? 'pointer' : 'not-allowed',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    backgroundColor: emailNotificationsEnabled ? 'var(--primary)' : 'rgba(255, 255, 255, 0.08)',
+                    transition: 'var(--transition-fast)',
+                    borderRadius: '24px',
+                    border: '1px solid var(--card-border)',
+                    opacity: email ? 1 : 0.5,
+                    boxShadow: emailNotificationsEnabled ? '0 0 12px var(--primary-glow)' : 'none'
+                  }}>
+                    <span style={{
+                      position: 'absolute',
+                      content: '""',
+                      height: '16px',
+                      width: '16px',
+                      left: '3px',
+                      bottom: '3px',
+                      backgroundColor: '#ffffff',
+                      transition: 'var(--transition-fast)',
+                      borderRadius: '50%',
+                      transform: emailNotificationsEnabled ? 'translateX(22px)' : 'none'
+                    }} />
+                  </span>
+                </label>
+              </div>
+              {!email && (
+                <span style={{ fontSize: '0.75rem', color: '#ff8a8a', marginTop: '0.35rem', display: 'block' }}>
+                  ⚠️ Vui lòng liên kết tài khoản Google trước để có thể kích hoạt tùy chọn này.
+                </span>
+              )}
             </div>
 
             {/* Password Fields */}

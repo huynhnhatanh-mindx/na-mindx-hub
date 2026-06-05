@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { formatDateTime } from '../utils/date';
 import ComboBox from '../components/ComboBox';
+import { ArrowLeft, UploadCloud, FileText, CheckCircle2, AlertTriangle, Info, Calendar, Trash2, X } from 'lucide-react';
 
 interface UploadResponseFile {
   originalName: string;
@@ -44,6 +45,15 @@ function Upload() {
   const [uploadStatus, setUploadStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [errorMessage, setErrorMessage] = useState<string>('');
   const [uploadedFiles, setUploadedFiles] = useState<UploadResponseFile[]>([]);
+  const [cooldownTime, setCooldownTime] = useState<number>(0);
+
+  useEffect(() => {
+    if (cooldownTime <= 0) return;
+    const timer = setInterval(() => {
+      setCooldownTime((prev) => prev - 1);
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [cooldownTime]);
 
   // States for file preview
   const [previewFile, setPreviewFile] = useState<File | null>(null);
@@ -130,7 +140,7 @@ function Upload() {
   const [fullClassesData, setFullClassesData] = useState<any[]>([]);
   const [studentsList, setStudentsList] = useState<string[]>([]);
   const [studentDetails, setStudentDetails] = useState<StudentDetail[]>([]);
-  const stagesList = ['Checkpoint 1', 'Checkpoint 2', 'Sản phẩm cuối khóa', 'Buổi học lý thuyết'];
+  const stagesList = ['Checkpoint 1', 'Checkpoint 2', 'Sản phẩm cuối khóa', 'Bài thuyết trình', 'Buổi học lý thuyết'];
 
   const sessionsMap: Record<string, string[]> = {
     'Checkpoint 1': ['Buổi 5'],
@@ -142,6 +152,7 @@ function Upload() {
       'Buổi 13',
       'Buổi 14'
     ],
+    'Bài thuyết trình': ['Buổi tự do'],
     'Buổi học lý thuyết': [
       'Buổi 1',
       'Buổi 2',
@@ -381,6 +392,27 @@ function Upload() {
         const [h, m] = (cls.endTime || "10:00").split(":");
         deadlineDate.setHours(parseInt(h) || 10, parseInt(m) || 0, 0, 0);
       }
+    } else if (stageLower.includes('thuyet trinh') || stageLower.includes('thuyết trình') || stageLower.includes('presentation')) {
+      if (cls.presentationStartDate) {
+        startDate = parseSafeDate(cls.presentationStartDate);
+        isManual = true;
+      } else if (cls.startDate) {
+        startDate = parseSafeDate(cls.startDate);
+        // Start date is class start date at start time (0 days offset)
+        const [h, m] = (cls.startTime || "08:00").split(":");
+        startDate.setHours(parseInt(h) || 8, parseInt(m) || 0, 0, 0);
+      }
+
+      if (cls.presentationDeadline) {
+        deadlineDate = parseSafeDate(cls.presentationDeadline);
+        isManual = true;
+      } else if (cls.startDate) {
+        deadlineDate = parseSafeDate(cls.startDate);
+        // End date is session 14 end time (91 days offset)
+        deadlineDate.setDate(deadlineDate.getDate() + 91);
+        const [h, m] = (cls.endTime || "10:00").split(":");
+        deadlineDate.setHours(parseInt(h) || 10, parseInt(m) || 0, 0, 0);
+      }
     }
 
     if (!startDate || isNaN(startDate.getTime()) || !deadlineDate || isNaN(deadlineDate.getTime())) {
@@ -546,6 +578,7 @@ function Upload() {
                   setUploadStatus('success');
                   setUploadedFiles(sseData.files);
                   setSelectedFiles([]); // Reset danh sách chọn
+                  setCooldownTime(15); // Kích hoạt 15 giây cooldown
                   if (fileInputRef.current) {
                     fileInputRef.current.value = '';
                   }
@@ -566,6 +599,7 @@ function Upload() {
         setUploadStatus('success');
         setUploadedFiles(data.files);
         setSelectedFiles([]);
+        setCooldownTime(15); // Kích hoạt 15 giây cooldown
         if (fileInputRef.current) {
           fileInputRef.current.value = '';
         }
@@ -621,10 +655,7 @@ function Upload() {
             }}
               className="back-link"
             >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                <line x1="19" y1="12" x2="5" y2="12" />
-                <polyline points="12 19 5 12 12 5" />
-              </svg>
+              <ArrowLeft size={18} />
               Quay lại
             </Link>
           </div>
@@ -729,11 +760,7 @@ function Upload() {
                 border: '1px solid rgba(255, 255, 255, 0.05)',
                 transition: 'var(--transition-smooth)'
               }}>
-                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                  <polyline points="17 8 12 3 7 8" />
-                  <line x1="12" y1="3" x2="12" y2="15" />
-                </svg>
+                <UploadCloud size={32} />
               </div>
 
               {isMetadataIncomplete ? (
@@ -766,11 +793,7 @@ function Upload() {
                       fontWeight: '600',
                       border: '1px solid rgba(16, 185, 129, 0.2)'
                     }}>
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                        <circle cx="12" cy="12" r="10" />
-                        <line x1="12" y1="16" x2="12" y2="12" />
-                        <line x1="12" y1="8" x2="12.01" y2="8" />
-                      </svg>
+                      <Info size={14} />
                       Giới hạn dung lượng bài nộp: {getSelectedStudentLimit()} MB
                     </div>
                     {getSelectedClassDeadline() && (
@@ -786,12 +809,7 @@ function Upload() {
                         fontWeight: '600',
                         border: '1px solid rgba(99, 102, 241, 0.2)'
                       }}>
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                          <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
-                          <line x1="16" y1="2" x2="16" y2="6" />
-                          <line x1="8" y1="2" x2="8" y2="6" />
-                          <line x1="3" y1="10" x2="21" y2="10" />
-                        </svg>
+                        <Calendar size={14} />
                         Hạn nộp bài: {getSelectedClassDeadline()}
                       </div>
                     )}
@@ -823,10 +841,7 @@ function Upload() {
                       }}
                     >
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', overflow: 'hidden' }}>
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--text-secondary)" strokeWidth="2" style={{ flexShrink: 0 }}>
-                          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                          <polyline points="14 2 14 8 20 8" />
-                        </svg>
+                        <FileText size={18} color="var(--text-secondary)" style={{ flexShrink: 0 }} />
                         <span style={{
                           whiteSpace: 'nowrap',
                           overflow: 'hidden',
@@ -882,12 +897,7 @@ function Upload() {
                           }}
                           className="btn-delete"
                         >
-                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <polyline points="3 6 5 6 21 6" />
-                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                            <line x1="10" y1="11" x2="10" y2="17" />
-                            <line x1="14" y1="11" x2="14" y2="17" />
-                          </svg>
+                          <Trash2 size={18} />
                         </button>
                       </div>
                     </div>
@@ -931,9 +941,7 @@ function Upload() {
                 color: '#e6f4ea'
               }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem', color: 'var(--success)' }}>
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                    <polyline points="20 6 9 17 4 12" />
-                  </svg>
+                  <CheckCircle2 size={20} strokeWidth={2.5} />
                   <strong style={{ fontSize: '1rem' }}>Nộp bài thành công!</strong>
                 </div>
                 <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '0.75rem' }}>
@@ -957,11 +965,7 @@ function Upload() {
                 color: '#fce8e6'
               }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem', color: 'var(--error)' }}>
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                    <circle cx="12" cy="12" r="10" />
-                    <line x1="12" y1="8" x2="12" y2="12" />
-                    <line x1="12" y1="16" x2="12.01" y2="16" />
-                  </svg>
+                  <AlertTriangle size={20} strokeWidth={2.5} />
                   <strong style={{ fontSize: '1rem' }}>Lỗi tải lên!</strong>
                 </div>
                 <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
@@ -974,13 +978,13 @@ function Upload() {
             <button
               type="submit"
               className="btn btn-primary"
-              disabled={selectedFiles.length === 0 || isUploading || uploadStatus === 'error'}
+              disabled={selectedFiles.length === 0 || isUploading || uploadStatus === 'error' || cooldownTime > 0}
               style={{
                 height: '3rem',
                 fontSize: '1rem'
               }}
             >
-              {isUploading ? 'Đang gửi bài...' : 'Nộp bài'}
+              {isUploading ? 'Đang gửi bài...' : cooldownTime > 0 ? `Đợi ${cooldownTime}s để nộp tiếp...` : 'Nộp bài'}
             </button>
           </form>
         </div>
@@ -1048,10 +1052,7 @@ function Upload() {
                 onMouseOver={(e) => e.currentTarget.style.background = 'rgba(239, 68, 68, 0.2)'}
                 onMouseOut={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'}
               >
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                  <line x1="18" y1="6" x2="6" y2="18" />
-                  <line x1="6" y1="6" x2="18" y2="18" />
-                </svg>
+                <X size={20} strokeWidth={2.5} />
               </button>
             </div>
 
@@ -1137,10 +1138,7 @@ function Upload() {
                     border: '1px solid rgba(255, 255, 255, 0.05)',
                     marginBottom: '1rem'
                   }}>
-                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                      <polyline points="14 2 14 8 20 8" />
-                    </svg>
+                    <FileText size={32} />
                   </div>
                   <h4 style={{ fontWeight: '600', color: 'var(--text-primary)', marginBottom: '0.25rem' }}>
                     Không hỗ trợ xem trước trực tiếp

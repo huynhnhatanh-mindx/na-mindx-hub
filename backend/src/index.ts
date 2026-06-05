@@ -9,11 +9,65 @@ import { Storage } from 'megajs';
 import mongoose from 'mongoose';
 import sanitize from 'mongo-sanitize';
 import crypto from 'crypto';
+import nodemailer from 'nodemailer';
+import { Transform } from 'stream';
 
-// Load environment variables
-dotenv.config();
+// Load environment variables from workspace root .env
+dotenv.config({ path: path.join(__dirname, '../../.env') });
 
-// Helper to create nodemailer transporter based on env configs (supports Gmail & Custom SMTP like Bizfly)
+// Dynamic environment configuration resolver (Development vs Production)
+const isProd = process.env.NODE_ENV === 'production' || process.env.RENDER === 'true';
+if (isProd) {
+  if (process.env.GOOGLE_REDIRECT_URI_PROD) {
+    process.env.GOOGLE_REDIRECT_URI = process.env.GOOGLE_REDIRECT_URI_PROD;
+  }
+  if (process.env.FRONTEND_URL_PROD) {
+    process.env.FRONTEND_URL = process.env.FRONTEND_URL_PROD;
+  }
+} else {
+  if (process.env.GOOGLE_REDIRECT_URI_DEV) {
+    process.env.GOOGLE_REDIRECT_URI = process.env.GOOGLE_REDIRECT_URI_DEV;
+  }
+  if (process.env.FRONTEND_URL_DEV) {
+    process.env.FRONTEND_URL = process.env.FRONTEND_URL_DEV;
+  }
+}
+
+// Helper to create nodemailer transporter based on env configs (supports Gmail, Custom SMTP & Resend)
+const emailHost = process.env.EMAIL_HOST || 'smtp.resend.com';
+const emailPort = parseInt(process.env.EMAIL_PORT || '465');
+const smtpUser = process.env.EMAIL_USER || (emailHost === 'smtp.resend.com' ? 'resend' : process.env.FEEDBACK_EMAIL);
+
+const transporter = nodemailer.createTransport({
+  host: emailHost,
+  port: emailPort,
+  secure: emailPort === 465,
+  auth: {
+    user: smtpUser,
+    pass: process.env.FEEDBACK_EMAIL_PASS
+  }
+});
+
+async function sendMailHelper(to: string, subject: string, htmlContent: string) {
+  try {
+    if (!to || to.trim() === '') {
+      console.log('[Email Sender]: Bỏ qua gửi email do địa chỉ nhận trống.');
+      return false;
+    }
+    const info = await transporter.sendMail({
+      from: `"NA MindX Hub" <${process.env.FEEDBACK_EMAIL}>`,
+      to,
+      subject,
+      html: htmlContent
+    });
+    console.log('[Email Sender]: Đã gửi thư thành công tới', to, 'MessageID:', info.messageId);
+    return true;
+  } catch (err: any) {
+    console.error('[Email Sender Error]: Gửi email thất bại!', err.message);
+    return false;
+  }
+}
+
 const app = express();
 const PORT = process.env.PORT || 5000;
 
@@ -41,6 +95,8 @@ const classSchema = new mongoose.Schema({
   checkpoint2Deadline: { type: Date },
   finalProjectStartDate: { type: Date },
   finalProjectDeadline: { type: Date },
+  presentationStartDate: { type: Date },
+  presentationDeadline: { type: Date },
   allowLateUpload: { type: Boolean, default: false }
 });
 const ClassModel = mongoose.model('Class', classSchema);
@@ -80,34 +136,87 @@ const userSchema = new mongoose.Schema({
   role: { type: String, required: true, enum: ['admin', 'teacher'], default: 'admin' },
   displayName: { type: String, required: true },
   email: { type: String, default: '' }, // Email nhận thông báo
+  emailNotificationsEnabled: { type: Boolean, default: false },
+  googleRefreshToken: { type: String, default: '' },
+  resetPasswordToken: { type: String, default: '' },
+  resetPasswordExpires: { type: Date },
   status: { type: String, enum: ['active', 'inactive'], default: 'active' },
   createdAt: { type: Date, default: Date.now }
 });
 const UserModel = mongoose.model('User', userSchema);
 
-// Audit Log Schema
-// QUAN TRONG: Audit log la bat bien - khong tao API xoa hoac sua audit logs.
-// Muc dich: Ghi nhan lich su thao tac de truy vet, khong ai (ke ca admin) co quyen xoa.
-const auditLogSchema = new mongoose.Schema({
-  action: { type: String, required: true },   // CREATE, UPDATE, DELETE, BULK_DELETE, UPLOAD, PROFILE_UPDATE...
-  resource: { type: String, required: true }, // User, Class, Teacher, Student, Submission, Profile, Upload
-  details: { type: String, required: true },  // Mo ta chi tiet thao tac
-  user: { type: String, required: true },     // Username nguoi thuc hien
-  role: { type: String, default: 'unknown' }, // Quyen han: admin, teacher, student, system
-  createdAt: { type: Date, default: Date.now }
-});
-const AuditLogModel = mongoose.model('AuditLog', auditLogSchema);
+function extractGoogleDriveFileId(fileUrl: string): string | null {
+  if (!fileUrl) return null;
+  const match = fileUrl.match(/\/d\/([a-zA-Z0-9_-]+)/);
+  return match ? match[1] : null;
+}
 
-// Ham ghi nhat ky hoat dong - su dung o moi endpoint anh huong den database
-async function logAudit(action: string, resource: string, details: string, user: string, role: string = 'unknown') {
-  try {
-    if (mongoose.connection.readyState === 1) {
-      const log = new AuditLogModel({ action, resource, details, user, role });
-      await log.save();
+async function deleteSubmissionFileFromStorage(submission: any) {
+  if (!submission || !submission.fileUrl) return;
+
+  const fileUrl = submission.fileUrl;
+  const driveFileId = extractGoogleDriveFileId(fileUrl);
+
+  if (driveFileId) {
+    let deleted = false;
+    if (useMongoDB && submission.teacher && submission.teacher !== 'Chưa phân công') {
+      try {
+        const teacherUser = await UserModel.findOne({ displayName: submission.teacher, role: 'teacher' });
+        if (teacherUser && teacherUser.googleRefreshToken) {
+          const oauth2Client = new google.auth.OAuth2(
+            process.env.GOOGLE_CLIENT_ID,
+            process.env.GOOGLE_CLIENT_SECRET,
+            process.env.GOOGLE_REDIRECT_URI
+          );
+          oauth2Client.setCredentials({
+            refresh_token: teacherUser.googleRefreshToken
+          });
+          const driveClient = google.drive({ version: 'v3', auth: oauth2Client });
+          await driveClient.files.delete({ fileId: driveFileId });
+          console.log(`[Google Drive]: Deleted file ID ${driveFileId} on teacher ${submission.teacher}'s Google Drive.`);
+          deleted = true;
+        }
+      } catch (err: any) {
+        console.error(`[Google Drive Error]: Failed to delete file ID ${driveFileId} from teacher's Google Drive: ${err.message}`);
+      }
     }
-  } catch (err) {
-    console.error('Error saving audit log:', err);
+
+    if (!deleted && drive) {
+      try {
+        await drive.files.delete({ fileId: driveFileId });
+        console.log(`[Google Drive]: Deleted file ID ${driveFileId} on system Google Drive.`);
+        deleted = true;
+      } catch (err: any) {
+        console.error(`[Google Drive Error]: Failed to delete file ID ${driveFileId} from system Google Drive: ${err.message}`);
+      }
+    }
+    return;
   }
+
+  if (storageProvider === 'mega' && megaStorage) {
+    try {
+      if (megaInitPromise) {
+        await megaInitPromise;
+      }
+      let fileToDelete = null;
+      if (megaFolder && megaFolder.children) {
+        fileToDelete = megaFolder.children.find((f: any) => f.name === submission.fileName);
+      }
+      if (!fileToDelete && megaStorage.files) {
+        fileToDelete = Object.values(megaStorage.files).find((f: any) => f.name === submission.fileName);
+      }
+      if (fileToDelete) {
+        await (fileToDelete as any).delete(true);
+        console.log(`[MEGA]: Deleted file "${submission.fileName}" from MEGA.`);
+      }
+    } catch (megaErr: any) {
+      console.error(`[MEGA Error]: Failed to delete file on MEGA: ${megaErr.message}`);
+    }
+  }
+}
+
+async function logAudit(action: string, resource: string, details: string, user: string, role: string = 'unknown') {
+  // Audit logging is disabled as requested by user
 }
 
 // Helper function to build paginated responses
@@ -346,15 +455,15 @@ let megaInitPromise: Promise<any> | null = null;
 
 // Tự động phát hiện Storage Provider nếu chưa được chỉ định cụ thể
 if (!process.env.STORAGE_PROVIDER) {
-  if (process.env.MEGA_EMAIL && process.env.MEGA_EMAIL !== 'YOUR_MEGA_EMAIL_HERE' && process.env.MEGA_PASSWORD && process.env.MEGA_PASSWORD !== 'YOUR_MEGA_PASSWORD_HERE') {
-    storageProvider = 'mega';
-  } else if (fs.existsSync(KEY_FILE_PATH)) {
+  if (fs.existsSync(KEY_FILE_PATH)) {
     try {
       const keyData = JSON.parse(fs.readFileSync(KEY_FILE_PATH, 'utf8'));
       if (keyData.client_email && keyData.private_key) {
         storageProvider = 'google-drive';
       }
     } catch (e) { }
+  } else if (process.env.MEGA_EMAIL && process.env.MEGA_EMAIL !== 'YOUR_MEGA_EMAIL_HERE' && process.env.MEGA_PASSWORD && process.env.MEGA_PASSWORD !== 'YOUR_MEGA_PASSWORD_HERE') {
+    storageProvider = 'mega';
   }
 }
 
@@ -451,6 +560,142 @@ async function uploadToGoogleDrive(bodyStream: any, driveFileName: string, mimeT
 
   if (!response.data.id) {
     throw new Error('Không lấy được ID file từ Google Drive API.');
+  }
+
+  return response.data.webViewLink || '';
+}
+
+async function uploadToTeacherGoogleDrive(
+  teacherUser: any,
+  bodyStream: any,
+  driveFileName: string,
+  mimeType: string,
+  className: string,
+  stage: string
+): Promise<string> {
+  const oauth2Client = new google.auth.OAuth2(
+    process.env.GOOGLE_CLIENT_ID,
+    process.env.GOOGLE_CLIENT_SECRET,
+    process.env.GOOGLE_REDIRECT_URI
+  );
+  oauth2Client.setCredentials({
+    refresh_token: teacherUser.googleRefreshToken
+  });
+  const driveClient = google.drive({ version: 'v3', auth: oauth2Client });
+
+  // 1. Tìm hoặc tạo thư mục "NA MindX Hub" ở thư mục gốc của giáo viên
+  let parentFolderId = '';
+  try {
+    const rootSearch = await driveClient.files.list({
+      q: "name = 'NA MindX Hub' and mimeType = 'application/vnd.google-apps.folder' and trashed = false",
+      fields: 'files(id)',
+      spaces: 'drive'
+    });
+    if (rootSearch.data.files && rootSearch.data.files.length > 0) {
+      parentFolderId = rootSearch.data.files[0].id || '';
+    } else {
+      const rootFolderMetadata = {
+        name: 'NA MindX Hub',
+        mimeType: 'application/vnd.google-apps.folder'
+      };
+      const newFolder = await driveClient.files.create({
+        requestBody: rootFolderMetadata,
+        fields: 'id'
+      });
+      parentFolderId = newFolder.data.id || '';
+    }
+  } catch (err: any) {
+    console.error('[Google Drive]: Lỗi tìm/tạo thư mục gốc "NA MindX Hub":', err.message);
+  }
+
+  // 2. Tìm hoặc tạo thư mục con mang tên lớp (ví dụ: HCM4) trong "NA MindX Hub"
+  let classFolderId = parentFolderId;
+  if (parentFolderId) {
+    try {
+      const classSearch = await driveClient.files.list({
+        q: `name = '${className}' and '${parentFolderId}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
+        fields: 'files(id)',
+        spaces: 'drive'
+      });
+      if (classSearch.data.files && classSearch.data.files.length > 0) {
+        classFolderId = classSearch.data.files[0].id || '';
+      } else {
+        const classFolderMetadata = {
+          name: className,
+          mimeType: 'application/vnd.google-apps.folder',
+          parents: [parentFolderId]
+        };
+        const newClassFolder = await driveClient.files.create({
+          requestBody: classFolderMetadata,
+          fields: 'id'
+        });
+        classFolderId = newClassFolder.data.id || '';
+      }
+    } catch (err: any) {
+      console.error(`[Google Drive]: Lỗi tìm/tạo thư mục lớp "${className}":`, err.message);
+    }
+  }
+
+  // 3. Tìm hoặc tạo thư mục con mang tên giai đoạn (ví dụ: Checkpoint 1) trong thư mục lớp
+  let stageFolderId = classFolderId;
+  if (classFolderId) {
+    try {
+      const stageSearch = await driveClient.files.list({
+        q: `name = '${stage}' and '${classFolderId}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
+        fields: 'files(id)',
+        spaces: 'drive'
+      });
+      if (stageSearch.data.files && stageSearch.data.files.length > 0) {
+        stageFolderId = stageSearch.data.files[0].id || '';
+      } else {
+        const stageFolderMetadata = {
+          name: stage,
+          mimeType: 'application/vnd.google-apps.folder',
+          parents: [classFolderId]
+        };
+        const newStageFolder = await driveClient.files.create({
+          requestBody: stageFolderMetadata,
+          fields: 'id'
+        });
+        stageFolderId = newStageFolder.data.id || '';
+      }
+    } catch (err: any) {
+      console.error(`[Google Drive]: Lỗi tìm/tạo thư mục giai đoạn "${stage}":`, err.message);
+    }
+  }
+
+  // 4. Tải tệp lên thư mục tương ứng (stageFolderId)
+  const fileMetadata = {
+    name: driveFileName,
+    parents: stageFolderId ? [stageFolderId] : []
+  };
+
+  const media = {
+    mimeType: mimeType,
+    body: bodyStream
+  };
+
+  const response = await driveClient.files.create({
+    requestBody: fileMetadata,
+    media: media,
+    fields: 'id, webViewLink'
+  });
+
+  if (!response.data.id) {
+    throw new Error('Không lấy được ID file từ Google Drive của giáo viên.');
+  }
+
+  // Mở quyền chia sẻ link xem cho bất cứ ai có liên kết
+  try {
+    await driveClient.permissions.create({
+      fileId: response.data.id,
+      requestBody: {
+        role: 'reader',
+        type: 'anyone'
+      }
+    });
+  } catch (err: any) {
+    console.warn('[Google Drive Warning]: Không thể đặt quyền chia sẻ tệp:', err.message);
   }
 
   return response.data.webViewLink || '';
@@ -781,11 +1026,354 @@ app.post('/api/auth/login', async (req: Request, res: Response) => {
       user: {
         username: user.username,
         role: user.role,
-        displayName: user.displayName
+        displayName: user.displayName,
+        email: user.email || '',
+        emailNotificationsEnabled: user.emailNotificationsEnabled || false,
+        requiresGoogleAuth: user.role === 'teacher' && !user.googleRefreshToken
       }
     });
   } catch (err: any) {
     res.status(500).json({ error: 'Đã xảy ra lỗi hệ thống: ' + err.message });
+  }
+});
+
+// --- GOOGLE OAUTH & PASSWORD RESET ENDPOINTS ---
+
+// Google OAuth Configuration
+function getGoogleOAuthClient() {
+  return new google.auth.OAuth2(
+    process.env.GOOGLE_CLIENT_ID,
+    process.env.GOOGLE_CLIENT_SECRET,
+    process.env.GOOGLE_REDIRECT_URI
+  );
+}
+
+// API lấy link đăng nhập Google OAuth
+app.get('/api/auth/google/url', async (req: Request, res: Response) => {
+  try {
+    const { token } = req.query;
+    if (!token || typeof token !== 'string') {
+      return res.status(400).json({ error: 'Mã xác thực phiên làm việc không tồn tại.' });
+    }
+    const verified = verifySecureToken(token);
+    if (!verified) {
+      return res.status(401).json({ error: 'Phiên làm việc không hợp lệ hoặc đã hết hạn.' });
+    }
+
+    const oauth2Client = getGoogleOAuthClient();
+    const state = Buffer.from(verified.username).toString('base64');
+    
+    const url = oauth2Client.generateAuthUrl({
+      access_type: 'offline',
+      prompt: 'consent',
+      scope: [
+        'https://www.googleapis.com/auth/userinfo.email',
+        'https://www.googleapis.com/auth/userinfo.profile',
+        'https://www.googleapis.com/auth/drive.file'
+      ],
+      state: state
+    });
+
+    res.json({ url });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Lỗi sinh link đăng nhập Google: ' + err.message });
+  }
+});
+
+// Callback nhận code từ Google OAuth
+app.get('/api/auth/google/callback', async (req: Request, res: Response) => {
+  try {
+    const code = req.query.code as string;
+    const stateBase64 = req.query.state as string;
+    if (!code || !stateBase64) {
+      return res.status(400).send('Dữ liệu callback không hợp lệ.');
+    }
+
+    const username = Buffer.from(stateBase64, 'base64').toString('utf8');
+    const oauth2Client = getGoogleOAuthClient();
+    
+    // Đổi code lấy tokens
+    const { tokens } = await oauth2Client.getToken(code);
+    
+    // Kiểm tra xem người dùng đã cấp quyền Google Drive hay chưa
+    const grantedScopes = tokens.scope || '';
+    if (!grantedScopes.includes('https://www.googleapis.com/auth/drive.file')) {
+      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+      return res.redirect(`${frontendUrl}/google-setup?status=error&message=${encodeURIComponent('Bạn bắt buộc phải tích chọn đồng ý cấp quyền truy cập và quản lý tệp Google Drive để hoàn tất liên kết tài khoản.')}`);
+    }
+
+    oauth2Client.setCredentials(tokens);
+
+    // Lấy thông tin người dùng Google
+    const oauth2 = google.oauth2({ version: 'v2', auth: oauth2Client });
+    const userInfo = await oauth2.userinfo.get();
+    const email = userInfo.data.email;
+
+    if (!email) {
+      return res.status(400).send('Không thể lấy địa chỉ email từ tài khoản Google.');
+    }
+
+    // Cập nhật thông tin User
+    const user = await UserModel.findOne({ username });
+    if (!user) {
+      return res.status(404).send('Không tìm thấy tài khoản người dùng tương ứng.');
+    }
+
+    const emailLower = email.toLowerCase().trim();
+    // Kiểm tra xem email này đã được liên kết bởi tài khoản khác chưa
+    const emailExists = await UserModel.findOne({
+      email: emailLower,
+      username: { $ne: user.username }
+    });
+    if (emailExists) {
+      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+      return res.redirect(`${frontendUrl}/google-setup?status=error&message=${encodeURIComponent('Email này đã được liên kết với một tài khoản giáo viên khác trên hệ thống.')}`);
+    }
+
+    user.email = emailLower;
+    if (tokens.refresh_token) {
+      user.googleRefreshToken = tokens.refresh_token;
+    }
+    await user.save();
+
+    await logAudit(
+      'UPDATE',
+      'User',
+      `Liên kết Google Drive thành công: Email ${email}`,
+      user.username,
+      user.role
+    );
+
+    // Redirect về trang frontend google-setup với trạng thái thành công
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+    res.redirect(`${frontendUrl}/google-setup?status=success&email=${encodeURIComponent(email)}`);
+  } catch (err: any) {
+    console.error('[Google Callback Error]:', err);
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+    res.redirect(`${frontendUrl}/google-setup?status=error&message=${encodeURIComponent(err.message)}`);
+  }
+});
+
+// API Giả lập liên kết Google OAuth (chỉ dành cho môi trường Local / Development)
+app.post('/api/auth/google/mock-link', async (req: Request, res: Response) => {
+  try {
+    const { token, email } = req.body;
+    if (!token || !email) {
+      return res.status(400).json({ error: 'Thiếu thông tin xác thực hoặc email.' });
+    }
+
+    const verified = verifySecureToken(token);
+    if (!verified) {
+      return res.status(401).json({ error: 'Phiên làm việc không hợp lệ hoặc đã hết hạn.' });
+    }
+
+    const user = await UserModel.findOne({ username: verified.username });
+    if (!user) {
+      return res.status(404).json({ error: 'Không tìm thấy tài khoản người dùng tương ứng.' });
+    }
+
+    const cleanEmail = email.toLowerCase().trim();
+    // Kiểm tra xem email này đã được liên kết bởi tài khoản khác chưa
+    const emailExists = await UserModel.findOne({
+      email: cleanEmail,
+      username: { $ne: user.username }
+    });
+    if (emailExists) {
+      return res.status(400).json({ error: 'Email này đã được liên kết với một tài khoản giáo viên khác trên hệ thống.' });
+    }
+
+    user.email = cleanEmail;
+    user.googleRefreshToken = 'mock_refresh_token_for_local_testing';
+    await user.save();
+
+    await logAudit(
+      'UPDATE',
+      'User',
+      `[MOCK] Giả lập liên kết Google Drive thành công: Email ${cleanEmail}`,
+      user.username,
+      user.role
+    );
+
+    res.json({
+      status: 'success',
+      email: cleanEmail,
+      message: 'Giả lập liên kết Google thành công.'
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Lỗi giả lập liên kết: ' + err.message });
+  }
+});
+
+// API Hủy liên kết Google OAuth cho Giáo viên
+app.post('/api/auth/google/unlink', adminOrTeacherAuth, async (req: Request, res: Response) => {
+  try {
+    const { username } = (req as any).user;
+    const user = await UserModel.findOne({ username });
+    if (!user) {
+      return res.status(404).json({ error: 'Không tìm thấy tài khoản người dùng tương ứng.' });
+    }
+
+    const oldEmail = user.email;
+    user.email = '';
+    user.googleRefreshToken = '';
+    await user.save();
+
+    await logAudit(
+      'UPDATE',
+      'User',
+      `Hủy liên kết tài khoản Google thành công (Email cũ: ${oldEmail || '(trống)'})`,
+      user.username,
+      user.role
+    );
+
+    res.json({
+      message: 'Hủy liên kết tài khoản Google thành công.'
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Lỗi hủy liên kết Google: ' + err.message });
+  }
+});
+
+// API yêu cầu quên mật khẩu
+app.post('/api/auth/forgot-password', async (req: Request, res: Response) => {
+  try {
+    const input = sanitize(req.body.input); // username hoặc email
+    if (!input) {
+      return res.status(400).json({ error: 'Vui lòng nhập tên đăng nhập hoặc email.' });
+    }
+
+    const user = await UserModel.findOne({
+      $or: [
+        { username: input.trim().toLowerCase() },
+        { email: input.trim().toLowerCase() }
+      ]
+    });
+
+    if (!user) {
+      return res.status(404).json({ error: 'Không tìm thấy tài khoản tương ứng.' });
+    }
+
+    if (!user.email) {
+      return res.status(400).json({
+        error: 'Tài khoản chưa được liên kết email trên hệ thống. Vui lòng liên hệ Admin để cấp lại mật khẩu.'
+      });
+    }
+
+    // Sinh token khôi phục mật khẩu
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    user.resetPasswordToken = resetToken;
+    user.resetPasswordExpires = new Date(Date.now() + 3600000); // Có hiệu lực trong 1 giờ
+    await user.save();
+
+    // Gửi email
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+    const resetLink = `${frontendUrl}/reset-password?token=${resetToken}`;
+    
+    const htmlContent = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 25px; border: 1px solid #e2e8f0; border-radius: 12px; background-color: #ffffff; color: #1e293b;">
+        <div style="text-align: center; margin-bottom: 20px;">
+          <h2 style="color: #4f46e5; margin: 0; font-size: 24px;">Khôi phục mật khẩu</h2>
+          <p style="color: #64748b; font-size: 14px; margin-top: 5px;">Hệ thống quản lý bài nộp NA MindX Hub</p>
+        </div>
+        <p style="font-size: 16px; line-height: 1.6;">Chào <strong>${user.displayName}</strong>,</p>
+        <p style="font-size: 16px; line-height: 1.6;">Bạn (hoặc ai đó) vừa yêu cầu khôi phục mật khẩu cho tài khoản đăng nhập <strong>${user.username}</strong>.</p>
+        <p style="font-size: 16px; line-height: 1.6;">Vui lòng nhấp vào nút bên dưới để tiến hành đặt mật khẩu mới. Đường link này chỉ có hiệu lực trong vòng <strong>1 giờ</strong>:</p>
+        <div style="text-align: center; margin: 30px 0;">
+          <a href="${resetLink}" target="_blank" style="background-color: #4f46e5; color: #ffffff; padding: 12px 28px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block; box-shadow: 0 4px 6px -1px rgba(79, 70, 229, 0.2);">Đặt lại mật khẩu mới</a>
+        </div>
+        <p style="font-size: 14px; color: #64748b; line-height: 1.6;">Nếu bạn không thực hiện yêu cầu này, vui lòng bỏ qua thư này. Mật khẩu hiện tại của bạn vẫn sẽ được bảo mật bình thường.</p>
+        <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 25px 0;">
+        <p style="font-size: 12px; color: #94a3b8; text-align: center; margin: 0;">Đây là thư gửi tự động, vui lòng không trả lời trực tiếp email này.</p>
+      </div>
+    `;
+
+    const sendSuccess = await sendMailHelper(user.email, '[NA MindX Hub] Hướng dẫn khôi phục mật khẩu', htmlContent);
+    if (!sendSuccess) {
+      return res.status(500).json({ error: 'Không thể gửi email khôi phục mật khẩu. Vui lòng liên hệ Admin.' });
+    }
+
+    await logAudit(
+      'UPDATE',
+      'User',
+      `Yêu cầu quên mật khẩu: gửi email khôi phục tới ${user.email}`,
+      user.username,
+      user.role
+    );
+
+    res.json({ message: 'Email khôi phục mật khẩu đã được gửi đi.' });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Lỗi gửi yêu cầu khôi phục mật khẩu: ' + err.message });
+  }
+});
+
+// API xác nhận đặt lại mật khẩu mới
+app.post('/api/auth/reset-password', async (req: Request, res: Response) => {
+  try {
+    const { token, newPassword } = req.body;
+    if (!token || !newPassword) {
+      return res.status(400).json({ error: 'Vui lòng cung cấp đầy đủ mã khôi phục và mật khẩu mới.' });
+    }
+
+    const user = await UserModel.findOne({
+      resetPasswordToken: token,
+      resetPasswordExpires: { $gt: new Date() }
+    });
+
+    if (!user) {
+      return res.status(400).json({ error: 'Đường dẫn khôi phục mật khẩu không chính xác hoặc đã hết hạn.' });
+    }
+
+    user.password = hashPassword(newPassword);
+    user.resetPasswordToken = '';
+    user.resetPasswordExpires = undefined;
+    await user.save();
+
+    await logAudit(
+      'UPDATE',
+      'User',
+      'Đặt lại mật khẩu thành công bằng liên kết email',
+      user.username,
+      user.role
+    );
+
+    res.json({ message: 'Đặt lại mật khẩu mới thành công!' });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Lỗi đặt lại mật khẩu: ' + err.message });
+  }
+});
+
+// API Lấy Thông tin Hồ sơ Hiện tại
+app.get('/api/auth/profile', adminOrTeacherAuth, async (req: Request, res: Response) => {
+  try {
+    const { username } = (req as any).user;
+    if (!useMongoDB) {
+      return res.json({
+        user: {
+          username: 'admin',
+          role: 'admin',
+          displayName: 'Quản trị viên (Offline)',
+          email: ''
+        }
+      });
+    }
+
+    const user = await UserModel.findOne({ username });
+    if (!user) {
+      return res.status(404).json({ error: 'Không tìm thấy thông tin tài khoản.' });
+    }
+
+    res.json({
+      user: {
+        username: user.username,
+        role: user.role,
+        displayName: user.displayName,
+        email: user.email || '',
+        emailNotificationsEnabled: user.emailNotificationsEnabled || false,
+        requiresGoogleAuth: user.role === 'teacher' && !user.googleRefreshToken
+      }
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Đã xảy ra lỗi khi lấy thông tin tài khoản: ' + err.message });
   }
 });
 
@@ -796,6 +1384,7 @@ app.put('/api/auth/profile', adminOrTeacherAuth, async (req: Request, res: Respo
     const displayName = sanitize(req.body.displayName);
     const password = sanitize(req.body.password);
     const email = sanitize(req.body.email);
+    const emailNotificationsEnabled = req.body.emailNotificationsEnabled;
 
     if (!useMongoDB) {
       return res.status(400).json({ error: 'Tính năng cập nhật hồ sơ không khả dụng ở chế độ offline.' });
@@ -823,6 +1412,12 @@ app.put('/api/auth/profile', adminOrTeacherAuth, async (req: Request, res: Respo
         changes.push(`Email: "${user.email || '(chưa có)'}" → "${email.trim().toLowerCase() || '(xóa)'}"`);
       }
       user.email = email.trim().toLowerCase();
+    }
+    if (typeof emailNotificationsEnabled === 'boolean') {
+      if (emailNotificationsEnabled !== user.emailNotificationsEnabled) {
+        changes.push(`Nhận email: ${user.emailNotificationsEnabled} → ${emailNotificationsEnabled}`);
+      }
+      user.emailNotificationsEnabled = emailNotificationsEnabled;
     }
 
     await user.save();
@@ -852,7 +1447,8 @@ app.put('/api/auth/profile', adminOrTeacherAuth, async (req: Request, res: Respo
         username: user.username,
         role: user.role,
         displayName: user.displayName,
-        email: user.email
+        email: user.email,
+        emailNotificationsEnabled: user.emailNotificationsEnabled
       }
     });
   } catch (err: any) {
@@ -984,7 +1580,12 @@ app.put('/api/admin/users/:id', adminAuth, async (req: Request, res: Response) =
     }
     if (role) user.role = role;
     if (displayName) user.displayName = displayName;
-    if (typeof email === 'string') user.email = email.trim().toLowerCase();
+    if (typeof email === 'string') {
+      user.email = email.trim().toLowerCase();
+      if (user.email === '') {
+        user.googleRefreshToken = '';
+      }
+    }
     if (status) user.status = status;
     await user.save();
     await logAudit('UPDATE', 'User', `Cập nhật tài khoản: ${user.username}`, (req as any).user.username, (req as any).user.role);
@@ -1016,6 +1617,35 @@ app.put('/api/admin/users/:id', adminAuth, async (req: Request, res: Response) =
     res.json({ message: 'Cập nhật tài khoản thành công.' });
   } catch (err: any) {
     res.status(500).json({ error: 'Lỗi cập nhật tài khoản: ' + err.message });
+  }
+});
+
+// API Admin Hủy liên kết Google OAuth cho Giáo viên cụ thể
+app.post('/api/admin/users/:id/unlink', adminAuth, async (req: Request, res: Response) => {
+  try {
+    const user = await UserModel.findById(req.params.id);
+    if (!user) {
+      return res.status(404).json({ error: 'Không tìm thấy tài khoản người dùng tương ứng.' });
+    }
+
+    const oldEmail = user.email;
+    user.email = '';
+    user.googleRefreshToken = '';
+    await user.save();
+
+    await logAudit(
+      'UPDATE',
+      'User',
+      `Admin hủy liên kết tài khoản Google của giáo viên ${user.username} (Email cũ: ${oldEmail || '(trống)'})`,
+      (req as any).user.username,
+      (req as any).user.role
+    );
+
+    res.json({
+      message: 'Hủy liên kết tài khoản Google thành công.'
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Lỗi hủy liên kết Google của giáo viên: ' + err.message });
   }
 });
 
@@ -1173,6 +1803,8 @@ app.post('/api/admin/classes', adminOrTeacherAuth, async (req: Request, res: Res
     const checkpoint2Deadline = req.body.checkpoint2Deadline ? parseVietnamDate(req.body.checkpoint2Deadline) : undefined;
     const finalProjectStartDate = req.body.finalProjectStartDate ? parseVietnamDate(req.body.finalProjectStartDate) : undefined;
     const finalProjectDeadline = req.body.finalProjectDeadline ? parseVietnamDate(req.body.finalProjectDeadline) : undefined;
+    const presentationStartDate = req.body.presentationStartDate ? parseVietnamDate(req.body.presentationStartDate) : undefined;
+    const presentationDeadline = req.body.presentationDeadline ? parseVietnamDate(req.body.presentationDeadline) : undefined;
     const allowLateUpload = req.body.allowLateUpload === true;
 
     if (!name || !teacherName) {
@@ -1198,6 +1830,8 @@ app.post('/api/admin/classes', adminOrTeacherAuth, async (req: Request, res: Res
       checkpoint2Deadline,
       finalProjectStartDate,
       finalProjectDeadline,
+      presentationStartDate,
+      presentationDeadline,
       allowLateUpload
     });
     await newClass.save();
@@ -1224,6 +1858,8 @@ app.put('/api/admin/classes/:id', adminOrTeacherAuth, async (req: Request, res: 
     const checkpoint2Deadline = req.body.checkpoint2Deadline === null || req.body.checkpoint2Deadline === '' ? null : (req.body.checkpoint2Deadline ? parseVietnamDate(req.body.checkpoint2Deadline) : undefined);
     const finalProjectStartDate = req.body.finalProjectStartDate === null || req.body.finalProjectStartDate === '' ? null : (req.body.finalProjectStartDate ? parseVietnamDate(req.body.finalProjectStartDate) : undefined);
     const finalProjectDeadline = req.body.finalProjectDeadline === null || req.body.finalProjectDeadline === '' ? null : (req.body.finalProjectDeadline ? parseVietnamDate(req.body.finalProjectDeadline) : undefined);
+    const presentationStartDate = req.body.presentationStartDate === null || req.body.presentationStartDate === '' ? null : (req.body.presentationStartDate ? parseVietnamDate(req.body.presentationStartDate) : undefined);
+    const presentationDeadline = req.body.presentationDeadline === null || req.body.presentationDeadline === '' ? null : (req.body.presentationDeadline ? parseVietnamDate(req.body.presentationDeadline) : undefined);
     const allowLateUpload = req.body.allowLateUpload !== undefined ? req.body.allowLateUpload === true : undefined;
 
     const cls = await ClassModel.findById(req.params.id);
@@ -1257,6 +1893,8 @@ app.put('/api/admin/classes/:id', adminOrTeacherAuth, async (req: Request, res: 
     if (checkpoint2Deadline !== undefined) (cls as any).checkpoint2Deadline = checkpoint2Deadline;
     if (finalProjectStartDate !== undefined) (cls as any).finalProjectStartDate = finalProjectStartDate;
     if (finalProjectDeadline !== undefined) (cls as any).finalProjectDeadline = finalProjectDeadline;
+    if (presentationStartDate !== undefined) (cls as any).presentationStartDate = presentationStartDate;
+    if (presentationDeadline !== undefined) (cls as any).presentationDeadline = presentationDeadline;
     if (allowLateUpload !== undefined) (cls as any).allowLateUpload = allowLateUpload;
 
     await cls.save();
@@ -1714,7 +2352,34 @@ app.post('/api/admin/submissions/bulk-delete', adminAuth, async (req: Request, r
     const { ids } = req.body;
     if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: 'Dữ liệu không hợp lệ.' });
     
-    await SubmissionModel.deleteMany({ _id: { $in: ids } });
+    let submissionsToDelete: any[] = [];
+    if (useMongoDB) {
+      submissionsToDelete = await SubmissionModel.find({ _id: { $in: ids } });
+    } else {
+      const submissionsFile = path.join(uploadDir, 'submissions.json');
+      if (fs.existsSync(submissionsFile)) {
+        const data = JSON.parse(fs.readFileSync(submissionsFile, 'utf8'));
+        submissionsToDelete = data.filter((s: any) => ids.includes(s.id) || ids.includes(s._id));
+      }
+    }
+
+    // Xóa các tệp tin lưu trữ vật lý trên cloud (Google Drive / MEGA)
+    for (const sub of submissionsToDelete) {
+      await deleteSubmissionFileFromStorage(sub);
+    }
+
+    // Xóa các bản ghi khỏi cơ sở dữ liệu
+    if (useMongoDB) {
+      await SubmissionModel.deleteMany({ _id: { $in: ids } });
+    } else {
+      const submissionsFile = path.join(uploadDir, 'submissions.json');
+      if (fs.existsSync(submissionsFile)) {
+        const data = JSON.parse(fs.readFileSync(submissionsFile, 'utf8'));
+        const remaining = data.filter((s: any) => !ids.includes(s.id) && !ids.includes(s._id));
+        fs.writeFileSync(submissionsFile, JSON.stringify(remaining, null, 2));
+      }
+    }
+
     await logAudit('BULK_DELETE', 'Submission', `Xóa ${ids.length} bản ghi bài nộp hàng loạt`, (req as any).user.username, (req as any).user.role);
     res.json({ message: 'Xóa hàng loạt thành công.' });
   } catch (err: any) {
@@ -1743,29 +2408,8 @@ app.delete('/api/admin/submissions/:id', adminAuth, async (req: Request, res: Re
       return res.status(404).json({ error: 'Không tìm thấy bài nộp.' });
     }
 
-    // Delete corresponding file from MEGA
-    if (storageProvider === 'mega') {
-      try {
-        if (megaInitPromise) {
-          await megaInitPromise;
-        }
-        let fileToDelete = null;
-        if (megaFolder && megaFolder.children) {
-          fileToDelete = megaFolder.children.find((f: any) => f.name === submission.fileName);
-        }
-        if (!fileToDelete && megaStorage && megaStorage.files) {
-          fileToDelete = Object.values(megaStorage.files).find((f: any) => f.name === submission.fileName);
-        }
-        if (fileToDelete) {
-          await (fileToDelete as any).delete(true);
-          console.log(`[MEGA]: Đã xóa tệp tin "${submission.fileName}" trên MEGA storage.`);
-        } else {
-          console.warn(`[MEGA Warning]: Không tìm thấy tệp tin "${submission.fileName}" trên MEGA để xóa.`);
-        }
-      } catch (megaErr: any) {
-        console.error(`[MEGA Error]: Không thể xóa tệp tin trên MEGA: ${megaErr.message}`);
-      }
-    }
+    // Xóa tệp tin lưu trữ vật lý trên cloud (Google Drive / MEGA)
+    await deleteSubmissionFileFromStorage(submission);
 
     await logAudit('DELETE', 'Submission', `Xóa bài nộp: ${submission.fileName} (học viên: ${submission.fullName}, lớp: ${submission.className})`, (req as any).user.username, (req as any).user.role);
     res.json({ message: 'Xóa bài nộp thành công.' });
@@ -1966,6 +2610,9 @@ app.post('/api/upload', (req: Request, res: Response, next: any) => {
           } else if (stageLower.includes('san pham cuoi khoa') || stageLower.includes('sản phẩm cuối khóa')) {
             startDeadline = (cls as any).finalProjectStartDate ? parseVietnamDate((cls as any).finalProjectStartDate) : (cls.startDate ? calculateVietnamDeadline(cls.startDate, 0, cls.startTime || "08:00") : null);
             endDeadline = cls.finalProjectDeadline ? parseVietnamDate(cls.finalProjectDeadline) : (cls.startDate ? calculateVietnamDeadline(cls.startDate, 85, cls.endTime || "10:00") : null);
+          } else if (stageLower.includes('thuyet trinh') || stageLower.includes('thuyết trình') || stageLower.includes('presentation')) {
+            startDeadline = (cls as any).presentationStartDate ? parseVietnamDate((cls as any).presentationStartDate) : (cls.startDate ? calculateVietnamDeadline(cls.startDate, 0, cls.startTime || "08:00") : null);
+            endDeadline = (cls as any).presentationDeadline ? parseVietnamDate((cls as any).presentationDeadline) : (cls.startDate ? calculateVietnamDeadline(cls.startDate, 91, cls.endTime || "10:00") : null);
           }
 
           if (startDeadline && new Date() < startDeadline) {
@@ -2010,6 +2657,15 @@ app.post('/api/upload', (req: Request, res: Response, next: any) => {
     const teacher = sanitize(req.body.teacher || 'N/A').trim();
     const stage = sanitize(req.body.stage || 'N/A').trim();
     const session = sanitize(req.body.session || 'N/A').trim();
+
+    // Xác định giáo viên thực tế phụ trách lớp từ ClassModel để đảm bảo lưu đúng Drive của giáo viên đó
+    let resolvedTeacherName = teacher;
+    if (useMongoDB && className !== 'N/A') {
+      const cls = await ClassModel.findOne({ name: { $regex: new RegExp(`^${escapeRegExp(className)}$`, 'i') } });
+      if (cls) {
+        resolvedTeacherName = cls.teacherName;
+      }
+    }
 
     const fileDetails: any[] = [];
     let totalBytesUploaded = 0;
@@ -2061,77 +2717,123 @@ app.post('/api/upload', (req: Request, res: Response, next: any) => {
       const targetFileName = `${baseOutputName}${ext}`;
 
       let fileUrl = '';
+      let teacherUser = null;
+      if (useMongoDB && resolvedTeacherName && resolvedTeacherName !== 'Chưa phân công') {
+        teacherUser = await UserModel.findOne({ displayName: resolvedTeacherName, role: 'teacher' });
+      }
 
-      if (storageProvider === 'mega') {
+      if (teacherUser && teacherUser.googleRefreshToken) {
+        // Giáo viên đã liên kết Google Drive -> tải lên Drive giáo viên
         try {
-          if (megaInitPromise) {
-            await megaInitPromise;
-          }
-          if (!megaFolder) {
-            throw new Error('Ứng dụng kết nối MEGA chưa được khởi tạo hoặc không tìm thấy thư mục lưu trữ.');
-          }
-
-          console.log(`[MEGA]: Đang tải lên tệp tin: ${targetFileName}...`);
-          const uploadStream = megaFolder.upload({
-            name: targetFileName,
-            size: file.size
+          console.log(`[Google Drive - Giáo viên ${resolvedTeacherName}]: Đang tải tệp lên Drive của giáo viên: ${targetFileName}...`);
+          const progressStream = new Transform({
+            transform(chunk, encoding, callback) {
+              totalBytesUploaded += chunk.length;
+              const percent = Math.min(99, Math.round((totalBytesUploaded / totalSize) * 100));
+              sendProgress({ status: 'uploading', progress: percent });
+              this.push(chunk);
+              callback();
+            }
           });
 
           const readStream = fs.createReadStream(localPath);
-          readStream.on('data', (chunk) => {
-            totalBytesUploaded += chunk.length;
-            const percent = Math.min(99, Math.round((totalBytesUploaded / totalSize) * 100));
-            sendProgress({ status: 'uploading', progress: percent });
-          });
-
-          readStream.pipe(uploadStream);
-          const megaFile = await uploadStream.complete;
-          fileUrl = await megaFile.link();
-
-          console.log(`[MEGA]: Tải lên thành công! Link MEGA: ${fileUrl}`);
-
-          // Xóa file tạm thời trên ổ đĩa local sau khi đã upload lên MEGA thành công
+          readStream.pipe(progressStream);
+          
+          fileUrl = await uploadToTeacherGoogleDrive(teacherUser, progressStream, targetFileName, file.mimetype, className, stage);
+          console.log(`[Google Drive - Giáo viên]: Tải lên thành công! Link: ${fileUrl}`);
+          
           if (fs.existsSync(localPath)) {
             fs.unlinkSync(localPath);
           }
         } catch (err: any) {
-          console.error(`[MEGA Error]: Tải lên MEGA thất bại. Lỗi:`, err.message);
+          console.error(`[Google Drive - Giáo viên Error]: Tải lên Drive giáo viên thất bại:`, err.message);
           if (fs.existsSync(localPath)) {
             fs.unlinkSync(localPath);
           }
-          throw err;
+          throw new Error('Lỗi đồng bộ tệp lên Google Drive của Giáo viên: ' + err.message);
         }
-      } else if (storageProvider === 'google-drive' && drive) {
-        try {
-          console.log(`[Google Drive]: Đang tải lên tệp tin: ${targetFileName}...`);
-
-          const readStream = fs.createReadStream(localPath);
-          readStream.on('data', (chunk) => {
-            totalBytesUploaded += chunk.length;
-            const percent = Math.min(99, Math.round((totalBytesUploaded / totalSize) * 100));
-            sendProgress({ status: 'uploading', progress: percent });
-          });
-
-          fileUrl = await uploadToGoogleDrive(readStream, targetFileName, file.mimetype);
-          console.log(`[Google Drive]: Tải lên thành công! Link Drive: ${fileUrl}`);
-
-          // Xóa file tạm thời trên ổ đĩa local sau khi đã upload lên Drive thành công
-          if (fs.existsSync(localPath)) {
-            fs.unlinkSync(localPath);
-          }
-        } catch (err: any) {
-          console.error(`[Google Drive Error]: Tải lên Drive thất bại. Lỗi:`, err.message);
-          if (fs.existsSync(localPath)) {
-            fs.unlinkSync(localPath);
-          }
-          throw err;
-        }
-      } else {
-        // Lưu trữ cục bộ bị vô hiệu hóa
+      } else if (resolvedTeacherName && resolvedTeacherName !== 'Chưa phân công' && useMongoDB) {
+        // Lớp học có giáo viên nhưng giáo viên chưa cấu hình Google Drive
         if (fs.existsSync(localPath)) {
           fs.unlinkSync(localPath);
         }
-        throw new Error(`Chế độ lưu trữ cục bộ (local storage) đã bị vô hiệu hóa trên môi trường cloud. Hiện tại đang cấu hình lưu trữ là: ${storageProvider.toUpperCase()}`);
+        throw new Error(`Giáo viên phụ trách lớp (${resolvedTeacherName}) chưa thực hiện liên kết Google Drive. Vui lòng liên hệ Giáo viên để hoàn tất kích hoạt lưu trữ.`);
+      } else {
+        // Lớp chưa phân công giáo viên hoặc chạy offline -> sử dụng lưu trữ mặc định
+        if (storageProvider === 'mega') {
+          try {
+            if (megaInitPromise) {
+              await megaInitPromise;
+            }
+            if (!megaFolder) {
+              throw new Error('Ứng dụng kết nối MEGA chưa được khởi tạo hoặc không tìm thấy thư mục lưu trữ.');
+            }
+
+            console.log(`[MEGA]: Đang tải lên tệp tin: ${targetFileName}...`);
+            const uploadStream = megaFolder.upload({
+              name: targetFileName,
+              size: file.size
+            });
+
+            const readStream = fs.createReadStream(localPath);
+            readStream.on('data', (chunk) => {
+              totalBytesUploaded += chunk.length;
+              const percent = Math.min(99, Math.round((totalBytesUploaded / totalSize) * 100));
+              sendProgress({ status: 'uploading', progress: percent });
+            });
+
+            readStream.pipe(uploadStream);
+            const megaFile = await uploadStream.complete;
+            fileUrl = await megaFile.link();
+
+            console.log(`[MEGA]: Tải lên thành công! Link MEGA: ${fileUrl}`);
+
+            if (fs.existsSync(localPath)) {
+              fs.unlinkSync(localPath);
+            }
+          } catch (err: any) {
+            console.error(`[MEGA Error]: Tải lên MEGA thất bại. Lỗi:`, err.message);
+            if (fs.existsSync(localPath)) {
+              fs.unlinkSync(localPath);
+            }
+            throw err;
+          }
+        } else if (storageProvider === 'google-drive' && drive) {
+          try {
+            console.log(`[Google Drive]: Đang tải lên tệp tin: ${targetFileName}...`);
+
+            const progressStream = new Transform({
+              transform(chunk, encoding, callback) {
+                totalBytesUploaded += chunk.length;
+                const percent = Math.min(99, Math.round((totalBytesUploaded / totalSize) * 100));
+                sendProgress({ status: 'uploading', progress: percent });
+                this.push(chunk);
+                callback();
+              }
+            });
+
+            const readStream = fs.createReadStream(localPath);
+            readStream.pipe(progressStream);
+
+            fileUrl = await uploadToGoogleDrive(progressStream, targetFileName, file.mimetype);
+            console.log(`[Google Drive]: Tải lên thành công! Link Drive: ${fileUrl}`);
+
+            if (fs.existsSync(localPath)) {
+              fs.unlinkSync(localPath);
+            }
+          } catch (err: any) {
+            console.error(`[Google Drive Error]: Tải lên Drive thất bại. Lỗi:`, err.message);
+            if (fs.existsSync(localPath)) {
+              fs.unlinkSync(localPath);
+            }
+            throw err;
+          }
+        } else {
+          if (fs.existsSync(localPath)) {
+            fs.unlinkSync(localPath);
+          }
+          throw new Error(`Chế độ lưu trữ cục bộ (local storage) đã bị vô hiệu hóa trên môi trường cloud. Hiện tại đang cấu hình lưu trữ là: ${storageProvider.toUpperCase()}`);
+        }
       }
 
       fileDetails.push({
@@ -2145,7 +2847,7 @@ app.post('/api/upload', (req: Request, res: Response, next: any) => {
     if (useMongoDB) {
       for (const detail of fileDetails) {
         const submissionDoc = new SubmissionModel({
-          teacher,
+          teacher: resolvedTeacherName,
           className,
           fullName,
           stage,
@@ -2205,6 +2907,66 @@ app.post('/api/upload', (req: Request, res: Response, next: any) => {
       'student'
     );
 
+    // Gửi email thông báo tới Giáo viên
+    if (useMongoDB && resolvedTeacherName && resolvedTeacherName !== 'Chưa phân công') {
+      try {
+        const teacherUser = await UserModel.findOne({ displayName: resolvedTeacherName, role: 'teacher' });
+        if (teacherUser && teacherUser.email && teacherUser.emailNotificationsEnabled) {
+          const filesHtmlList = fileDetails.map(f => 
+            `<li><a href="${f.fileUrl}" target="_blank" style="color: #4f46e5; text-decoration: none; font-weight: 600;">${f.fileName}</a></li>`
+          ).join('');
+
+          const emailSubject = `[NA MindX Hub] Thông báo nộp bài: ${fullName} - Lớp ${className}`;
+          const emailHtml = `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 25px; border: 1px solid #e2e8f0; border-radius: 12px; background-color: #ffffff; color: #1e293b;">
+              <div style="text-align: center; margin-bottom: 20px; border-bottom: 2px solid #f1f5f9; padding-bottom: 15px;">
+                <h2 style="color: #10b981; margin: 0; font-size: 24px;">Học viên nộp bài mới</h2>
+                <p style="color: #64748b; font-size: 14px; margin-top: 5px;">Hệ thống quản lý bài nộp NA MindX Hub</p>
+              </div>
+              <p style="font-size: 16px; line-height: 1.6;">Chào thầy/cô <strong>${teacherUser.displayName}</strong>,</p>
+              <p style="font-size: 16px; line-height: 1.6;">Lớp học <strong>${className}</strong> do thầy/cô phụ trách vừa có bài nộp mới từ học viên:</p>
+              
+              <div style="background-color: #f8fafc; padding: 15px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #10b981;">
+                <table style="width: 100%; border-collapse: collapse; font-size: 15px; line-height: 1.6;">
+                  <tr>
+                    <td style="width: 130px; font-weight: bold; color: #64748b; padding: 4px 0;">Học viên:</td>
+                    <td style="font-weight: 600; color: #1e293b;">${fullName}</td>
+                  </tr>
+                  <tr>
+                    <td style="font-weight: bold; color: #64748b; padding: 4px 0;">Lớp học:</td>
+                    <td style="font-weight: 600; color: #1e293b;">${className}</td>
+                  </tr>
+                  <tr>
+                    <td style="font-weight: bold; color: #64748b; padding: 4px 0;">Giai đoạn:</td>
+                    <td style="color: #1e293b;">${stage} (${session})</td>
+                  </tr>
+                  <tr>
+                    <td style="font-weight: bold; color: #64748b; padding: 4px 0;">Lần nộp:</td>
+                    <td style="color: #1e293b;">Lần thứ ${attemptNumber}</td>
+                  </tr>
+                  <tr>
+                    <td style="font-weight: bold; color: #64748b; padding: 4px 0; vertical-align: top;">Danh sách tệp:</td>
+                    <td style="padding: 4px 0;">
+                      <ul style="margin: 0; padding-left: 20px; color: #1e293b;">
+                        ${filesHtmlList}
+                      </ul>
+                    </td>
+                  </tr>
+                </table>
+              </div>
+              <p style="font-size: 14px; color: #64748b; line-height: 1.6;">Bài nộp đã được tải lên trực tiếp thư mục Google Drive cá nhân của thầy/cô tại <strong>NA MindX Hub / ${className}</strong>.</p>
+              <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 25px 0;">
+              <p style="font-size: 12px; color: #94a3b8; text-align: center; margin: 0;">Đây là thư gửi tự động từ hệ thống NA MindX Hub. Vui lòng không trả lời email này.</p>
+            </div>
+          `;
+          
+          sendMailHelper(teacherUser.email, emailSubject, emailHtml);
+        }
+      } catch (emailErr: any) {
+        console.error('[Email Notify Error]: Gửi thông báo nộp bài tới giáo viên thất bại:', emailErr.message);
+      }
+    }
+
     sendProgress({
       status: 'success',
       message: successMessage,
@@ -2234,57 +2996,7 @@ app.post('/api/upload', (req: Request, res: Response, next: any) => {
   }
 });
 
-// API Audit Logs - Xem nhat ky hoat dong
-// CHINH SACH BAO MAT: Khong tao endpoint DELETE/PUT cho audit logs.
-// Audit log la bat bien de dam bao tinh toan ven cua lich su thao tac.
-app.get('/api/admin/audit-logs', adminOrTeacherAuth, async (req: Request, res: Response) => {
-  try {
-    const { role, username } = (req as any).user;
-    const page = parseInt(req.query.page as string) || 1;
-    const limit = parseInt(req.query.limit as string) || 10;
-    const search = req.query.search as string;
-    const resourceFilter = req.query.resource as string;
 
-    const query: any = {};
-    const conditions: any[] = [];
-
-    // Admin thấy toàn bộ log, Teacher chỉ thấy log của chính mình hoặc của admin
-    if (role === 'teacher') {
-      conditions.push({
-        $or: [
-          { user: username },
-          { role: 'admin' }
-        ]
-      });
-    }
-
-    // Bộ lọc tìm kiếm theo nội dung
-    if (search) {
-      conditions.push({
-        $or: [
-          { user: { $regex: search, $options: 'i' } },
-          { details: { $regex: search, $options: 'i' } },
-          { action: { $regex: search, $options: 'i' } }
-        ]
-      });
-    }
-
-    if (conditions.length > 0) {
-      query.$and = conditions;
-    }
-
-    // Bộ lọc theo loại tài nguyên
-    if (resourceFilter) {
-      query.resource = resourceFilter;
-    }
-
-    const response = await buildPaginatedResponse(AuditLogModel, query, page, limit, { createdAt: -1 });
-    res.json(response);
-  } catch (err: any) {
-    res.status(500).json({ error: 'Lỗi tải nhật ký hoạt động: ' + err.message });
-  }
-});
-// GHI CHU: Khong co endpoint DELETE /api/admin/audit-logs - Day la thiet ke co y dinh.
 
 // API Thống kê Dashboard
 app.get('/api/admin/dashboard-stats', adminOrTeacherAuth, async (req: Request, res: Response) => {
@@ -2329,7 +3041,16 @@ app.get('/api/admin/dashboard-stats', adminOrTeacherAuth, async (req: Request, r
   }
 });
 
+// Catch-all 404 for any other backend routes
+app.use((req: Request, res: Response) => {
+  res.status(404).json({
+    error: 'Đường dẫn API không tồn tại.',
+    path: req.originalUrl
+  });
+});
+
 // Start Server
 app.listen(PORT, () => {
   console.log(`[server]: Backend is running at http://localhost:${PORT}`);
 });
+
