@@ -57,13 +57,45 @@ async function sendMailHelper(to: string, subject: string, htmlContent: string) 
       console.log('[Email Sender]: Bỏ qua gửi email do địa chỉ nhận trống.');
       return false;
     }
+
+    // Nếu dùng Resend (nhận biết qua API Key bắt đầu bằng re_), gửi qua HTTP REST API để tránh chặn cổng SMTP
+    const emailPass = process.env.FEEDBACK_EMAIL_PASS ? process.env.FEEDBACK_EMAIL_PASS.trim() : '';
+    const isResendKey = emailPass.startsWith('re_');
+    if (isResendKey) {
+      console.log('[Email Sender - Resend API]: Đang gửi email qua HTTPS...');
+      const senderEmail = process.env.FEEDBACK_EMAIL || 'onboarding@resend.dev';
+      const response = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${emailPass}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          from: `NA MindX Hub <${senderEmail}>`,
+          to: [to],
+          subject,
+          html: htmlContent
+        })
+      });
+
+      if (response.ok) {
+        const data: any = await response.json();
+        console.log('[Email Sender - Resend API]: Đã gửi thư thành công tới', to, 'ID:', data.id);
+        return true;
+      } else {
+        const errText = await response.text();
+        throw new Error(`Resend API HTTP error ${response.status}: ${errText}`);
+      }
+    }
+
+    // Sử dụng Nodemailer SMTP làm phương thức dự phòng cho các nhà cung cấp khác
     const info = await transporter.sendMail({
       from: `"NA MindX Hub" <${process.env.FEEDBACK_EMAIL}>`,
       to,
       subject,
       html: htmlContent
     });
-    console.log('[Email Sender]: Đã gửi thư thành công tới', to, 'MessageID:', info.messageId);
+    console.log('[Email Sender - SMTP]: Đã gửi thư thành công tới', to, 'MessageID:', info.messageId);
     return true;
   } catch (err: any) {
     console.error('[Email Sender Error]: Gửi email thất bại!', err.message);
