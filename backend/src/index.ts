@@ -186,10 +186,201 @@ function extractGoogleDriveFileId(fileUrl: string): string | null {
   return match ? match[1] : null;
 }
 
+async function checkLinkPublicAccess(url: string): Promise<{ isAccessible: boolean; error?: string; resolvedUrl?: string }> {
+  try {
+    let parsedUrl: URL;
+    try {
+      parsedUrl = new URL(url);
+    } catch (e) {
+      return { isAccessible: false, error: 'Đường dẫn không hợp lệ. Vui lòng nhập đầy đủ http:// hoặc https://.' };
+    }
+
+    if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
+      return { isAccessible: false, error: 'Giao thức đường dẫn phải là http hoặc https.' };
+    }
+
+    const lowerUrl = url.toLowerCase();
+    const isCanvaLink = lowerUrl.includes('canva.link') || lowerUrl.includes('canva.com');
+
+    if (isCanvaLink) {
+      // Resolve redirects for Canva links (e.g. canva.link/xxxx -> canva.com/design/xxxx/edit)
+      let currentUrl = url;
+      for (let i = 0; i < 5; i++) {
+        try {
+          const parsed = new URL(currentUrl);
+          if (parsed.hostname.includes('canva.com') && parsed.pathname.includes('/design/')) {
+            break;
+          }
+        } catch (e) {
+          break;
+        }
+
+        try {
+          const response = await fetch(currentUrl, {
+            method: 'GET',
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36'
+            },
+            redirect: 'manual'
+          });
+
+          const location = response.headers.get('location');
+          if (!location) {
+            break;
+          }
+          currentUrl = new URL(location, currentUrl).toString();
+        } catch (err) {
+          break;
+        }
+      }
+
+      // Extract clean design URL without query params
+      const cleanUrl = currentUrl.split('?')[0];
+      let viewUrl = cleanUrl;
+
+      // Convert to /view URL if it is a design URL and ends with /edit or has design pattern
+      if (cleanUrl.includes('canva.com/design/')) {
+        if (cleanUrl.endsWith('/edit')) {
+          viewUrl = cleanUrl.slice(0, -5) + '/view';
+        } else {
+          const parts = cleanUrl.split('/');
+          const lastPart = parts[parts.length - 1];
+          if (lastPart === 'edit') {
+            parts[parts.length - 1] = 'view';
+            viewUrl = parts.join('/');
+          } else if (lastPart !== 'view') {
+            viewUrl = cleanUrl + '/view';
+          }
+        }
+      }
+
+      // Query Canva oEmbed API to verify public accessibility
+      try {
+        const oembedUrl = `https://api.canva.com/_spi/presentation/_oembed?url=${encodeURIComponent(viewUrl)}`;
+        const oembedRes = await fetch(oembedUrl, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36'
+          }
+        });
+
+        if (oembedRes.status === 200) {
+          return { isAccessible: true, resolvedUrl: viewUrl };
+        } else if (oembedRes.status === 401 || oembedRes.status === 403) {
+          return {
+            isAccessible: false,
+            error: 'Đường liên kết Canva chưa được chia sẻ quyền xem công khai hoặc là bản thiết kế riêng tư.'
+          };
+        } else {
+          return {
+            isAccessible: false,
+            error: `Kiểm tra quyền truy cập Canva thất bại (Mã phản hồi từ máy chủ Canva: ${oembedRes.status}).`
+          };
+        }
+      } catch (err: any) {
+        return {
+          isAccessible: false,
+          error: 'Không thể kết nối đến máy chủ Canva để kiểm tra quyền truy cập: ' + err.message
+        };
+      }
+    }
+
+    // Standard checking mechanism for non-Canva links (using keywords and redirects checking)
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 6000);
+
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'vi,en-US;q=0.9,en;q=0.8'
+      },
+      signal: controller.signal
+    });
+
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      return {
+        isAccessible: false,
+        error: `Không thể truy cập liên kết này (Mã lỗi HTTP: ${response.status}). Vui lòng kiểm tra lại cấu hình chia sẻ quyền truy cập công khai.`
+      };
+    }
+
+    const finalUrl = response.url;
+    const lowerFinalUrl = finalUrl.toLowerCase();
+    
+    const privateKeywords = [
+      'login',
+      'signin',
+      'sign-in',
+      'accounts.google.com',
+      'sharing/check-access',
+      'canva.com/login',
+      '/signup',
+      'session',
+      'register'
+    ];
+
+    for (const kw of privateKeywords) {
+      if (lowerFinalUrl.includes(kw)) {
+        return {
+          isAccessible: false,
+          error: 'Liên kết yêu cầu đăng nhập hoặc chưa được chia sẻ quyền xem công khai.'
+        };
+      }
+    }
+
+    const contentType = response.headers.get('Content-Type') || '';
+    if (contentType.includes('text/html')) {
+      const htmlText = await response.text();
+      const lowerHtml = htmlText.toLowerCase();
+
+      const permissionKeywords = [
+        'request access',
+        'yêu cầu quyền truy cập',
+        'yêu cầu truy cập',
+        'permission required',
+        'thiết kế riêng tư',
+        'private design',
+        'bạn cần quyền truy cập',
+        'ask for access',
+        'sign in with your canva account',
+        'đăng nhập để tiếp tục'
+      ];
+
+      for (const kw of permissionKeywords) {
+        if (lowerHtml.includes(kw)) {
+          return {
+            isAccessible: false,
+            error: 'Liên kết chưa được chia sẻ quyền xem công khai (Yêu cầu đăng nhập hoặc quyền truy cập).'
+          };
+        }
+      }
+    }
+
+    return { isAccessible: true, resolvedUrl: url };
+  } catch (err: any) {
+    if (err.name === 'AbortError') {
+      return { isAccessible: false, error: 'Kiểm tra liên kết bị quá thời gian phản hồi (timeout).' };
+    }
+    return { isAccessible: false, error: `Lỗi kết nối đến liên kết: ${err.message}` };
+  }
+}
+
 async function deleteSubmissionFileFromStorage(submission: any) {
   if (!submission || !submission.fileUrl) return;
 
   const fileUrl = submission.fileUrl;
+  const isWebLink = fileUrl.startsWith('http') && 
+                    !fileUrl.includes('drive.google.com') && 
+                    !fileUrl.includes('mega.nz') &&
+                    !extractGoogleDriveFileId(fileUrl);
+  if (isWebLink) {
+    console.log(`[Safe Delete]: Skipping cloud storage deletion for web link submission: ${fileUrl}`);
+    return;
+  }
+
   const driveFileId = extractGoogleDriveFileId(fileUrl);
 
   if (driveFileId) {
@@ -2225,7 +2416,7 @@ app.post('/api/admin/students', adminOrTeacherAuth, async (req: Request, res: Re
     const className = sanitize(req.body.className);
     const studentCode = sanitize(req.body.studentCode);
     const userRole = (req as any).user.role;
-    const maxUploadSize = userRole === 'admin' && req.body.maxUploadSize !== undefined
+    const maxUploadSize = (userRole === 'admin' || userRole === 'teacher') && req.body.maxUploadSize !== undefined
       ? Number(req.body.maxUploadSize)
       : 20;
 
@@ -2316,7 +2507,7 @@ app.put('/api/admin/students/:id', adminOrTeacherAuth, async (req: Request, res:
       student.className = finalClassName;
     }
     
-    if (userRole === 'admin' && req.body.maxUploadSize !== undefined) {
+    if ((userRole === 'admin' || userRole === 'teacher') && req.body.maxUploadSize !== undefined) {
       (student as any).maxUploadSize = Number(req.body.maxUploadSize);
     }
     
@@ -2373,7 +2564,7 @@ app.get('/api/admin/submissions', adminOrTeacherAuth, async (req: Request, res: 
   }
 });
 
-app.post('/api/admin/submissions/bulk-delete', adminAuth, async (req: Request, res: Response) => {
+app.post('/api/admin/submissions/bulk-delete', adminOrTeacherAuth, async (req: Request, res: Response) => {
   try {
     const { ids } = req.body;
     if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: 'Dữ liệu không hợp lệ.' });
@@ -2413,7 +2604,7 @@ app.post('/api/admin/submissions/bulk-delete', adminAuth, async (req: Request, r
   }
 });
 
-app.delete('/api/admin/submissions/:id', adminAuth, async (req: Request, res: Response) => {
+app.delete('/api/admin/submissions/:id', adminOrTeacherAuth, async (req: Request, res: Response) => {
   try {
     let submission: any = null;
     if (useMongoDB) {
@@ -2557,6 +2748,255 @@ app.get('/api/submissions', async (req: Request, res: Response) => {
     }
   } catch (err: any) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// Link Verification Endpoint
+app.post('/api/upload/validate-link', async (req: Request, res: Response) => {
+  try {
+    const { link } = req.body;
+    if (!link) {
+      return res.status(400).json({ isAccessible: false, error: 'Đường dẫn liên kết không được để trống.' });
+    }
+    const result = await checkLinkPublicAccess(link);
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ isAccessible: false, error: 'Lỗi kiểm tra liên kết: ' + err.message });
+  }
+});
+
+// Link Upload Submission Endpoint
+app.post('/api/upload-link', async (req: Request, res: Response) => {
+  try {
+    const teacher = sanitize(req.body.teacher || 'N/A').trim();
+    const className = sanitize(req.body.className || 'N/A').trim();
+    const fullName = sanitize(req.body.fullName || 'N/A').trim();
+    const stage = sanitize(req.body.stage || 'N/A').trim();
+    const session = sanitize(req.body.session || 'N/A').trim();
+    const link = sanitize(req.body.link || '').trim();
+
+    if (!teacher || !className || !fullName || !stage || !session || !link) {
+      return res.status(400).json({ error: 'Vui lòng nhập đầy đủ các thông tin: Giáo viên, Lớp học, Họ tên, Giai đoạn, Buổi học và Liên kết bài nộp.' });
+    }
+
+    // Check student status active/inactive
+    if (useMongoDB && fullName !== 'N/A' && className !== 'N/A') {
+      const student = await StudentModel.findOne({ name: fullName, className: className });
+      if (student) {
+        if (student.status === 'inactive') {
+          return res.status(403).json({ error: 'Tài khoản học viên đang bị khóa. Bạn không thể nộp bài, vui lòng liên hệ Admin hoặc Giáo viên.' });
+        }
+      }
+    }
+
+    // Check deadlines for the class
+    if (useMongoDB && className !== 'N/A') {
+      const cls = await ClassModel.findOne({ name: { $regex: new RegExp(`^${escapeRegExp(className)}$`, 'i') } });
+      if (cls) {
+        const stageLower = stage.toLowerCase();
+        const isTheory = stageLower.includes('ly thuyet') || stageLower.includes('lý thuyết') || stageLower.includes('theory');
+        
+        if (!isTheory) {
+          let startDeadline: Date | null = null;
+          let endDeadline: Date | null = null;
+
+          if (stageLower.includes('checkpoint 1')) {
+            startDeadline = (cls as any).checkpoint1StartDate ? parseVietnamDate((cls as any).checkpoint1StartDate) : (cls.startDate ? calculateVietnamDeadline(cls.startDate, 28, cls.startTime || "08:00") : null);
+            endDeadline = cls.checkpoint1Deadline ? parseVietnamDate(cls.checkpoint1Deadline) : (cls.startDate ? calculateVietnamDeadline(cls.startDate, 28, cls.endTime || "10:00") : null);
+          } else if (stageLower.includes('checkpoint 2')) {
+            startDeadline = (cls as any).checkpoint2StartDate ? parseVietnamDate((cls as any).checkpoint2StartDate) : (cls.startDate ? calculateVietnamDeadline(cls.startDate, 56, cls.startTime || "08:00") : null);
+            endDeadline = cls.checkpoint2Deadline ? parseVietnamDate(cls.checkpoint2Deadline) : (cls.startDate ? calculateVietnamDeadline(cls.startDate, 56, cls.endTime || "10:00") : null);
+          } else if (stageLower.includes('san pham cuoi khoa') || stageLower.includes('sản phẩm cuối khóa')) {
+            startDeadline = (cls as any).finalProjectStartDate ? parseVietnamDate((cls as any).finalProjectStartDate) : (cls.startDate ? calculateVietnamDeadline(cls.startDate, 0, cls.startTime || "08:00") : null);
+            endDeadline = cls.finalProjectDeadline ? parseVietnamDate(cls.finalProjectDeadline) : (cls.startDate ? calculateVietnamDeadline(cls.startDate, 85, cls.endTime || "10:00") : null);
+          } else if (stageLower.includes('thuyet trinh') || stageLower.includes('thuyết trình') || stageLower.includes('presentation')) {
+            startDeadline = (cls as any).presentationStartDate ? parseVietnamDate((cls as any).presentationStartDate) : (cls.startDate ? calculateVietnamDeadline(cls.startDate, 0, cls.startTime || "08:00") : null);
+            endDeadline = (cls as any).presentationDeadline ? parseVietnamDate((cls as any).presentationDeadline) : (cls.startDate ? calculateVietnamDeadline(cls.startDate, 91, cls.endTime || "10:00") : null);
+          }
+
+          if (startDeadline && new Date() < startDeadline) {
+            const formattedStart = formatVietnamDateTime(startDeadline);
+            return res.status(403).json({
+              error: `Chưa đến thời gian mở cổng nộp bài cho giai đoạn này (${stage}). Cổng nộp bài sẽ mở vào lúc: ${formattedStart}.`
+            });
+          }
+
+          if (endDeadline && new Date() > endDeadline && !cls.allowLateUpload) {
+            const formattedDeadline = formatVietnamDateTime(endDeadline);
+            return res.status(403).json({
+              error: `Đã quá hạn nộp bài cho giai đoạn này (${stage}). Hạn chót là: ${formattedDeadline}. Cổng nộp bài đã đóng.`
+            });
+          }
+        }
+      }
+    }
+
+    // Resolve teacher name
+    let resolvedTeacherName = teacher;
+    if (useMongoDB && className !== 'N/A') {
+      const cls = await ClassModel.findOne({ name: { $regex: new RegExp(`^${escapeRegExp(className)}$`, 'i') } });
+      if (cls) {
+        resolvedTeacherName = cls.teacherName;
+      }
+    }
+
+    // Validate link accessibility
+    const validationResult = await checkLinkPublicAccess(link);
+    if (!validationResult.isAccessible) {
+      return res.status(400).json({ error: validationResult.error || 'Đường liên kết chưa được chia sẻ công khai.' });
+    }
+
+    const savedLink = validationResult.resolvedUrl || link;
+
+    // Calculate attempt number
+    let attemptNumber = 1;
+    if (useMongoDB) {
+      const count = await SubmissionModel.countDocuments({
+        fullName,
+        className,
+        stage,
+        session
+      });
+      attemptNumber = count + 1;
+    } else {
+      const submissionsFile = path.join(uploadDir, 'submissions.json');
+      if (fs.existsSync(submissionsFile)) {
+        try {
+          const data = fs.readFileSync(submissionsFile, 'utf8');
+          const submissions = JSON.parse(data);
+          const count = submissions.filter((s: any) =>
+            s.fullName?.trim().toLowerCase() === fullName.toLowerCase() &&
+            s.className?.trim().toLowerCase() === className.toLowerCase() &&
+            s.stage?.trim().toLowerCase() === stage.toLowerCase() &&
+            s.session?.trim().toLowerCase() === session.toLowerCase()
+          ).length;
+          attemptNumber = count + 1;
+        } catch (err) {
+          console.error('Error reading submissions file:', err);
+        }
+      }
+    }
+
+    // Save submission
+    const isCanva = savedLink.toLowerCase().includes('canva.com') || savedLink.toLowerCase().includes('canva.link');
+    const abbrevStage = getStageAbbreviation(stage);
+    const abbrevSession = getSessionAbbreviation(session);
+    const label = isCanva ? 'Canva' : 'Link';
+    const submissionName = `${sanitizeForFilename(fullName)} - ${sanitizeForFilename(className)} - ${sanitizeForFilename(abbrevStage)} - ${sanitizeForFilename(abbrevSession)} - Lan ${attemptNumber} (${label})`;
+
+    if (useMongoDB) {
+      const submissionDoc = new SubmissionModel({
+        teacher: resolvedTeacherName,
+        className,
+        fullName,
+        stage,
+        session,
+        attemptNumber,
+        fileName: submissionName,
+        fileUrl: savedLink
+      });
+      await submissionDoc.save();
+    } else {
+      const submissionsFile = path.join(uploadDir, 'submissions.json');
+      let submissions: any[] = [];
+
+      if (fs.existsSync(submissionsFile)) {
+        try {
+          const data = fs.readFileSync(submissionsFile, 'utf8');
+          submissions = JSON.parse(data);
+        } catch (err) {
+          console.error('Error reading submissions file:', err);
+        }
+      }
+
+      const newSubmission = {
+        id: Date.now().toString() + '-' + Math.round(Math.random() * 1e9),
+        teacher: resolvedTeacherName,
+        className,
+        fullName,
+        stage,
+        session,
+        attemptNumber,
+        fileName: submissionName,
+        fileUrl: savedLink,
+        createdAt: new Date().toISOString()
+      };
+      submissions.push(newSubmission);
+      fs.writeFileSync(submissionsFile, JSON.stringify(submissions, null, 2), 'utf8');
+    }
+
+    // Audit Log
+    await logAudit(
+      'UPLOAD_LINK',
+      'Submission',
+      `Nộp link: ${fullName} | Lớp: ${className} | ${stage} - ${session} | Lần ${attemptNumber} | Link: ${savedLink}`,
+      fullName,
+      'student'
+    );
+
+    // Send email to teacher if configured
+    if (useMongoDB && resolvedTeacherName && resolvedTeacherName !== 'Chưa phân công') {
+      try {
+        const teacherUser = await UserModel.findOne({ displayName: resolvedTeacherName, role: 'teacher' });
+        if (teacherUser && teacherUser.email && teacherUser.emailNotificationsEnabled) {
+          const filesHtmlList = `<li><a href="${savedLink}" target="_blank" style="color: #4f46e5; text-decoration: none; font-weight: 600;">${submissionName}</a></li>`;
+          const emailSubject = `[NA MindX Hub] Thông báo nộp bài (Liên kết): ${fullName} - Lớp ${className}`;
+          const emailHtml = `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 25px; border: 1px solid #e2e8f0; border-radius: 12px; background-color: #ffffff; color: #1e293b;">
+              <div style="text-align: center; margin-bottom: 20px; border-bottom: 2px solid #f1f5f9; padding-bottom: 15px;">
+                <h2 style="color: #10b981; margin: 0; font-size: 24px;">Học viên nộp bài mới (Liên kết)</h2>
+                <p style="color: #64748b; font-size: 14px; margin-top: 5px;">Hệ thống quản lý bài nộp NA MindX Hub</p>
+              </div>
+              <div style="margin-bottom: 25px; line-height: 1.6;">
+                <p>Xin chào <b>Thầy/Cô ${resolvedTeacherName}</b>,</p>
+                <p>Học viên <b>${fullName}</b> thuộc lớp <b>${className}</b> vừa nộp bài qua liên kết trực tuyến:</p>
+                <table style="width: 100%; border-collapse: collapse; margin: 20px 0; background-color: #f8fafc; border-radius: 8px; overflow: hidden;">
+                  <tr>
+                    <td style="padding: 12px 15px; border-bottom: 1px solid #e2e8f0; font-weight: bold; color: #475569; width: 120px;">Học viên</td>
+                    <td style="padding: 12px 15px; border-bottom: 1px solid #e2e8f0; color: #0f172a;">${fullName}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 12px 15px; border-bottom: 1px solid #e2e8f0; font-weight: bold; color: #475569;">Lớp học</td>
+                    <td style="padding: 12px 15px; border-bottom: 1px solid #e2e8f0; color: #0f172a;">${className}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 12px 15px; border-bottom: 1px solid #e2e8f0; font-weight: bold; color: #475569;">Giai đoạn</td>
+                    <td style="padding: 12px 15px; border-bottom: 1px solid #e2e8f0; color: #0f172a;">${stage}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 12px 15px; border-bottom: 1px solid #e2e8f0; font-weight: bold; color: #475569;">Buổi học</td>
+                    <td style="padding: 12px 15px; border-bottom: 1px solid #e2e8f0; color: #0f172a;">${session}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 12px 15px; font-weight: bold; color: #475569;">Lần nộp</td>
+                    <td style="padding: 12px 15px; color: #0f172a;">Lần ${attemptNumber}</td>
+                  </tr>
+                </table>
+                <p style="margin-bottom: 10px; font-weight: bold; color: #334155;">Danh sách liên kết nộp bài:</p>
+                <ul style="margin-top: 5px; padding-left: 20px;">
+                  ${filesHtmlList}
+                </ul>
+              </div>
+              <div style="border-top: 1px solid #e2e8f0; padding-top: 15px; text-align: center; font-size: 12px; color: #94a3b8; line-height: 1.5;">
+                <p>Email này được tự động gửi từ hệ thống NA MindX Hub.</p>
+                <p style="margin-top: 5px;">Thầy/Cô có thể tắt tính năng nhận thông báo qua email này trong phần cấu hình Tài khoản trên Dashboard.</p>
+              </div>
+            </div>
+          `;
+          await sendMailHelper(teacherUser.email, emailSubject, emailHtml);
+        }
+      } catch (err: any) {
+        console.error('[Notification Email Error]: Gửi email thông báo cho giáo viên thất bại:', err.message);
+      }
+    }
+
+    res.json({
+      message: 'Nộp liên kết bài thuyết trình thành công!',
+      files: [{ originalName: submissionName, filename: savedLink, size: 0, path: savedLink }]
+    });
+
+  } catch (err: any) {
+    res.status(500).json({ error: 'Lỗi nộp bài qua liên kết: ' + err.message });
   }
 });
 

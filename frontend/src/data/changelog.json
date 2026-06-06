@@ -1,5 +1,18 @@
 [
   {
+    "version": "1.5.0",
+    "date": "2026-06-06",
+    "title": "Nâng cấp nộp liên kết Canva & Thống nhất giao diện bài nộp",
+    "features": [
+      "Tính năng nộp bài bằng đường dẫn liên kết (Canva, Slides, Google Docs) được mở rộng cho tất cả các giai đoạn làm sản phẩm (Sản phẩm cuối khóa, Checkpoint 1, Checkpoint 2 và Bài thuyết trình).",
+      "Xác thực tính công khai của thiết kế Canva thông qua API oEmbed chính thức, ngăn chặn học viên nộp bài khi thiết kế đang ở trạng thái riêng tư.",
+      "Tự động chuyển đổi các link Canva rút gọn (canva.link) thành link xem trực tiếp (/view) công khai trước khi lưu vào cơ sở dữ liệu, đảm bảo giáo viên và admin luôn truy cập được bài nộp.",
+      "Thống nhất thiết kế cột File/Liên kết trên Dashboard dạng các badge màu sắc hiện đại cho toàn bộ link bài nộp (Canva, Google Drive, MEGA, Web Link) kết hợp hiển thị chi tiết tên tệp tin chuẩn hóa khi di chuột.",
+      "Hỗ trợ Giáo viên điều chỉnh giới hạn dung lượng tải lên tối đa (maxUploadSize) và cấp quyền xóa trực tiếp bài nộp của học viên khỏi giao diện quản lý.",
+      "Dọn dẹp mã nguồn hệ thống bằng việc loại bỏ hoàn toàn các tệp tin key dịch vụ Drive dư thừa."
+    ]
+  },
+  {
     "version": "1.4.0",
     "date": "2026-06-05",
     "title": "Nâng cấp Trải nghiệm Người dùng, Bảo mật & Đồng bộ Lưu trữ",

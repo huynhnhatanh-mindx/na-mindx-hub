@@ -47,6 +47,13 @@ function Upload() {
   const [uploadedFiles, setUploadedFiles] = useState<UploadResponseFile[]>([]);
   const [cooldownTime, setCooldownTime] = useState<number>(0);
 
+  // Link validation & type selection states
+  const [submissionType, setSubmissionType] = useState<'file' | 'link'>('file');
+  const [presentationLink, setPresentationLink] = useState<string>('');
+  const [isValidatingLink, setIsValidatingLink] = useState<boolean>(false);
+  const [linkValidationError, setLinkValidationError] = useState<string>('');
+  const [isLinkValidatedSuccessfully, setIsLinkValidatedSuccessfully] = useState<boolean>(false);
+
   useEffect(() => {
     if (cooldownTime <= 0) return;
     const timer = setInterval(() => {
@@ -263,6 +270,17 @@ function Upload() {
   // Handle stage change and adjust session selection
   const handleStageChange = (newStage: string) => {
     setStage(newStage);
+    const isLinkAllowed = 
+      newStage === 'Bài thuyết trình' || 
+      newStage === 'Sản phẩm cuối khóa' || 
+      newStage === 'Checkpoint 1' || 
+      newStage === 'Checkpoint 2';
+    if (!isLinkAllowed) {
+      setSubmissionType('file');
+    }
+    setPresentationLink('');
+    setLinkValidationError('');
+    setIsLinkValidatedSuccessfully(false);
     if (newStage && sessionsMap[newStage]) {
       const compatibleSessions = sessionsMap[newStage];
       if (!compatibleSessions.includes(session)) {
@@ -270,6 +288,33 @@ function Upload() {
       }
     } else {
       setSession('');
+    }
+  };
+
+  const handleValidateLinkOnly = async () => {
+    if (!presentationLink.trim()) return;
+    setIsValidatingLink(true);
+    setLinkValidationError('');
+    setIsLinkValidatedSuccessfully(false);
+    try {
+      const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+      const res = await fetch(`${API_BASE_URL}/api/upload/validate-link`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ link: presentationLink.trim() })
+      });
+      const data = await res.json();
+      if (!res.ok || !data.isAccessible) {
+        setLinkValidationError(data.error || 'Đường liên kết chưa được chia sẻ công khai hoặc không thể truy cập.');
+      } else {
+        setIsLinkValidatedSuccessfully(true);
+      }
+    } catch (err: any) {
+      setLinkValidationError('Lỗi kết nối kiểm tra đường dẫn: ' + err.message);
+    } finally {
+      setIsValidatingLink(false);
     }
   };
 
@@ -499,7 +544,12 @@ function Upload() {
   // Submit files to backend
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (selectedFiles.length === 0) return;
+
+    if (submissionType === 'file') {
+      if (selectedFiles.length === 0) return;
+    } else {
+      if (!presentationLink.trim()) return;
+    }
 
     if (!teacher.trim() || !className.trim() || !fullName.trim() || !stage.trim() || !session.trim()) {
       setUploadStatus('error');
@@ -508,9 +558,58 @@ function Upload() {
     }
 
     setIsUploading(true);
-    setUploadProgress(5); // Bắt đầu ở mức 5% để hiển thị tiến trình đang chạy
     setUploadStatus('idle');
     setErrorMessage('');
+
+    if (submissionType === 'link') {
+      setUploadProgress(20);
+      try {
+        const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+        setUploadProgress(50);
+
+        const response = await fetch(`${API_BASE_URL}/api/upload-link`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            teacher: teacher.trim(),
+            className: className.trim(),
+            fullName: fullName.trim(),
+            stage: stage.trim(),
+            session: session.trim(),
+            link: presentationLink.trim()
+          })
+        });
+
+        if (!response.ok) {
+          let errMsg = 'Đã xảy ra lỗi trong quá trình gửi liên kết.';
+          try {
+            const errData = await response.json();
+            errMsg = errData.error || errMsg;
+          } catch (e) { }
+          setUploadStatus('error');
+          setErrorMessage(errMsg);
+          return;
+        }
+
+        const data = await response.json();
+        setUploadProgress(100);
+        setUploadStatus('success');
+        setUploadedFiles(data.files);
+        setPresentationLink('');
+        setIsLinkValidatedSuccessfully(false);
+        setCooldownTime(15);
+      } catch (error: any) {
+        setUploadStatus('error');
+        setErrorMessage(error.message || 'Lỗi kết nối đến server backend.');
+      } finally {
+        setIsUploading(false);
+      }
+      return;
+    }
+
+    setUploadProgress(5); // Bắt đầu ở mức 5% để hiển thị tiến trình đang chạy
 
     // Prepare Form Data - metadata fields appended FIRST for Multer parsing order
     const formData = new FormData();
@@ -713,32 +812,236 @@ function Upload() {
               />
             </div>
 
-            {/* Drag & Drop Area */}
-            <div
-              className={`dropzone ${isDragging && !isMetadataIncomplete ? 'dragging' : ''}`}
-              onDragOver={isMetadataIncomplete ? (e) => e.preventDefault() : handleDragOver}
-              onDragLeave={handleDragLeave}
-              onDrop={isMetadataIncomplete ? (e) => e.preventDefault() : handleDrop}
-              onClick={isMetadataIncomplete ? undefined : handleBrowseClick}
-              style={{
-                border: '2px dashed var(--card-border)',
+            {(stage === 'Bài thuyết trình' || stage === 'Sản phẩm cuối khóa' || stage === 'Checkpoint 1' || stage === 'Checkpoint 2') && !isMetadataIncomplete && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginBottom: '2rem' }}>
+                <label className="form-label">Hình thức nộp bài</label>
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: '1fr 1fr',
+                  gap: '0.5rem',
+                  padding: '4px',
+                  background: 'rgba(255, 255, 255, 0.03)',
+                  border: '1px solid var(--card-border)',
+                  borderRadius: '10px'
+                }}>
+                  <button
+                    type="button"
+                    onClick={() => { setSubmissionType('file'); setErrorMessage(''); }}
+                    style={{
+                      padding: '0.6rem',
+                      borderRadius: '8px',
+                      border: 'none',
+                      background: submissionType === 'file' ? 'var(--primary)' : 'transparent',
+                      color: submissionType === 'file' ? '#fff' : 'var(--text-secondary)',
+                      fontWeight: '600',
+                      fontSize: '0.875rem',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s'
+                    }}
+                  >
+                    Nộp file báo cáo
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setSubmissionType('link'); setErrorMessage(''); }}
+                    style={{
+                      padding: '0.6rem',
+                      borderRadius: '8px',
+                      border: 'none',
+                      background: submissionType === 'link' ? 'var(--primary)' : 'transparent',
+                      color: submissionType === 'link' ? '#fff' : 'var(--text-secondary)',
+                      fontWeight: '600',
+                      fontSize: '0.875rem',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s'
+                    }}
+                  >
+                    Nộp link trình duyệt (Canva, Slides...)
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {submissionType === 'link' && !isMetadataIncomplete ? (
+              <div style={{
+                border: '1px solid var(--card-border)',
                 borderRadius: '12px',
-                padding: '3rem 2rem',
-                textAlign: 'center',
-                cursor: isMetadataIncomplete ? 'not-allowed' : 'pointer',
-                backgroundColor: isDragging && !isMetadataIncomplete ? 'rgba(99, 102, 241, 0.08)' : 'rgba(0, 0, 0, 0.2)',
-                borderColor: isDragging && !isMetadataIncomplete ? 'var(--primary)' : 'var(--card-border)',
-                transition: 'var(--transition-smooth)',
+                padding: '2rem',
+                backgroundColor: 'rgba(0, 0, 0, 0.2)',
                 marginBottom: '2rem',
                 display: 'flex',
                 flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '1rem',
-                opacity: isMetadataIncomplete ? 0.4 : 1
-              }}
-            >
-              <input
+                gap: '1rem'
+              }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                  <label className="form-label" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span>Đường dẫn liên kết (Canva, Google Slides,...)</span>
+                    <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Ví dụ: canva.com/design/...</span>
+                  </label>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                    <input
+                      type="url"
+                      value={presentationLink}
+                      onChange={(e) => {
+                        setPresentationLink(e.target.value);
+                        setLinkValidationError('');
+                        setIsLinkValidatedSuccessfully(false);
+                        if (uploadStatus === 'error') {
+                          setUploadStatus('idle');
+                          setErrorMessage('');
+                        }
+                      }}
+                      placeholder="Dán link Canva hoặc bài thuyết trình của bạn vào đây..."
+                      className="form-input-field"
+                      style={{ 
+                        width: '100%', 
+                        height: '3rem', 
+                        padding: '0.75rem 1rem', 
+                        fontSize: '0.95rem',
+                        borderRadius: '8px',
+                        border: '1px solid var(--card-border)',
+                        background: 'rgba(255, 255, 255, 0.03)',
+                        color: 'var(--text-primary)',
+                        marginBottom: 0
+                      }}
+                      required
+                    />
+                    <button
+                      type="button"
+                      onClick={handleValidateLinkOnly}
+                      disabled={isValidatingLink || !presentationLink.trim()}
+                      className="btn btn-neutral"
+                      style={{
+                        alignSelf: 'flex-start',
+                        padding: '0.5rem 1.25rem',
+                        height: 'auto',
+                        minHeight: '36px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        whiteSpace: 'nowrap',
+                        gap: '0.5rem',
+                        fontSize: '0.85rem',
+                        borderRadius: '6px'
+                      }}
+                    >
+                      {isValidatingLink ? 'Đang kiểm tra...' : 'Kiểm tra quyền truy cập'}
+                    </button>
+                  </div>
+                </div>
+
+                {linkValidationError && (
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.5rem',
+                    background: 'rgba(239, 68, 68, 0.06)',
+                    border: '1px solid rgba(239, 68, 68, 0.3)',
+                    padding: '0.75rem 1rem',
+                    borderRadius: '8px',
+                    color: '#fce8e6',
+                    fontSize: '0.85rem'
+                  }}>
+                    <AlertTriangle size={16} style={{ color: 'var(--danger)', flexShrink: 0 }} />
+                    <span>{linkValidationError}</span>
+                  </div>
+                )}
+
+                {isLinkValidatedSuccessfully && (
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.5rem',
+                    background: 'rgba(16, 185, 129, 0.06)',
+                    border: '1px solid rgba(16, 185, 129, 0.2)',
+                    padding: '0.75rem 1rem',
+                    borderRadius: '8px',
+                    color: 'var(--success)',
+                    fontSize: '0.85rem'
+                  }}>
+                    <CheckCircle2 size={16} style={{ flexShrink: 0 }} />
+                    <span>Kiểm tra quyền truy cập thành công! Bạn có thể nhấn nút <b>Nộp bài</b> bên dưới.</span>
+                  </div>
+                )}
+
+                {!linkValidationError && !isLinkValidatedSuccessfully && presentationLink.trim() && !isValidatingLink && (
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.5rem',
+                    background: 'rgba(234, 179, 8, 0.06)',
+                    border: '1px solid rgba(234, 179, 8, 0.2)',
+                    padding: '0.75rem 1rem',
+                    borderRadius: '8px',
+                    color: '#fef08a',
+                    fontSize: '0.85rem'
+                  }}>
+                    <AlertTriangle size={16} style={{ color: '#eab308', flexShrink: 0 }} />
+                    <span>Lưu ý: Hãy chắc chắn đã bấm <b>Chia sẻ</b> và chọn quyền <b>"Bất kỳ ai có liên kết đều có thể xem"</b>, sau đó click <b>Kiểm tra quyền truy cập</b> bên trên trước khi nộp.</span>
+                  </div>
+                )}
+
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginTop: '0.5rem' }}>
+                  <div style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '0.4rem',
+                    background: 'rgba(56, 189, 248, 0.1)',
+                    color: '#38bdf8',
+                    padding: '4px 10px',
+                    borderRadius: '6px',
+                    fontSize: '0.8rem',
+                    fontWeight: '600',
+                    border: '1px solid rgba(56, 189, 248, 0.2)'
+                  }}>
+                    <Info size={14} />
+                    Phương thức nộp link không tính giới hạn dung lượng tải lên
+                  </div>
+                  {getSelectedClassDeadline() && (
+                    <div style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '0.4rem',
+                      background: 'rgba(99, 102, 241, 0.1)',
+                      color: 'var(--primary)',
+                      padding: '4px 10px',
+                      borderRadius: '6px',
+                      fontSize: '0.8rem',
+                      fontWeight: '600',
+                      border: '1px solid rgba(99, 102, 241, 0.2)'
+                    }}>
+                      <Calendar size={14} />
+                      Hạn nộp bài: {getSelectedClassDeadline()}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div
+                className={`dropzone ${isDragging && !isMetadataIncomplete ? 'dragging' : ''}`}
+                onDragOver={isMetadataIncomplete ? (e) => e.preventDefault() : handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={isMetadataIncomplete ? (e) => e.preventDefault() : handleDrop}
+                onClick={isMetadataIncomplete ? undefined : handleBrowseClick}
+                style={{
+                  border: '2px dashed var(--card-border)',
+                  borderRadius: '12px',
+                  padding: '3rem 2rem',
+                  textAlign: 'center',
+                  cursor: isMetadataIncomplete ? 'not-allowed' : 'pointer',
+                  backgroundColor: isDragging && !isMetadataIncomplete ? 'rgba(99, 102, 241, 0.08)' : 'rgba(0, 0, 0, 0.2)',
+                  borderColor: isDragging && !isMetadataIncomplete ? 'var(--primary)' : 'var(--card-border)',
+                  transition: 'var(--transition-smooth)',
+                  marginBottom: '2rem',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '1rem',
+                  opacity: isMetadataIncomplete ? 0.4 : 1
+                }}
+              >
+                <input
                 type="file"
                 ref={fileInputRef}
                 onChange={handleFileChange}
@@ -816,7 +1119,7 @@ function Upload() {
                   </div>
                 </div>
               )}
-            </div>
+            </div>)}
 
             {/* List of Selected Files */}
             {selectedFiles.length > 0 && (
@@ -978,7 +1281,7 @@ function Upload() {
             <button
               type="submit"
               className="btn btn-primary"
-              disabled={selectedFiles.length === 0 || isUploading || uploadStatus === 'error' || cooldownTime > 0}
+              disabled={(submissionType === 'file' ? selectedFiles.length === 0 : (!presentationLink.trim() || !isLinkValidatedSuccessfully)) || isUploading || uploadStatus === 'error' || cooldownTime > 0}
               style={{
                 height: '3rem',
                 fontSize: '1rem'

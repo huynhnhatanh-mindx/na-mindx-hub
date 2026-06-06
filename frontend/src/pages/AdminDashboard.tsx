@@ -951,7 +951,7 @@ export default function AdminDashboard() {
 
               {/* Action Buttons */}
               <div style={{ display: 'flex', gap: '0.5rem' }}>
-                {selectedIds.length > 0 && (activeTab !== 'submissions' || currentUser?.role === 'admin') && (
+                {selectedIds.length > 0 && (activeTab !== 'submissions' || currentUser?.role === 'admin' || currentUser?.role === 'teacher') && (
                    <button className="btn btn-danger" onClick={handleBulkDelete} style={{ height: 'auto', padding: '0 1rem' }}>Xóa {selectedIds.length} mục</button>
                 )}
                 {selectedIds.length > 0 && (activeTab === 'users' || activeTab === 'students') && (
@@ -1195,14 +1195,84 @@ export default function AdminDashboard() {
                         <td data-label="Học viên" style={{ padding: '1rem', color: 'var(--text-primary)', fontWeight: '600' }}>{item.fullName}</td>
                         <td data-label="Lớp" style={{ padding: '1rem' }}>{item.className}</td>
                         <td data-label="Giai đoạn/Buổi" style={{ padding: '1rem' }}>{item.stage} ({item.session})</td>
-                        <td data-label="File" style={{ padding: '1rem' }}>
-                          <a href={item.fileUrl} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--secondary)', textDecoration: 'none' }}>
-                            {item.fileName}
-                          </a>
+                        <td data-label="File/Liên kết" style={{ padding: '1rem' }}>
+                          {item.fileUrl ? (
+                            (() => {
+                              const isCanva = item.fileUrl.includes('canva.com') || item.fileUrl.includes('canva.link');
+                              const isDrive = item.fileUrl.includes('drive.google.com') || item.fileUrl.includes('docs.google.com');
+                              const isMega = item.fileUrl.includes('mega.nz') || item.fileUrl.includes('mega.co.nz');
+                              
+                              let badgeColor = '#818cf8';
+                              let badgeBg = 'rgba(99, 102, 241, 0.08)';
+                              let badgeBorder = '1px solid rgba(99, 102, 241, 0.2)';
+                              let dotColor = '#6366f1';
+                              let labelText = 'Xem liên kết';
+                              let isDot = false;
+
+                              if (isCanva) {
+                                badgeColor = '#38bdf8';
+                                badgeBg = 'rgba(56, 189, 248, 0.08)';
+                                badgeBorder = '1px solid rgba(56, 189, 248, 0.2)';
+                                dotColor = '#00c4cc';
+                                labelText = 'Canva Link';
+                                isDot = true;
+                              } else if (isDrive) {
+                                badgeColor = '#34d399';
+                                badgeBg = 'rgba(16, 185, 129, 0.08)';
+                                badgeBorder = '1px solid rgba(16, 185, 129, 0.2)';
+                                dotColor = '#10b981';
+                                labelText = item.fileUrl.includes('presentation') ? 'Google Slides' : 'Google Drive';
+                                isDot = true;
+                              } else if (isMega) {
+                                badgeColor = '#f87171';
+                                badgeBg = 'rgba(239, 68, 68, 0.08)';
+                                badgeBorder = '1px solid rgba(239, 68, 68, 0.2)';
+                                dotColor = '#ef4444';
+                                labelText = 'MEGA Link';
+                                isDot = true;
+                              }
+
+                              return (
+                                <a 
+                                  href={item.fileUrl} 
+                                  target="_blank" 
+                                  rel="noopener noreferrer" 
+                                  title={item.fileName}
+                                  style={{
+                                    color: badgeColor,
+                                    textDecoration: 'none',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '0.35rem',
+                                    fontWeight: '600',
+                                    padding: '6px 12px',
+                                    background: badgeBg,
+                                    border: badgeBorder,
+                                    borderRadius: '6px',
+                                    fontSize: '0.8rem',
+                                    transition: 'all 0.2s'
+                                  }}
+                                  className="submission-link-badge"
+                                >
+                                  {isDot ? (
+                                    <span style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', backgroundColor: dotColor }}></span>
+                                  ) : (
+                                    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: 'middle' }}>
+                                      <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+                                      <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+                                    </svg>
+                                  )}
+                                  <span>{labelText}</span>
+                                </a>
+                              );
+                            })()
+                          ) : (
+                            <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem', fontStyle: 'italic' }}>Không có tệp</span>
+                          )}
                         </td>
                         <td data-label="Ngày nộp" style={{ padding: '1rem' }}>{formatDate(item.createdAt)}</td>
                         <td data-label="Thao tác" style={{ padding: '1rem', textAlign: 'center' }}>
-                          {currentUser?.role === 'admin' ? (
+                          {currentUser?.role === 'admin' || currentUser?.role === 'teacher' ? (
                             <button className="btn btn-danger" style={{ padding: '4px 10px', height: 'auto', fontSize: '0.8rem' }} onClick={() => handleDeleteItem(item._id)}>Xóa</button>
                           ) : (
                             <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem', fontStyle: 'italic' }}>Không có quyền xóa</span>
@@ -1757,7 +1827,7 @@ export default function AdminDashboard() {
                       <option value="inactive">Không hoạt động (Khóa)</option>
                     </select>
                   </div>
-                  {currentUser?.role === 'admin' ? (
+                  {currentUser?.role === 'admin' || currentUser?.role === 'teacher' ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                       <label className="form-label">Giới hạn tải lên (MB)</label>
                       <input
@@ -1772,7 +1842,7 @@ export default function AdminDashboard() {
                     </div>
                   ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                      <label className="form-label">Giới hạn tải lên (MB) - Chỉ Admin được sửa</label>
+                      <label className="form-label">Giới hạn tải lên (MB) - Chỉ Admin và Giáo viên được sửa</label>
                       <input
                         type="number"
                         value={studentMaxUploadSize}
