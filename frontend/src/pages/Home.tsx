@@ -18,7 +18,7 @@ function Home() {
           window.location.href = '/admin';
           return;
         }
-      } catch (e) {}
+      } catch (e) { }
     }
 
     const checkConnection = async () => {
@@ -45,10 +45,10 @@ function Home() {
     <>
       {/* Hero Welcome Section */}
       <div style={{ textAlign: 'center', marginBottom: '3.5rem', marginTop: '1rem' }}>
-        <h2 style={{ 
-          fontSize: '3rem', 
-          fontWeight: '800', 
-          marginBottom: '0.75rem', 
+        <h2 style={{
+          fontSize: '3rem',
+          fontWeight: '800',
+          marginBottom: '0.75rem',
           fontFamily: 'var(--font-heading)',
           background: 'var(--title-gradient)',
           WebkitBackgroundClip: 'text',
@@ -64,7 +64,7 @@ function Home() {
 
       {/* Main Feature Grid */}
       <main className="grid" style={{ marginBottom: '3rem', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))' }}>
-        
+
         {/* Active Upload Card */}
         <section className="glass-card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'between', height: '100%' }}>
           <div>
@@ -82,7 +82,7 @@ function Home() {
             }}>
               <UploadCloud size={24} />
             </div>
-            
+
             <h3 className="card-title" style={{ fontSize: '1.35rem', marginBottom: '0.75rem' }}>Nộp Bài Tập</h3>
             <p style={{ color: 'var(--text-secondary)', fontSize: '0.95rem', lineHeight: '1.6', marginBottom: '2rem' }}>
               Tải bài tập và các file tài liệu lên máy chủ của lớp học. Hệ thống hỗ trợ kéo thả tệp tin nhanh chóng và quản lý danh sách file trực quan.
@@ -111,10 +111,10 @@ function Home() {
             }}>
               <FileText size={24} />
             </div>
-            
+
             <h3 className="card-title" style={{ fontSize: '1.35rem', marginBottom: '0.75rem' }}>Lịch Sử Bài Nộp</h3>
             <p style={{ color: 'var(--text-secondary)', fontSize: '0.95rem', lineHeight: '1.6', marginBottom: '2rem' }}>
-              Xem danh sách bài tập đã nộp của lớp học. Tra cứu lịch sử nộp theo học viên, lớp học và tải trực tiếp các tệp tin lưu trên MEGA.
+              Xem danh sách bài tập đã nộp của lớp học. Tra cứu lịch sử nộp theo học viên, lớp học và tải trực tiếp các tệp tin lưu trên Google Drive.
             </p>
           </div>
 
@@ -140,7 +140,7 @@ function Home() {
             }}>
               <BookOpen size={24} />
             </div>
-            
+
             <h3 className="card-title" style={{ fontSize: '1.35rem', marginBottom: '0.75rem', color: 'var(--text-secondary)' }}>
               Kho Tài Liệu <span style={{ fontSize: '0.75rem', fontWeight: 'normal', color: 'var(--secondary)', border: '1px solid var(--secondary)', padding: '2px 6px', borderRadius: '4px', marginLeft: '0.5rem' }}>Soon</span>
             </h3>
