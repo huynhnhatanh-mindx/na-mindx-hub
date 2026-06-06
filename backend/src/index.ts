@@ -825,27 +825,18 @@ app.get('/api/hello', (req: Request, res: Response) => {
   });
 });
 
-// API lấy danh sách Giáo viên
+// API lấy danh sách Giáo viên (chỉ lấy những giáo viên đã liên kết Google Drive)
 app.get('/api/teachers', async (req: Request, res: Response) => {
   try {
     if (useMongoDB) {
-      // 1. Lấy danh sách giáo viên ĐANG HOẠT ĐỘNG từ UserModel
-      const activeTeachers = await UserModel.find({ role: 'teacher', status: 'active' });
-      const activeTeacherNames = activeTeachers.map(t => t.displayName);
-
-      // 2. Lấy danh sách giáo viên BỊ KHÓA từ UserModel
-      const inactiveTeachers = await UserModel.find({ role: 'teacher', status: 'inactive' });
-      const inactiveTeacherNames = inactiveTeachers.map(t => t.displayName);
-
-      // 3. Lấy thêm các giáo viên trong TeacherModel (những người chưa có tài khoản User)
-      // Loại trừ những người bị khóa và những người đã có trong danh sách active
-      const otherTeachers = await TeacherModel.find({
-        name: { $nin: [...activeTeacherNames, ...inactiveTeacherNames] }
+      // Chỉ lấy danh sách giáo viên đang hoạt động và ĐÃ LIÊN KẾT Google Drive (có googleRefreshToken)
+      const activeLinkedTeachers = await UserModel.find({
+        role: 'teacher',
+        status: 'active',
+        googleRefreshToken: { $exists: true, $ne: '' }
       });
-      const otherTeacherNames = otherTeachers.map(t => t.name);
-      
-      const allTeacherNames = [...activeTeacherNames, ...otherTeacherNames];
-      res.json(allTeacherNames);
+      const teacherNames = activeLinkedTeachers.map(t => t.displayName);
+      res.json(teacherNames);
     } else {
       // Fallback khi chạy offline
       res.json(['Huỳnh Nhật Anh', 'Nguyễn Văn A', 'Trần Thị B']);
