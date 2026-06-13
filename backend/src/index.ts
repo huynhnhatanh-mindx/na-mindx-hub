@@ -147,6 +147,7 @@ const submissionSchema = new mongoose.Schema({
   attemptNumber: { type: Number, required: true },
   fileName: { type: String, required: true },
   fileUrl: { type: String, required: true },
+  notes: { type: String, default: '' },
   createdAt: { type: Date, default: Date.now }
 });
 
@@ -2896,6 +2897,7 @@ app.post('/api/upload-link', async (req: Request, res: Response) => {
     const stage = sanitize(req.body.stage || 'N/A').trim();
     const session = sanitize(req.body.session || 'N/A').trim();
     const link = sanitize(req.body.link || '').trim();
+    const notes = sanitize(req.body.notes || '').trim();
 
     if (!teacher || !className || !fullName || !stage || !session || !link) {
       return res.status(400).json({ error: 'Vui lòng nhập đầy đủ các thông tin: Giáo viên, Lớp học, Họ tên, Giai đoạn, Buổi học và Liên kết bài nộp.' });
@@ -3044,7 +3046,8 @@ app.post('/api/upload-link', async (req: Request, res: Response) => {
         session,
         attemptNumber,
         fileName: submissionName,
-        fileUrl: savedLink
+        fileUrl: savedLink,
+        notes
       });
       await submissionDoc.save();
     } else {
@@ -3070,6 +3073,7 @@ app.post('/api/upload-link', async (req: Request, res: Response) => {
         attemptNumber,
         fileName: submissionName,
         fileUrl: savedLink,
+        notes,
         createdAt: new Date().toISOString()
       };
       submissions.push(newSubmission);
@@ -3122,6 +3126,12 @@ app.post('/api/upload-link', async (req: Request, res: Response) => {
                     <td style="padding: 12px 15px; font-weight: bold; color: #475569;">Lần nộp</td>
                     <td style="padding: 12px 15px; color: #0f172a;">Lần ${attemptNumber}</td>
                   </tr>
+                  ${notes ? `
+                  <tr>
+                    <td style="padding: 12px 15px; border-top: 1px solid #e2e8f0; font-weight: bold; color: #475569;">Ghi chú</td>
+                    <td style="padding: 12px 15px; border-top: 1px solid #e2e8f0; color: #0f172a; font-style: italic;">${notes}</td>
+                  </tr>
+                  ` : ''}
                 </table>
                 <p style="margin-bottom: 10px; font-weight: bold; color: #334155;">Danh sách liên kết nộp bài:</p>
                 <ul style="margin-top: 5px; padding-left: 20px;">
@@ -3178,6 +3188,7 @@ app.post('/api/upload', (req: Request, res: Response, next: any) => {
 
     const fullName = sanitize(req.body.fullName || 'N/A').trim();
     const className = sanitize(req.body.className || 'N/A').trim();
+    const notes = sanitize(req.body.notes || '').trim();
 
     // Check size limit dynamically based on student
     let maxUploadSizeMB = 20; // default
@@ -3472,7 +3483,8 @@ app.post('/api/upload', (req: Request, res: Response, next: any) => {
           session,
           attemptNumber,
           fileName: detail.fileName,
-          fileUrl: detail.fileUrl
+          fileUrl: detail.fileUrl,
+          notes
         });
         await submissionDoc.save();
       }
@@ -3500,6 +3512,7 @@ app.post('/api/upload', (req: Request, res: Response, next: any) => {
           attemptNumber,
           fileName: detail.fileName,
           fileUrl: detail.fileUrl,
+          notes,
           createdAt: new Date().toISOString()
         };
         submissions.push(newSubmission);
@@ -3570,6 +3583,12 @@ app.post('/api/upload', (req: Request, res: Response, next: any) => {
                       </ul>
                     </td>
                   </tr>
+                  ${notes ? `
+                  <tr>
+                    <td style="font-weight: bold; color: #64748b; padding: 4px 0; vertical-align: top;">Ghi chú:</td>
+                    <td style="color: #1e293b; font-style: italic;">${notes}</td>
+                  </tr>
+                  ` : ''}
                 </table>
               </div>
               <p style="font-size: 14px; color: #64748b; line-height: 1.6;">Bài nộp đã được tải lên trực tiếp thư mục Google Drive cá nhân của thầy/cô tại <strong>NA MindX Hub / ${className}</strong>.</p>

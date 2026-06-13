@@ -95,6 +95,7 @@ function Upload() {
   const [fullName, setFullName] = useState<string>('');
   const [stage, setStage] = useState<string>('');
   const [session, setSession] = useState<string>('');
+  const [notes, setNotes] = useState<string>('');
 
   // Gate status and countdown states
   const [gateStatus, setGateStatus] = useState<'not_started' | 'open' | 'late_open' | 'closed' | 'no_gate'>('no_gate');
@@ -671,7 +672,8 @@ function Upload() {
             fullName: fullName.trim(),
             stage: stage.trim(),
             session: session.trim(),
-            link: presentationLink.trim()
+            link: presentationLink.trim(),
+            notes: notes.trim()
           })
         });
 
@@ -692,6 +694,7 @@ function Upload() {
         setUploadedFiles(data.files);
         setPresentationLink('');
         setIsLinkValidatedSuccessfully(false);
+        setNotes('');
         setCooldownTime(15);
       } catch (error: any) {
         setUploadStatus('error');
@@ -711,6 +714,7 @@ function Upload() {
     formData.append('fullName', fullName.trim());
     formData.append('stage', stage.trim());
     formData.append('session', session.trim());
+    formData.append('notes', notes.trim());
 
     selectedFiles.forEach((file) => {
       formData.append('files', file);
@@ -770,6 +774,7 @@ function Upload() {
                   setUploadStatus('success');
                   setUploadedFiles(sseData.files);
                   setSelectedFiles([]); // Reset danh sách chọn
+                  setNotes('');
                   setCooldownTime(15); // Kích hoạt 15 giây cooldown
                   if (fileInputRef.current) {
                     fileInputRef.current.value = '';
@@ -791,6 +796,7 @@ function Upload() {
         setUploadStatus('success');
         setUploadedFiles(data.files);
         setSelectedFiles([]);
+        setNotes('');
         setCooldownTime(15); // Kích hoạt 15 giây cooldown
         if (fileInputRef.current) {
           fileInputRef.current.value = '';
@@ -1481,6 +1487,33 @@ function Upload() {
                 <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
                   {errorMessage}
                 </p>
+              </div>
+            )}
+
+            {!isMetadataIncomplete && !isGateLocked && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginBottom: '2rem' }}>
+                <label className="form-label" style={{ fontWeight: '500', fontSize: '0.95rem' }}>
+                  Ghi chú (không bắt buộc)
+                </label>
+                <textarea
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  placeholder="Nhập nguyện vọng, lưu ý hoặc lời nhắn nếu có..."
+                  className="form-input-field"
+                  style={{
+                    width: '100%',
+                    height: '100px',
+                    padding: '0.75rem 1rem',
+                    fontSize: '0.95rem',
+                    borderRadius: '8px',
+                    border: '1px solid var(--card-border)',
+                    background: 'rgba(255, 255, 255, 0.03)',
+                    color: 'var(--text-primary)',
+                    resize: 'vertical',
+                    fontFamily: 'inherit'
+                  }}
+                  disabled={isUploading}
+                />
               </div>
             )}
 

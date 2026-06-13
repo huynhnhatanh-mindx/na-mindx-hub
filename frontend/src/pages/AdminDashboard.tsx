@@ -60,6 +60,7 @@ interface SubmissionData {
   attemptNumber: number;
   fileName: string;
   fileUrl: string;
+  notes?: string;
   createdAt: string;
 }
 
@@ -184,6 +185,15 @@ export default function AdminDashboard() {
   // Modal / Form States
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [showNotesModal, setShowNotesModal] = useState(false);
+  const [selectedNotesContent, setSelectedNotesContent] = useState('');
+  const [selectedNotesStudent, setSelectedNotesStudent] = useState('');
+
+  const handleShowNotes = (notes: string, studentName: string) => {
+    setSelectedNotesContent(notes);
+    setSelectedNotesStudent(studentName);
+    setShowNotesModal(true);
+  };
 
   // User form states
   const [userUsername, setUserUsername] = useState('');
@@ -1465,6 +1475,7 @@ export default function AdminDashboard() {
                       <th style={{ padding: '1rem' }}>Lớp</th>
                       <th style={{ padding: '1rem' }}>Giai đoạn/Buổi</th>
                       <th style={{ padding: '1rem' }}>File</th>
+                      <th style={{ padding: '1rem' }}>Ghi chú</th>
                       <th style={{ padding: '1rem' }}>Ngày nộp</th>
                       <th style={{ padding: '1rem', textAlign: 'center' }}>Thao tác</th>
                     </tr>
@@ -1489,7 +1500,7 @@ export default function AdminDashboard() {
                               let dotColor = '#6366f1';
                               let labelText = 'Xem liên kết';
                               let isDot = false;
-
+ 
                               if (isCanva) {
                                 badgeColor = '#38bdf8';
                                 badgeBg = 'rgba(56, 189, 248, 0.08)';
@@ -1512,7 +1523,7 @@ export default function AdminDashboard() {
                                 labelText = 'MEGA Link';
                                 isDot = true;
                               }
-
+ 
                               return (
                                 <a 
                                   href={item.fileUrl} 
@@ -1549,6 +1560,27 @@ export default function AdminDashboard() {
                             })()
                           ) : (
                             <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem', fontStyle: 'italic' }}>Không có tệp</span>
+                          )}
+                        </td>
+                        <td data-label="Ghi chú" style={{ padding: '1rem' }}>
+                          {item.notes ? (
+                            <button
+                              type="button"
+                              className="btn btn-neutral"
+                              style={{
+                                padding: '4px 10px',
+                                height: 'auto',
+                                fontSize: '0.8rem',
+                                border: '1px solid var(--card-border)',
+                                cursor: 'pointer',
+                                whiteSpace: 'nowrap'
+                              }}
+                              onClick={() => handleShowNotes(item.notes || '', item.fullName)}
+                            >
+                              Xem chi tiết
+                            </button>
+                          ) : (
+                            <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem', fontStyle: 'italic' }}>Không có ghi chú</span>
                           )}
                         </td>
                         <td data-label="Ngày nộp" style={{ padding: '1rem' }}>{preventOrphan(formatDate(item.createdAt))}</td>
@@ -2202,6 +2234,65 @@ export default function AdminDashboard() {
               </div>
 
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Xem Chi Tiết Ghi Chú */}
+      {showNotesModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(2, 6, 23, 0.85)',
+          backdropFilter: 'blur(8px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 9999,
+          padding: '1rem'
+        }}>
+          <div className="glass-card" style={{ 
+            width: '100%', 
+            maxWidth: '500px', 
+            padding: '2rem', 
+            animation: 'scaleUp 0.3s ease-out', 
+            maxHeight: '90vh', 
+            overflowY: 'auto' 
+          }}>
+            <h3 style={{ fontSize: '1.25rem', fontWeight: '700', marginBottom: '1rem', fontFamily: 'var(--font-heading)' }}>
+              Chi Tiết Ghi Chú
+            </h3>
+            <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '1.5rem' }}>
+              Học viên: <strong style={{ color: 'var(--primary)' }}>{selectedNotesStudent}</strong>
+            </p>
+            <div style={{
+              background: 'rgba(255, 255, 255, 0.02)',
+              border: '1px solid var(--card-border)',
+              borderRadius: '8px',
+              padding: '1rem',
+              color: 'var(--text-primary)',
+              fontSize: '0.95rem',
+              lineHeight: '1.6',
+              whiteSpace: 'pre-wrap',
+              marginBottom: '1.5rem',
+              maxHeight: '300px',
+              overflowY: 'auto'
+            }}>
+              {selectedNotesContent}
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <button 
+                type="button" 
+                className="btn btn-neutral" 
+                style={{ padding: '0.5rem 1.5rem', cursor: 'pointer' }}
+                onClick={() => setShowNotesModal(false)}
+              >
+                Đóng
+              </button>
+            </div>
           </div>
         </div>
       )}
