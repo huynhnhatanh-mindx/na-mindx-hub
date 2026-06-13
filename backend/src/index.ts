@@ -5,33 +5,17 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import { google } from 'googleapis';
-import { Storage } from 'megajs';
 import mongoose from 'mongoose';
 import sanitize from 'mongo-sanitize';
 import crypto from 'crypto';
 import nodemailer from 'nodemailer';
 import { Transform } from 'stream';
 
-// Load environment variables from workspace root .env
+// Load environment variables based on NODE_ENV (defaults to .env.local in dev, .env.production in prod)
+const envFile = process.env.NODE_ENV === 'production' ? '.env.production' : '.env.local';
+dotenv.config({ path: path.join(__dirname, '../../', envFile) });
+// Fallback loading from root .env if environment-specific files don't exist
 dotenv.config({ path: path.join(__dirname, '../../.env') });
-
-// Dynamic environment configuration resolver (Development vs Production)
-const isProd = process.env.NODE_ENV === 'production' || process.env.RENDER === 'true';
-if (isProd) {
-  if (process.env.GOOGLE_REDIRECT_URI_PROD) {
-    process.env.GOOGLE_REDIRECT_URI = process.env.GOOGLE_REDIRECT_URI_PROD;
-  }
-  if (process.env.FRONTEND_URL_PROD) {
-    process.env.FRONTEND_URL = process.env.FRONTEND_URL_PROD;
-  }
-} else {
-  if (process.env.GOOGLE_REDIRECT_URI_DEV) {
-    process.env.GOOGLE_REDIRECT_URI = process.env.GOOGLE_REDIRECT_URI_DEV;
-  }
-  if (process.env.FRONTEND_URL_DEV) {
-    process.env.FRONTEND_URL = process.env.FRONTEND_URL_DEV;
-  }
-}
 
 // Helper to create nodemailer transporter based on env configs (supports Gmail, Custom SMTP & Resend)
 const emailHost = process.env.EMAIL_HOST || 'smtp.resend.com';
@@ -126,12 +110,20 @@ const classSchema = new mongoose.Schema({
   endTime: { type: String, default: "10:00" },
   checkpoint1StartDate: { type: Date },
   checkpoint1Deadline: { type: Date },
+  checkpoint1LateType: { type: String, enum: ['none', 'unlimited', 'limited'], default: 'none' },
+  checkpoint1LateDeadline: { type: Date },
   checkpoint2StartDate: { type: Date },
   checkpoint2Deadline: { type: Date },
+  checkpoint2LateType: { type: String, enum: ['none', 'unlimited', 'limited'], default: 'none' },
+  checkpoint2LateDeadline: { type: Date },
   finalProjectStartDate: { type: Date },
   finalProjectDeadline: { type: Date },
+  finalProjectLateType: { type: String, enum: ['none', 'unlimited', 'limited'], default: 'none' },
+  finalProjectLateDeadline: { type: Date },
   presentationStartDate: { type: Date },
   presentationDeadline: { type: Date },
+  presentationLateType: { type: String, enum: ['none', 'unlimited', 'limited'], default: 'none' },
+  presentationLateDeadline: { type: Date },
   allowLateUpload: { type: Boolean, default: false }
 });
 const ClassModel = mongoose.model('Class', classSchema);
@@ -419,26 +411,7 @@ async function deleteSubmissionFileFromStorage(submission: any) {
     return;
   }
 
-  if (storageProvider === 'mega' && megaStorage) {
-    try {
-      if (megaInitPromise) {
-        await megaInitPromise;
-      }
-      let fileToDelete = null;
-      if (megaFolder && megaFolder.children) {
-        fileToDelete = megaFolder.children.find((f: any) => f.name === submission.fileName);
-      }
-      if (!fileToDelete && megaStorage.files) {
-        fileToDelete = Object.values(megaStorage.files).find((f: any) => f.name === submission.fileName);
-      }
-      if (fileToDelete) {
-        await (fileToDelete as any).delete(true);
-        console.log(`[MEGA]: Deleted file "${submission.fileName}" from MEGA.`);
-      }
-    } catch (megaErr: any) {
-      console.error(`[MEGA Error]: Failed to delete file on MEGA: ${megaErr.message}`);
-    }
-  }
+
 }
 
 async function logAudit(action: string, resource: string, details: string, user: string, role: string = 'unknown') {
@@ -672,12 +645,7 @@ let storageProvider = process.env.STORAGE_PROVIDER || 'local';
 let drive: any = null;
 const KEY_FILE_NAME = 'google-drive-key.json';
 const KEY_FILE_PATH = path.join(__dirname, '..', KEY_FILE_NAME);
-const SCOPES = ['https://www.googleapis.com/auth/drive.file'];
-
-// Setup MEGA
-let megaStorage: any = null;
-let megaFolder: any = null;
-let megaInitPromise: Promise<any> | null = null;
+const SCOPES = ['https://www.googleapis.com/auth/drive'];
 
 // Tự động phát hiện Storage Provider nếu chưa được chỉ định cụ thể
 if (!process.env.STORAGE_PROVIDER) {
@@ -688,8 +656,6 @@ if (!process.env.STORAGE_PROVIDER) {
         storageProvider = 'google-drive';
       }
     } catch (e) { }
-  } else if (process.env.MEGA_EMAIL && process.env.MEGA_EMAIL !== 'YOUR_MEGA_EMAIL_HERE' && process.env.MEGA_PASSWORD && process.env.MEGA_PASSWORD !== 'YOUR_MEGA_PASSWORD_HERE') {
-    storageProvider = 'mega';
   }
 }
 
@@ -724,42 +690,6 @@ if (storageProvider === 'google-drive') {
   }
 }
 
-// Khởi tạo MEGA
-if (storageProvider === 'mega') {
-  const email = process.env.MEGA_EMAIL;
-  const password = process.env.MEGA_PASSWORD;
-  const folderName = process.env.MEGA_FOLDER_NAME || 'NA MindX Hub';
-
-  if (email && email !== 'YOUR_MEGA_EMAIL_HERE' && password && password !== 'YOUR_MEGA_PASSWORD_HERE') {
-    console.log(`[MEGA]: Đang kết nối tới tài khoản ${email}...`);
-    megaInitPromise = new Storage({ email, password }).ready
-      .then(async (storage) => {
-        megaStorage = storage;
-
-        const children = storage.root.children || [];
-        let folder = children.find(
-          (child: any) => child.name === folderName && child.directory
-        );
-
-        if (!folder) {
-          console.log(`[MEGA]: Thư mục "${folderName}" chưa tồn tại. Đang tạo thư mục mới...`);
-          folder = await storage.root.mkdir(folderName);
-        }
-
-        megaFolder = folder;
-        console.log(`[MEGA]: Kết nối thành công! Đã chuẩn bị sẵn sàng thư mục "${folderName}".`);
-      })
-      .catch((err: any) => {
-        console.error(`[MEGA Error]: Đăng nhập thất bại. Chi tiết: ${err.message}`);
-        console.warn(`[MEGA]: Hệ thống tự động chuyển sang lưu trữ cục bộ.`);
-        storageProvider = 'local';
-      });
-  } else {
-    console.warn(`[MEGA Warning]: Chưa cấu hình email/mật khẩu trong file .env hoặc đang sử dụng giá trị mặc định.`);
-    console.warn(`[MEGA]: Hệ thống tự động chuyển sang lưu trữ cục bộ.`);
-    storageProvider = 'local';
-  }
-}
 
 // Hàm hỗ trợ tải tệp tin lên Google Drive nhận stream để hỗ trợ đo tiến trình
 async function uploadToGoogleDrive(bodyStream: any, driveFileName: string, mimeType: string): Promise<string> {
@@ -999,6 +929,7 @@ app.use(cors({
 }));
 
 app.use(express.json());
+app.use('/uploads', express.static(uploadDir));
 
 // API Health Check
 app.get('/api/health', (req: Request, res: Response) => {
@@ -1168,6 +1099,12 @@ const adminAuth = async (req: Request, res: Response, next: any) => {
     if (role !== 'admin') {
       return res.status(403).json({ error: 'Bạn không có quyền truy cập chức năng này.' });
     }
+    if (useMongoDB) {
+      const user = await UserModel.findOne({ username });
+      if (!user || user.status === 'inactive') {
+        return res.status(401).json({ error: 'Tài khoản của bạn đã bị khóa hoặc không tồn tại. Vui lòng liên hệ Admin.' });
+      }
+    }
     (req as any).user = { username, role };
     next();
   } catch (e) {
@@ -1191,6 +1128,12 @@ const adminOrTeacherAuth = async (req: Request, res: Response, next: any) => {
     if (role !== 'admin' && role !== 'teacher') {
       return res.status(403).json({ error: 'Bạn không có quyền truy cập chức năng này.' });
     }
+    if (useMongoDB) {
+      const user = await UserModel.findOne({ username });
+      if (!user || user.status === 'inactive') {
+        return res.status(401).json({ error: 'Tài khoản của bạn đã bị khóa hoặc không tồn tại. Vui lòng liên hệ Admin.' });
+      }
+    }
     // Lưu thông tin người dùng vào request để sử dụng trong các API
     (req as any).user = { username, role };
     next();
@@ -1198,6 +1141,113 @@ const adminOrTeacherAuth = async (req: Request, res: Response, next: any) => {
     return res.status(401).json({ error: 'Mã xác thực không hợp lệ.' });
   }
 };
+
+// --- CƠ CHẾ REALTIME QUA SERVER-SENT EVENTS (SSE) ---
+
+interface SSEClient {
+  id: string;
+  res: Response;
+  role?: string;
+  username?: string;
+}
+
+let sseClients: SSEClient[] = [];
+
+// Hàm phát sóng sự kiện tới các máy khách đang kết nối
+function broadcastSSE(eventType: string, data: any) {
+  const payload = JSON.stringify(data);
+  console.log(`[SSE Broadcast]: Phát sự kiện "${eventType}" tới ${sseClients.length} clients.`);
+  sseClients.forEach(client => {
+    try {
+      client.res.write(`event: ${eventType}\n`);
+      client.res.write(`data: ${payload}\n\n`);
+    } catch (err) {
+      console.warn(`[SSE Warning]: Lỗi gửi dữ liệu tới client ${client.id}:`, (err as any).message);
+    }
+  });
+}
+
+// Hàm bắt buộc đăng xuất người dùng tức thời khi bị khóa tài khoản
+function forceLogoutUser(username: string) {
+  const targetClients = sseClients.filter(c => c.username === username);
+  console.log(`[SSE Force Logout]: Yêu cầu đăng xuất tài khoản "${username}" trên ${targetClients.length} thiết bị.`);
+  targetClients.forEach(client => {
+    try {
+      client.res.write(`event: force-logout\n`);
+      client.res.write(`data: ${JSON.stringify({ username, reason: 'Tài khoản của bạn đã bị vô hiệu hóa bởi Admin.' })}\n\n`);
+      client.res.end();
+    } catch (err) {
+      console.warn(`[SSE Force Logout Error]: Lỗi gửi sự kiện force-logout tới client ${client.id}:`, (err as any).message);
+    }
+  });
+  sseClients = sseClients.filter(c => c.username !== username);
+}
+// Endpoint đăng ký kênh stream realtime (SSE)
+app.get('/api/realtime/stream', (req: Request, res: Response) => {
+  const token = req.query.token as string;
+  let verified = token ? verifySecureToken(token) : null;
+  
+  const isGuest = !verified;
+  const username = verified ? verified.username : 'guest-' + crypto.randomUUID().substring(0, 8);
+  const role = verified ? verified.role : 'guest';
+
+  // Cấu hình headers cho Server-Sent Events
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no'); // Tắt buffering để gửi lập tức
+
+  const clientId = crypto.randomUUID();
+  const newClient: SSEClient = {
+    id: clientId,
+    res,
+    username,
+    role
+  };
+  sseClients.push(newClient);
+  console.log(`[SSE]: Client kết nối. Role: ${role}, Username: ${username}. Tổng số: ${sseClients.length}`);
+
+  // Gửi sự kiện chào mừng
+  res.write(`event: connected\n`);
+  res.write(`data: ${JSON.stringify({ status: 'connected', clientId })}\n\n`);
+
+  // Gửi ping giữ kết nối mỗi 20 giây
+  const keepAliveInterval = setInterval(() => {
+    res.write(': keepalive ping\n\n');
+  }, 20000);
+
+  req.on('close', () => {
+    clearInterval(keepAliveInterval);
+    sseClients = sseClients.filter(c => c.id !== clientId);
+    console.log(`[SSE]: Client ngắt kết nối. Còn lại: ${sseClients.length}`);
+  });
+});
+
+// Middleware tự động phát sự kiện realtime khi Admin/Giáo viên thay đổi dữ liệu
+app.use('/api/admin', (req, res, next) => {
+  if (['POST', 'PUT', 'DELETE'].includes(req.method)) {
+    const originalJson = res.json.bind(res);
+    res.json = function(body?: any): any {
+      const result = originalJson(body);
+      if (res.statusCode >= 200 && res.statusCode < 300) {
+        const urlPath = req.originalUrl;
+        if (urlPath.includes('/classes')) {
+          broadcastSSE('class-update', { method: req.method, path: urlPath });
+        } else if (urlPath.includes('/students')) {
+          broadcastSSE('student-update', { method: req.method, path: urlPath });
+        } else if (urlPath.includes('/teachers')) {
+          broadcastSSE('teacher-update', { method: req.method, path: urlPath });
+        } else if (urlPath.includes('/users')) {
+          broadcastSSE('user-update', { method: req.method, path: urlPath });
+        } else if (urlPath.includes('/submissions')) {
+          broadcastSSE('submission-update', { method: req.method, path: urlPath });
+        }
+      }
+      return result;
+    };
+  }
+  next();
+});
 
 // API Đăng nhập
 app.post('/api/auth/login', async (req: Request, res: Response) => {
@@ -1286,7 +1336,7 @@ app.get('/api/auth/google/url', async (req: Request, res: Response) => {
       scope: [
         'https://www.googleapis.com/auth/userinfo.email',
         'https://www.googleapis.com/auth/userinfo.profile',
-        'https://www.googleapis.com/auth/drive.file'
+        'https://www.googleapis.com/auth/drive'
       ],
       state: state
     });
@@ -1314,7 +1364,7 @@ app.get('/api/auth/google/callback', async (req: Request, res: Response) => {
     
     // Kiểm tra xem người dùng đã cấp quyền Google Drive hay chưa
     const grantedScopes = tokens.scope || '';
-    if (!grantedScopes.includes('https://www.googleapis.com/auth/drive.file')) {
+    if (!grantedScopes.includes('https://www.googleapis.com/auth/drive')) {
       const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
       return res.redirect(`${frontendUrl}/google-setup?status=error&message=${encodeURIComponent('Bạn bắt buộc phải tích chọn đồng ý cấp quyền truy cập và quản lý tệp Google Drive để hoàn tất liên kết tài khoản.')}`);
     }
@@ -1679,8 +1729,17 @@ app.get('/api/admin/users', adminAuth, async (req: Request, res: Response) => {
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 10;
     const search = req.query.search as string;
+    const role = req.query.role as string;
+    const status = req.query.status as string;
 
     const query: any = {};
+    if (role) {
+      query.role = role;
+    }
+    if (status) {
+      query.status = status;
+    }
+
     if (search) {
       query.$or = [
         { username: { $regex: search, $options: 'i' } },
@@ -1806,6 +1865,10 @@ app.put('/api/admin/users/:id', adminAuth, async (req: Request, res: Response) =
     if (status) user.status = status;
     await user.save();
     await logAudit('UPDATE', 'User', `Cập nhật tài khoản: ${user.username}`, (req as any).user.username, (req as any).user.role);
+
+    if (status === 'inactive') {
+      forceLogoutUser(user.username);
+    }
 
     // Sync to Teacher collection
     if (oldRole === 'teacher' && user.role !== 'teacher') {
@@ -1959,6 +2022,11 @@ app.post('/api/admin/users/bulk-update-status', adminAuth, async (req: Request, 
     
     await UserModel.updateMany({ _id: { $in: ids } }, { status });
     await logAudit('BULK_UPDATE_STATUS', 'User', `Cập nhật trạng thái "${status}" cho ${ids.length} tài khoản`, reqUser.username, reqUser.role);
+
+    if (status === 'inactive') {
+      usersToUpdate.forEach(u => forceLogoutUser(u.username));
+    }
+
     res.json({ message: 'Cập nhật trạng thái hàng loạt thành công.' });
   } catch (err: any) {
     res.status(500).json({ error: 'Lỗi cập nhật hàng loạt: ' + err.message });
@@ -1972,11 +2040,14 @@ app.get('/api/admin/classes', adminOrTeacherAuth, async (req: Request, res: Resp
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 10;
     const search = req.query.search as string;
+    const teacherName = req.query.teacherName as string;
 
     const query: any = {};
     if (role === 'teacher') {
       const user = await UserModel.findOne({ username });
-      const teacherName = user ? user.displayName : '';
+      const tName = user ? user.displayName : '';
+      query.teacherName = tName;
+    } else if (role === 'admin' && teacherName) {
       query.teacherName = teacherName;
     }
     
@@ -2016,12 +2087,20 @@ app.post('/api/admin/classes', adminOrTeacherAuth, async (req: Request, res: Res
     const endTime = sanitize(req.body.endTime) || "10:00";
     const checkpoint1StartDate = req.body.checkpoint1StartDate ? parseVietnamDate(req.body.checkpoint1StartDate) : undefined;
     const checkpoint1Deadline = req.body.checkpoint1Deadline ? parseVietnamDate(req.body.checkpoint1Deadline) : undefined;
+    const checkpoint1LateType = sanitize(req.body.checkpoint1LateType) || 'none';
+    const checkpoint1LateDeadline = req.body.checkpoint1LateDeadline ? parseVietnamDate(req.body.checkpoint1LateDeadline) : undefined;
     const checkpoint2StartDate = req.body.checkpoint2StartDate ? parseVietnamDate(req.body.checkpoint2StartDate) : undefined;
     const checkpoint2Deadline = req.body.checkpoint2Deadline ? parseVietnamDate(req.body.checkpoint2Deadline) : undefined;
+    const checkpoint2LateType = sanitize(req.body.checkpoint2LateType) || 'none';
+    const checkpoint2LateDeadline = req.body.checkpoint2LateDeadline ? parseVietnamDate(req.body.checkpoint2LateDeadline) : undefined;
     const finalProjectStartDate = req.body.finalProjectStartDate ? parseVietnamDate(req.body.finalProjectStartDate) : undefined;
     const finalProjectDeadline = req.body.finalProjectDeadline ? parseVietnamDate(req.body.finalProjectDeadline) : undefined;
+    const finalProjectLateType = sanitize(req.body.finalProjectLateType) || 'none';
+    const finalProjectLateDeadline = req.body.finalProjectLateDeadline ? parseVietnamDate(req.body.finalProjectLateDeadline) : undefined;
     const presentationStartDate = req.body.presentationStartDate ? parseVietnamDate(req.body.presentationStartDate) : undefined;
     const presentationDeadline = req.body.presentationDeadline ? parseVietnamDate(req.body.presentationDeadline) : undefined;
+    const presentationLateType = sanitize(req.body.presentationLateType) || 'none';
+    const presentationLateDeadline = req.body.presentationLateDeadline ? parseVietnamDate(req.body.presentationLateDeadline) : undefined;
     const allowLateUpload = req.body.allowLateUpload === true;
 
     if (!name || !teacherName) {
@@ -2043,12 +2122,20 @@ app.post('/api/admin/classes', adminOrTeacherAuth, async (req: Request, res: Res
       endTime,
       checkpoint1StartDate,
       checkpoint1Deadline,
+      checkpoint1LateType,
+      checkpoint1LateDeadline,
       checkpoint2StartDate,
       checkpoint2Deadline,
+      checkpoint2LateType,
+      checkpoint2LateDeadline,
       finalProjectStartDate,
       finalProjectDeadline,
+      finalProjectLateType,
+      finalProjectLateDeadline,
       presentationStartDate,
       presentationDeadline,
+      presentationLateType,
+      presentationLateDeadline,
       allowLateUpload
     });
     await newClass.save();
@@ -2071,12 +2158,20 @@ app.put('/api/admin/classes/:id', adminOrTeacherAuth, async (req: Request, res: 
     const endTime = req.body.endTime !== undefined ? sanitize(req.body.endTime) : undefined;
     const checkpoint1StartDate = req.body.checkpoint1StartDate === null || req.body.checkpoint1StartDate === '' ? null : (req.body.checkpoint1StartDate ? parseVietnamDate(req.body.checkpoint1StartDate) : undefined);
     const checkpoint1Deadline = req.body.checkpoint1Deadline === null || req.body.checkpoint1Deadline === '' ? null : (req.body.checkpoint1Deadline ? parseVietnamDate(req.body.checkpoint1Deadline) : undefined);
+    const checkpoint1LateType = req.body.checkpoint1LateType !== undefined ? sanitize(req.body.checkpoint1LateType) : undefined;
+    const checkpoint1LateDeadline = req.body.checkpoint1LateDeadline === null || req.body.checkpoint1LateDeadline === '' ? null : (req.body.checkpoint1LateDeadline ? parseVietnamDate(req.body.checkpoint1LateDeadline) : undefined);
     const checkpoint2StartDate = req.body.checkpoint2StartDate === null || req.body.checkpoint2StartDate === '' ? null : (req.body.checkpoint2StartDate ? parseVietnamDate(req.body.checkpoint2StartDate) : undefined);
     const checkpoint2Deadline = req.body.checkpoint2Deadline === null || req.body.checkpoint2Deadline === '' ? null : (req.body.checkpoint2Deadline ? parseVietnamDate(req.body.checkpoint2Deadline) : undefined);
+    const checkpoint2LateType = req.body.checkpoint2LateType !== undefined ? sanitize(req.body.checkpoint2LateType) : undefined;
+    const checkpoint2LateDeadline = req.body.checkpoint2LateDeadline === null || req.body.checkpoint2LateDeadline === '' ? null : (req.body.checkpoint2LateDeadline ? parseVietnamDate(req.body.checkpoint2LateDeadline) : undefined);
     const finalProjectStartDate = req.body.finalProjectStartDate === null || req.body.finalProjectStartDate === '' ? null : (req.body.finalProjectStartDate ? parseVietnamDate(req.body.finalProjectStartDate) : undefined);
     const finalProjectDeadline = req.body.finalProjectDeadline === null || req.body.finalProjectDeadline === '' ? null : (req.body.finalProjectDeadline ? parseVietnamDate(req.body.finalProjectDeadline) : undefined);
+    const finalProjectLateType = req.body.finalProjectLateType !== undefined ? sanitize(req.body.finalProjectLateType) : undefined;
+    const finalProjectLateDeadline = req.body.finalProjectLateDeadline === null || req.body.finalProjectLateDeadline === '' ? null : (req.body.finalProjectLateDeadline ? parseVietnamDate(req.body.finalProjectLateDeadline) : undefined);
     const presentationStartDate = req.body.presentationStartDate === null || req.body.presentationStartDate === '' ? null : (req.body.presentationStartDate ? parseVietnamDate(req.body.presentationStartDate) : undefined);
     const presentationDeadline = req.body.presentationDeadline === null || req.body.presentationDeadline === '' ? null : (req.body.presentationDeadline ? parseVietnamDate(req.body.presentationDeadline) : undefined);
+    const presentationLateType = req.body.presentationLateType !== undefined ? sanitize(req.body.presentationLateType) : undefined;
+    const presentationLateDeadline = req.body.presentationLateDeadline === null || req.body.presentationLateDeadline === '' ? null : (req.body.presentationLateDeadline ? parseVietnamDate(req.body.presentationLateDeadline) : undefined);
     const allowLateUpload = req.body.allowLateUpload !== undefined ? req.body.allowLateUpload === true : undefined;
 
     const cls = await ClassModel.findById(req.params.id);
@@ -2106,12 +2201,20 @@ app.put('/api/admin/classes/:id', adminOrTeacherAuth, async (req: Request, res: 
     if (endTime !== undefined) (cls as any).endTime = endTime;
     if (checkpoint1StartDate !== undefined) (cls as any).checkpoint1StartDate = checkpoint1StartDate;
     if (checkpoint1Deadline !== undefined) (cls as any).checkpoint1Deadline = checkpoint1Deadline;
+    if (checkpoint1LateType !== undefined) (cls as any).checkpoint1LateType = checkpoint1LateType;
+    if (checkpoint1LateDeadline !== undefined) (cls as any).checkpoint1LateDeadline = checkpoint1LateDeadline;
     if (checkpoint2StartDate !== undefined) (cls as any).checkpoint2StartDate = checkpoint2StartDate;
     if (checkpoint2Deadline !== undefined) (cls as any).checkpoint2Deadline = checkpoint2Deadline;
+    if (checkpoint2LateType !== undefined) (cls as any).checkpoint2LateType = checkpoint2LateType;
+    if (checkpoint2LateDeadline !== undefined) (cls as any).checkpoint2LateDeadline = checkpoint2LateDeadline;
     if (finalProjectStartDate !== undefined) (cls as any).finalProjectStartDate = finalProjectStartDate;
     if (finalProjectDeadline !== undefined) (cls as any).finalProjectDeadline = finalProjectDeadline;
+    if (finalProjectLateType !== undefined) (cls as any).finalProjectLateType = finalProjectLateType;
+    if (finalProjectLateDeadline !== undefined) (cls as any).finalProjectLateDeadline = finalProjectLateDeadline;
     if (presentationStartDate !== undefined) (cls as any).presentationStartDate = presentationStartDate;
     if (presentationDeadline !== undefined) (cls as any).presentationDeadline = presentationDeadline;
+    if (presentationLateType !== undefined) (cls as any).presentationLateType = presentationLateType;
+    if (presentationLateDeadline !== undefined) (cls as any).presentationLateDeadline = presentationLateDeadline;
     if (allowLateUpload !== undefined) (cls as any).allowLateUpload = allowLateUpload;
 
     await cls.save();
@@ -2332,6 +2435,12 @@ app.get('/api/admin/students', adminOrTeacherAuth, async (req: Request, res: Res
         query.className = classNameFilter.trim();
       }
     }
+
+    const statusFilter = req.query.status as string;
+    if (statusFilter) {
+      query.status = statusFilter;
+    }
+
     if (search) {
       query.$or = [
         { name: { $regex: search, $options: 'i' } },
@@ -2543,13 +2652,26 @@ app.get('/api/admin/submissions', adminOrTeacherAuth, async (req: Request, res: 
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 10;
     const search = req.query.search as string;
+    const className = req.query.className as string;
+    const stage = req.query.stage as string;
+    const teacher = req.query.teacher as string;
 
     const query: any = {};
     if (role === 'teacher') {
       const user = await UserModel.findOne({ username });
       const teacherName = user ? user.displayName : '';
       query.teacher = teacherName;
+    } else if (role === 'admin' && teacher) {
+      query.teacher = teacher;
     }
+
+    if (className) {
+      query.className = className;
+    }
+    if (stage) {
+      query.stage = stage;
+    }
+
     if (search) {
       query.$or = [
         { fullName: { $regex: search, $options: 'i' } },
@@ -2779,6 +2901,13 @@ app.post('/api/upload-link', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Vui lòng nhập đầy đủ các thông tin: Giáo viên, Lớp học, Họ tên, Giai đoạn, Buổi học và Liên kết bài nộp.' });
     }
 
+    // Enforce that only 'Bài thuyết trình' stage is allowed to submit a link
+    const stageLower = stage.toLowerCase();
+    const isPresentation = stageLower.includes('thuyet trinh') || stageLower.includes('thuyết trình') || stageLower.includes('presentation');
+    if (!isPresentation) {
+      return res.status(400).json({ error: 'Hình thức nộp đường dẫn liên kết chỉ áp dụng cho giai đoạn Bài thuyết trình.' });
+    }
+
     // Check student status active/inactive
     if (useMongoDB && fullName !== 'N/A' && className !== 'N/A') {
       const student = await StudentModel.findOne({ name: fullName, className: className });
@@ -2799,20 +2928,33 @@ app.post('/api/upload-link', async (req: Request, res: Response) => {
         if (!isTheory) {
           let startDeadline: Date | null = null;
           let endDeadline: Date | null = null;
+          let lateType = 'none';
+          let lateDeadline: Date | null = null;
 
           if (stageLower.includes('checkpoint 1')) {
             startDeadline = (cls as any).checkpoint1StartDate ? parseVietnamDate((cls as any).checkpoint1StartDate) : (cls.startDate ? calculateVietnamDeadline(cls.startDate, 28, cls.startTime || "08:00") : null);
             endDeadline = cls.checkpoint1Deadline ? parseVietnamDate(cls.checkpoint1Deadline) : (cls.startDate ? calculateVietnamDeadline(cls.startDate, 28, cls.endTime || "10:00") : null);
+            lateType = (cls as any).checkpoint1LateType || 'none';
+            lateDeadline = (cls as any).checkpoint1LateDeadline ? parseVietnamDate((cls as any).checkpoint1LateDeadline) : null;
           } else if (stageLower.includes('checkpoint 2')) {
             startDeadline = (cls as any).checkpoint2StartDate ? parseVietnamDate((cls as any).checkpoint2StartDate) : (cls.startDate ? calculateVietnamDeadline(cls.startDate, 56, cls.startTime || "08:00") : null);
             endDeadline = cls.checkpoint2Deadline ? parseVietnamDate(cls.checkpoint2Deadline) : (cls.startDate ? calculateVietnamDeadline(cls.startDate, 56, cls.endTime || "10:00") : null);
+            lateType = (cls as any).checkpoint2LateType || 'none';
+            lateDeadline = (cls as any).checkpoint2LateDeadline ? parseVietnamDate((cls as any).checkpoint2LateDeadline) : null;
           } else if (stageLower.includes('san pham cuoi khoa') || stageLower.includes('sản phẩm cuối khóa')) {
             startDeadline = (cls as any).finalProjectStartDate ? parseVietnamDate((cls as any).finalProjectStartDate) : (cls.startDate ? calculateVietnamDeadline(cls.startDate, 0, cls.startTime || "08:00") : null);
             endDeadline = cls.finalProjectDeadline ? parseVietnamDate(cls.finalProjectDeadline) : (cls.startDate ? calculateVietnamDeadline(cls.startDate, 85, cls.endTime || "10:00") : null);
+            lateType = (cls as any).finalProjectLateType || 'none';
+            lateDeadline = (cls as any).finalProjectLateDeadline ? parseVietnamDate((cls as any).finalProjectLateDeadline) : null;
           } else if (stageLower.includes('thuyet trinh') || stageLower.includes('thuyết trình') || stageLower.includes('presentation')) {
             startDeadline = (cls as any).presentationStartDate ? parseVietnamDate((cls as any).presentationStartDate) : (cls.startDate ? calculateVietnamDeadline(cls.startDate, 0, cls.startTime || "08:00") : null);
             endDeadline = (cls as any).presentationDeadline ? parseVietnamDate((cls as any).presentationDeadline) : (cls.startDate ? calculateVietnamDeadline(cls.startDate, 91, cls.endTime || "10:00") : null);
+            lateType = (cls as any).presentationLateType || 'none';
+            lateDeadline = (cls as any).presentationLateDeadline ? parseVietnamDate((cls as any).presentationLateDeadline) : null;
           }
+
+          const effectiveLateType = (lateType === 'infinite' || lateType === 'unlimited') ? 'unlimited' :
+                                    (lateType === 'duration' || lateType === 'limited') ? 'limited' : 'none';
 
           if (startDeadline && new Date() < startDeadline) {
             const formattedStart = formatVietnamDateTime(startDeadline);
@@ -2821,11 +2963,20 @@ app.post('/api/upload-link', async (req: Request, res: Response) => {
             });
           }
 
-          if (endDeadline && new Date() > endDeadline && !cls.allowLateUpload) {
-            const formattedDeadline = formatVietnamDateTime(endDeadline);
-            return res.status(403).json({
-              error: `Đã quá hạn nộp bài cho giai đoạn này (${stage}). Hạn chót là: ${formattedDeadline}. Cổng nộp bài đã đóng.`
-            });
+          if (endDeadline && new Date() > endDeadline) {
+            if (effectiveLateType === 'none') {
+              const formattedDeadline = formatVietnamDateTime(endDeadline);
+              return res.status(403).json({
+                error: `Đã quá hạn nộp bài cho giai đoạn này (${stage}). Hạn chót là: ${formattedDeadline}. Cổng nộp bài đã đóng.`
+              });
+            } else if (effectiveLateType === 'limited') {
+              if (!lateDeadline || new Date() > lateDeadline) {
+                const formattedLateDeadline = lateDeadline ? formatVietnamDateTime(lateDeadline) : 'chưa xác định';
+                return res.status(403).json({
+                  error: `Đã quá hạn nộp bài muộn cho giai đoạn này (${stage}). Hạn chót nộp muộn là: ${formattedLateDeadline}. Cổng nộp bài đã đóng.`
+                });
+              }
+            }
           }
         }
       }
@@ -2990,6 +3141,12 @@ app.post('/api/upload-link', async (req: Request, res: Response) => {
       }
     }
 
+    try {
+      broadcastSSE('submission-update', { method: 'POST', path: req.originalUrl });
+    } catch (sseErr: any) {
+      console.error('[SSE Error]: Lỗi phát sóng sự kiện nộp bài qua liên kết:', sseErr.message);
+    }
+
     res.json({
       message: 'Nộp liên kết bài thuyết trình thành công!',
       files: [{ originalName: submissionName, filename: savedLink, size: 0, path: savedLink }]
@@ -3066,20 +3223,33 @@ app.post('/api/upload', (req: Request, res: Response, next: any) => {
         if (!isTheory) {
           let startDeadline: Date | null = null;
           let endDeadline: Date | null = null;
+          let lateType = 'none';
+          let lateDeadline: Date | null = null;
 
           if (stageLower.includes('checkpoint 1')) {
             startDeadline = (cls as any).checkpoint1StartDate ? parseVietnamDate((cls as any).checkpoint1StartDate) : (cls.startDate ? calculateVietnamDeadline(cls.startDate, 28, cls.startTime || "08:00") : null);
             endDeadline = cls.checkpoint1Deadline ? parseVietnamDate(cls.checkpoint1Deadline) : (cls.startDate ? calculateVietnamDeadline(cls.startDate, 28, cls.endTime || "10:00") : null);
+            lateType = (cls as any).checkpoint1LateType || 'none';
+            lateDeadline = (cls as any).checkpoint1LateDeadline ? parseVietnamDate((cls as any).checkpoint1LateDeadline) : null;
           } else if (stageLower.includes('checkpoint 2')) {
             startDeadline = (cls as any).checkpoint2StartDate ? parseVietnamDate((cls as any).checkpoint2StartDate) : (cls.startDate ? calculateVietnamDeadline(cls.startDate, 56, cls.startTime || "08:00") : null);
             endDeadline = cls.checkpoint2Deadline ? parseVietnamDate(cls.checkpoint2Deadline) : (cls.startDate ? calculateVietnamDeadline(cls.startDate, 56, cls.endTime || "10:00") : null);
+            lateType = (cls as any).checkpoint2LateType || 'none';
+            lateDeadline = (cls as any).checkpoint2LateDeadline ? parseVietnamDate((cls as any).checkpoint2LateDeadline) : null;
           } else if (stageLower.includes('san pham cuoi khoa') || stageLower.includes('sản phẩm cuối khóa')) {
             startDeadline = (cls as any).finalProjectStartDate ? parseVietnamDate((cls as any).finalProjectStartDate) : (cls.startDate ? calculateVietnamDeadline(cls.startDate, 0, cls.startTime || "08:00") : null);
             endDeadline = cls.finalProjectDeadline ? parseVietnamDate(cls.finalProjectDeadline) : (cls.startDate ? calculateVietnamDeadline(cls.startDate, 85, cls.endTime || "10:00") : null);
+            lateType = (cls as any).finalProjectLateType || 'none';
+            lateDeadline = (cls as any).finalProjectLateDeadline ? parseVietnamDate((cls as any).finalProjectLateDeadline) : null;
           } else if (stageLower.includes('thuyet trinh') || stageLower.includes('thuyết trình') || stageLower.includes('presentation')) {
             startDeadline = (cls as any).presentationStartDate ? parseVietnamDate((cls as any).presentationStartDate) : (cls.startDate ? calculateVietnamDeadline(cls.startDate, 0, cls.startTime || "08:00") : null);
             endDeadline = (cls as any).presentationDeadline ? parseVietnamDate((cls as any).presentationDeadline) : (cls.startDate ? calculateVietnamDeadline(cls.startDate, 91, cls.endTime || "10:00") : null);
+            lateType = (cls as any).presentationLateType || 'none';
+            lateDeadline = (cls as any).presentationLateDeadline ? parseVietnamDate((cls as any).presentationLateDeadline) : null;
           }
+
+          const effectiveLateType = (lateType === 'infinite' || lateType === 'unlimited') ? 'unlimited' :
+                                    (lateType === 'duration' || lateType === 'limited') ? 'limited' : 'none';
 
           if (startDeadline && new Date() < startDeadline) {
             for (const f of files) {
@@ -3093,16 +3263,30 @@ app.post('/api/upload', (req: Request, res: Response, next: any) => {
             });
           }
 
-          if (endDeadline && new Date() > endDeadline && !cls.allowLateUpload) {
-            for (const f of files) {
-              if (fs.existsSync(f.path)) {
-                fs.unlinkSync(f.path);
+          if (endDeadline && new Date() > endDeadline) {
+            if (effectiveLateType === 'none') {
+              for (const f of files) {
+                if (fs.existsSync(f.path)) {
+                  fs.unlinkSync(f.path);
+                }
+              }
+              const formattedDeadline = formatVietnamDateTime(endDeadline);
+              return res.status(403).json({
+                error: `Đã quá hạn nộp bài cho giai đoạn này (${stage}). Hạn chót là: ${formattedDeadline}. Cổng nộp bài đã đóng.`
+              });
+            } else if (effectiveLateType === 'limited') {
+              if (!lateDeadline || new Date() > lateDeadline) {
+                for (const f of files) {
+                  if (fs.existsSync(f.path)) {
+                    fs.unlinkSync(f.path);
+                  }
+                }
+                const formattedLateDeadline = lateDeadline ? formatVietnamDateTime(lateDeadline) : 'chưa xác định';
+                return res.status(403).json({
+                  error: `Đã quá hạn nộp bài muộn cho giai đoạn này (${stage}). Hạn chót nộp muộn là: ${formattedLateDeadline}. Cổng nộp bài đã đóng.`
+                });
               }
             }
-            const formattedDeadline = formatVietnamDateTime(endDeadline);
-            return res.status(403).json({
-              error: `Đã quá hạn nộp bài cho giai đoạn này (${stage}). Hạn chót là: ${formattedDeadline}. Cổng nộp bài đã đóng.`
-            });
           }
         }
       }
@@ -3226,45 +3410,7 @@ app.post('/api/upload', (req: Request, res: Response, next: any) => {
         throw new Error(`Giáo viên phụ trách lớp (${resolvedTeacherName}) chưa thực hiện liên kết Google Drive. Vui lòng liên hệ Giáo viên để hoàn tất kích hoạt lưu trữ.`);
       } else {
         // Lớp chưa phân công giáo viên hoặc chạy offline -> sử dụng lưu trữ mặc định
-        if (storageProvider === 'mega') {
-          try {
-            if (megaInitPromise) {
-              await megaInitPromise;
-            }
-            if (!megaFolder) {
-              throw new Error('Ứng dụng kết nối MEGA chưa được khởi tạo hoặc không tìm thấy thư mục lưu trữ.');
-            }
-
-            console.log(`[MEGA]: Đang tải lên tệp tin: ${targetFileName}...`);
-            const uploadStream = megaFolder.upload({
-              name: targetFileName,
-              size: file.size
-            });
-
-            const readStream = fs.createReadStream(localPath);
-            readStream.on('data', (chunk) => {
-              totalBytesUploaded += chunk.length;
-              const percent = Math.min(99, Math.round((totalBytesUploaded / totalSize) * 100));
-              sendProgress({ status: 'uploading', progress: percent });
-            });
-
-            readStream.pipe(uploadStream);
-            const megaFile = await uploadStream.complete;
-            fileUrl = await megaFile.link();
-
-            console.log(`[MEGA]: Tải lên thành công! Link MEGA: ${fileUrl}`);
-
-            if (fs.existsSync(localPath)) {
-              fs.unlinkSync(localPath);
-            }
-          } catch (err: any) {
-            console.error(`[MEGA Error]: Tải lên MEGA thất bại. Lỗi:`, err.message);
-            if (fs.existsSync(localPath)) {
-              fs.unlinkSync(localPath);
-            }
-            throw err;
-          }
-        } else if (storageProvider === 'google-drive' && drive) {
+        if (storageProvider === 'google-drive' && drive) {
           try {
             console.log(`[Google Drive]: Đang tải lên tệp tin: ${targetFileName}...`);
 
@@ -3295,10 +3441,16 @@ app.post('/api/upload', (req: Request, res: Response, next: any) => {
             throw err;
           }
         } else {
-          if (fs.existsSync(localPath)) {
-            fs.unlinkSync(localPath);
+          // Lưu cục bộ (local storage) dành cho môi trường Local / Offline
+          if (useMongoDB) {
+            if (fs.existsSync(localPath)) {
+              fs.unlinkSync(localPath);
+            }
+            throw new Error('Chế độ lưu trữ cục bộ (local storage) đã bị vô hiệu hóa trên môi trường cloud. Vui lòng gán giáo viên và liên kết Google Drive cho lớp này.');
+          } else {
+            console.log(`[Local Storage]: Lưu tệp cục bộ do đang chạy ở chế độ offline: ${targetFileName}`);
+            fileUrl = `/uploads/${path.basename(localPath)}`;
           }
-          throw new Error(`Chế độ lưu trữ cục bộ (local storage) đã bị vô hiệu hóa trên môi trường cloud. Hiện tại đang cấu hình lưu trữ là: ${storageProvider.toUpperCase()}`);
         }
       }
 
@@ -3438,6 +3590,13 @@ app.post('/api/upload', (req: Request, res: Response, next: any) => {
       message: successMessage,
       files: fileDetails
     });
+
+    try {
+      broadcastSSE('submission-update', { method: 'POST', path: req.originalUrl });
+    } catch (sseErr: any) {
+      console.error('[SSE Error]: Lỗi phát sóng sự kiện nộp tệp tin bài tập:', sseErr.message);
+    }
+
     res.end();
 
   } catch (error: any) {

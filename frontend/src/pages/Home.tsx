@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { UploadCloud, FileText, BookOpen } from 'lucide-react';
+import { UploadCloud, FileText } from 'lucide-react';
 
 type BackendStatus = 'checking' | 'online' | 'offline';
 
@@ -123,36 +123,6 @@ function Home() {
           </Link>
         </section>
 
-        {/* Coming Soon Resources Card */}
-        <section className="glass-card" style={{ opacity: 0.7, borderStyle: 'dashed' }}>
-          <div>
-            <div style={{
-              width: '48px',
-              height: '48px',
-              borderRadius: '12px',
-              background: 'rgba(255, 255, 255, 0.03)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: 'var(--text-muted)',
-              marginBottom: '1.5rem',
-              border: '1px solid rgba(255, 255, 255, 0.05)'
-            }}>
-              <BookOpen size={24} />
-            </div>
-
-            <h3 className="card-title" style={{ fontSize: '1.35rem', marginBottom: '0.75rem', color: 'var(--text-secondary)' }}>
-              Kho Tài Liệu <span style={{ fontSize: '0.75rem', fontWeight: 'normal', color: 'var(--secondary)', border: '1px solid var(--secondary)', padding: '2px 6px', borderRadius: '4px', marginLeft: '0.5rem' }}>Soon</span>
-            </h3>
-            <p style={{ color: 'var(--text-muted)', fontSize: '0.95rem', lineHeight: '1.6', marginBottom: '2rem' }}>
-              Nơi lưu trữ giáo trình, mã nguồn mẫu và tài liệu bổ trợ được chia sẻ trực tiếp từ Mentor Huỳnh Nhật Anh cho các thành viên lớp HCM4.
-            </p>
-          </div>
-
-          <button className="btn btn-outline" disabled style={{ cursor: 'not-allowed', color: 'var(--text-muted)' }}>
-            Đang phát triển...
-          </button>
-        </section>
 
       </main>
 

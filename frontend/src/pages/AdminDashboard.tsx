@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { formatDateTime } from '../utils/date';
 import { Search, Plus } from 'lucide-react';
 import { useToast } from '../components/Toast';
+import { useSSE } from '../hooks/useSSE';
+import { preventOrphan } from '../utils/text';
 
 interface UserData {
   _id: string;
@@ -206,7 +208,6 @@ export default function AdminDashboard() {
   const [classStartTime, setClassStartTime] = useState('08:00');
   const [classEndTime, setClassEndTime] = useState('10:00');
 
-  const [classAllowLateUpload, setClassAllowLateUpload] = useState(false);
   // Milestone deadlines (start and end times)
   const [classCp1StartDate, setClassCp1StartDate] = useState('');
   const [classCp1Deadline, setClassCp1Deadline] = useState('');
@@ -217,6 +218,15 @@ export default function AdminDashboard() {
   const [classPresentationStartDate, setClassPresentationStartDate] = useState('');
   const [classPresentationDeadline, setClassPresentationDeadline] = useState('');
 
+  const [classCp1LateType, setClassCp1LateType] = useState('none');
+  const [classCp1LateDeadline, setClassCp1LateDeadline] = useState('');
+  const [classCp2LateType, setClassCp2LateType] = useState('none');
+  const [classCp2LateDeadline, setClassCp2LateDeadline] = useState('');
+  const [classSpckLateType, setClassSpckLateType] = useState('none');
+  const [classSpckLateDeadline, setClassSpckLateDeadline] = useState('');
+  const [classPresentationLateType, setClassPresentationLateType] = useState('none');
+  const [classPresentationLateDeadline, setClassPresentationLateDeadline] = useState('');
+
   // Student form states
   const [studentName, setStudentName] = useState('');
   const [studentClass, setStudentClass] = useState('');
@@ -226,6 +236,44 @@ export default function AdminDashboard() {
   const [studentMaxUploadSize, setStudentMaxUploadSize] = useState<number>(20);
   const [studentStatus, setStudentStatus] = useState('active');
 
+  // Filter dropdown states
+  const [filterClass, setFilterClass] = useState('');
+  const [filterStage, setFilterStage] = useState('');
+  const [filterTeacher, setFilterTeacher] = useState('');
+  const [filterRole, setFilterRole] = useState('');
+  const [filterStatus, setFilterStatus] = useState('');
+
+  // Register EventSource (SSE) for real-time updates and immediate logout
+  useSSE({
+    'class-update': () => {
+      console.log('[SSE] Class update received, reloading...');
+      fetchData();
+    },
+    'student-update': () => {
+      console.log('[SSE] Student update received, reloading...');
+      fetchData();
+    },
+    'teacher-update': () => {
+      console.log('[SSE] Teacher update received, reloading...');
+      fetchData();
+    },
+    'user-update': () => {
+      console.log('[SSE] User update received, reloading...');
+      fetchData();
+    },
+    'submission-update': () => {
+      console.log('[SSE] Submission update received, reloading...');
+      fetchData();
+    },
+    'force-logout': (data) => {
+      console.log('[SSE] Force logout event received:', data);
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+      window.dispatchEvent(new Event('storage'));
+      alert(data?.reason || 'Tài khoản của bạn đã bị khóa hoặc vô hiệu hóa bởi Admin.');
+      navigate('/login');
+    }
+  });
 
   // Check login on load
   useEffect(() => {
@@ -263,11 +311,43 @@ export default function AdminDashboard() {
     setSearchQuery('');
     setSearchInput('');
     setSelectedIds([]);
+    // Reset filters
+    setFilterClass('');
+    setFilterStage('');
+    setFilterTeacher('');
+    setFilterRole('');
+    setFilterStatus('');
   }, [activeTab]);
 
   useEffect(() => {
     fetchData();
-  }, [activeTab, currentPage, searchQuery]);
+  }, [activeTab, currentPage, searchQuery, filterClass, filterStage, filterTeacher, filterRole, filterStatus]);
+
+  // Load classes and teachers for dropdown filters
+  useEffect(() => {
+    const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+    const loadDropdownData = async () => {
+      try {
+        const classRes = await fetchWithAuth(`${API_BASE_URL}/api/admin/classes?limit=1000`, { headers: getHeaders() });
+        if (classRes.ok) {
+          const classData = await classRes.json();
+          setClasses(classData.data || classData);
+        }
+        const teacherRes = await fetchWithAuth(`${API_BASE_URL}/api/teachers`);
+        if (teacherRes.ok) {
+          const teacherData = await teacherRes.json();
+          setTeachers(teacherData);
+        }
+      } catch (err) {
+        console.error('Lỗi tải danh sách lớp/giáo viên:', err);
+      }
+    };
+
+    const token = localStorage.getItem('token');
+    if (token) {
+      loadDropdownData();
+    }
+  }, [activeTab]);
 
   // Debounced search logic
   useEffect(() => {
@@ -300,7 +380,7 @@ export default function AdminDashboard() {
     };
   };
 
-    const fetchData = async () => {
+  const fetchData = async () => {
     setIsLoading(true);
     setError('');
     const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
@@ -308,6 +388,17 @@ export default function AdminDashboard() {
     try {
       const queryParams = new URLSearchParams({ page: currentPage.toString(), limit: '10' });
       if (searchQuery) queryParams.append('search', searchQuery);
+      if (filterClass) queryParams.append('className', filterClass);
+      if (filterStage) queryParams.append('stage', filterStage);
+      if (filterTeacher) {
+        if (activeTab === 'classes') {
+          queryParams.append('teacherName', filterTeacher);
+        } else {
+          queryParams.append('teacher', filterTeacher);
+        }
+      }
+      if (filterRole) queryParams.append('role', filterRole);
+      if (filterStatus) queryParams.append('status', filterStatus);
 
       if (activeTab === 'overview') {
         const res = await fetchWithAuth(`${API_BASE_URL}/api/admin/dashboard-stats`, { headers: getHeaders() });
@@ -488,6 +579,8 @@ export default function AdminDashboard() {
     let startVal = '';
     let endVal = '';
     let isAuto = false;
+    let lateType = 'none';
+    let lateDeadline = '';
 
     const sd = toLocalYYYYMMDD(item.startDate);
     const st = item.startTime || '08:00';
@@ -497,18 +590,26 @@ export default function AdminDashboard() {
       startVal = item.checkpoint1StartDate || calcAutoDeadline(sd, 28, st);
       endVal = item.checkpoint1Deadline || calcAutoDeadline(sd, 28, et);
       isAuto = !item.checkpoint1StartDate && !item.checkpoint1Deadline;
+      lateType = (item as any).checkpoint1LateType || 'none';
+      lateDeadline = (item as any).checkpoint1LateDeadline || '';
     } else if (type === 'cp2') {
       startVal = item.checkpoint2StartDate || calcAutoDeadline(sd, 56, st);
       endVal = item.checkpoint2Deadline || calcAutoDeadline(sd, 56, et);
       isAuto = !item.checkpoint2StartDate && !item.checkpoint2Deadline;
+      lateType = (item as any).checkpoint2LateType || 'none';
+      lateDeadline = (item as any).checkpoint2LateDeadline || '';
     } else if (type === 'spck') {
       startVal = item.finalProjectStartDate || calcAutoDeadline(sd, 0, st);
       endVal = item.finalProjectDeadline || calcAutoDeadline(sd, 85, et);
       isAuto = !item.finalProjectStartDate && !item.finalProjectDeadline;
+      lateType = (item as any).finalProjectLateType || 'none';
+      lateDeadline = (item as any).finalProjectLateDeadline || '';
     } else {
       startVal = item.presentationStartDate || calcAutoDeadline(sd, 0, st);
       endVal = item.presentationDeadline || calcAutoDeadline(sd, 91, et);
       isAuto = !item.presentationStartDate && !item.presentationDeadline;
+      lateType = (item as any).presentationLateType || 'none';
+      lateDeadline = (item as any).presentationLateDeadline || '';
     }
 
     if (!startVal || !endVal) return 'Chưa cấu hình';
@@ -516,9 +617,17 @@ export default function AdminDashboard() {
     const formatDt = (dtStr: string) => formatDateTime(dtStr);
 
     return (
-      <span style={{ color: isAuto ? '#aaa' : 'var(--success)', fontWeight: isAuto ? '400' : '600' }}>
-        {formatDt(startVal)} - {formatDt(endVal)}{isAuto ? ' (Tự động)' : ''}
-      </span>
+      <div style={{ display: 'flex', flexDirection: 'column' }}>
+        <span style={{ color: isAuto ? '#aaa' : 'var(--success)', fontWeight: isAuto ? '400' : '600' }}>
+          {preventOrphan(`${formatDt(startVal)} - ${formatDt(endVal)}${isAuto ? ' (Tự động)' : ''}`)}
+        </span>
+        {lateType !== 'none' && (
+          <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '3px' }}>
+            <span style={{ display: 'inline-block', width: '5px', height: '5px', borderRadius: '50%', background: 'var(--primary)' }}></span>
+            {lateType === 'unlimited' ? 'Nộp muộn: Vô thời hạn' : `Nộp muộn hạn chót: ${formatDt(lateDeadline)}`}
+          </span>
+        )}
+      </div>
     );
   };
 
@@ -538,7 +647,6 @@ export default function AdminDashboard() {
     setClassStartDate('');
     setClassStartTime('08:00');
     setClassEndTime('10:00');
-    setClassAllowLateUpload(false);
     setClassCp1StartDate('');
     setClassCp1Deadline('');
     setClassCp2StartDate('');
@@ -547,6 +655,14 @@ export default function AdminDashboard() {
     setClassSpckDeadline('');
     setClassPresentationStartDate('');
     setClassPresentationDeadline('');
+    setClassCp1LateType('none');
+    setClassCp1LateDeadline('');
+    setClassCp2LateType('none');
+    setClassCp2LateDeadline('');
+    setClassSpckLateType('none');
+    setClassSpckLateDeadline('');
+    setClassPresentationLateType('none');
+    setClassPresentationLateDeadline('');
     setStudentName('');
     setStudentClass('');
     setStudentCode('');
@@ -580,7 +696,6 @@ export default function AdminDashboard() {
       setClassStartDate(toLocalYYYYMMDD(item.startDate));
       setClassStartTime(item.startTime || '08:00');
       setClassEndTime(item.endTime || '10:00');
-      setClassAllowLateUpload(!!item.allowLateUpload);
       const sd = toLocalYYYYMMDD(item.startDate);
       const st = item.startTime || '08:00';
       const et = item.endTime || '10:00';
@@ -592,6 +707,15 @@ export default function AdminDashboard() {
       setClassSpckDeadline(toLocalYYYYMMDDTHHMM(item.finalProjectDeadline) || calcAutoDeadline(sd, 85, et));
       setClassPresentationStartDate(toLocalYYYYMMDDTHHMM(item.presentationStartDate) || calcAutoDeadline(sd, 0, st));
       setClassPresentationDeadline(toLocalYYYYMMDDTHHMM(item.presentationDeadline) || calcAutoDeadline(sd, 91, et));
+      
+      setClassCp1LateType(item.checkpoint1LateType || 'none');
+      setClassCp1LateDeadline(toLocalYYYYMMDDTHHMM(item.checkpoint1LateDeadline));
+      setClassCp2LateType(item.checkpoint2LateType || 'none');
+      setClassCp2LateDeadline(toLocalYYYYMMDDTHHMM(item.checkpoint2LateDeadline));
+      setClassSpckLateType(item.finalProjectLateType || 'none');
+      setClassSpckLateDeadline(toLocalYYYYMMDDTHHMM(item.finalProjectLateDeadline));
+      setClassPresentationLateType(item.presentationLateType || 'none');
+      setClassPresentationLateDeadline(toLocalYYYYMMDDTHHMM(item.presentationLateDeadline));
       
       const teacherExists = teachers.includes(item.teacherName);
       if (teacherExists || !item.teacherName) {
@@ -696,6 +820,23 @@ export default function AdminDashboard() {
         return;
       }
 
+      if (classCp1LateType === 'limited' && (!classCp1LateDeadline || (classCp1Deadline && classCp1LateDeadline <= classCp1Deadline))) {
+        setError('Hạn chót nộp muộn Checkpoint 1 phải lớn hơn hạn chót chính thức.');
+        return;
+      }
+      if (classCp2LateType === 'limited' && (!classCp2LateDeadline || (classCp2Deadline && classCp2LateDeadline <= classCp2Deadline))) {
+        setError('Hạn chót nộp muộn Checkpoint 2 phải lớn hơn hạn chót chính thức.');
+        return;
+      }
+      if (classSpckLateType === 'limited' && (!classSpckLateDeadline || (classSpckDeadline && classSpckLateDeadline <= classSpckDeadline))) {
+        setError('Hạn chót nộp muộn SPCK phải lớn hơn hạn chót chính thức.');
+        return;
+      }
+      if (classPresentationLateType === 'limited' && (!classPresentationLateDeadline || (classPresentationDeadline && classPresentationLateDeadline <= classPresentationDeadline))) {
+        setError('Hạn chót nộp muộn Thuyết trình phải lớn hơn hạn chót chính thức.');
+        return;
+      }
+
       url = `${API_BASE_URL}/api/admin/classes${editingId ? `/${editingId}` : ''}`;
       body = {
         name: className,
@@ -707,13 +848,21 @@ export default function AdminDashboard() {
         endTime: classEndTime || "10:00",
         checkpoint1StartDate: classCp1StartDate || null,
         checkpoint1Deadline: classCp1Deadline || null,
+        checkpoint1LateType: classCp1LateType,
+        checkpoint1LateDeadline: classCp1LateDeadline || null,
         checkpoint2StartDate: classCp2StartDate || null,
         checkpoint2Deadline: classCp2Deadline || null,
+        checkpoint2LateType: classCp2LateType,
+        checkpoint2LateDeadline: classCp2LateDeadline || null,
         finalProjectStartDate: classSpckStartDate || null,
         finalProjectDeadline: classSpckDeadline || null,
+        finalProjectLateType: classSpckLateType,
+        finalProjectLateDeadline: classSpckLateDeadline || null,
         presentationStartDate: classPresentationStartDate || null,
         presentationDeadline: classPresentationDeadline || null,
-        allowLateUpload: classAllowLateUpload
+        presentationLateType: classPresentationLateType,
+        presentationLateDeadline: classPresentationLateDeadline || null,
+        allowLateUpload: false
       };
     } else if (activeTab === 'students') {
       url = `${API_BASE_URL}/api/admin/students${editingId ? `/${editingId}` : ''}`;
@@ -839,6 +988,138 @@ export default function AdminDashboard() {
 
   const formatDate = (dateStr: string) => formatDateTime(dateStr);
 
+  const renderFilters = () => {
+    const selectStyle = {
+      padding: '0.5rem 2rem 0.5rem 1rem',
+      borderRadius: '8px',
+      background: 'var(--input-bg)',
+      border: '1px solid var(--input-border)',
+      color: 'var(--text-primary)',
+      outline: 'none',
+      fontSize: '0.875rem',
+      cursor: 'pointer',
+      minWidth: '130px',
+      appearance: 'none' as const,
+      backgroundImage: `url("data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E")`,
+      backgroundRepeat: 'no-repeat',
+      backgroundPosition: 'right 8px center',
+      backgroundSize: '16px'
+    };
+
+    if (activeTab === 'submissions') {
+      return (
+        <>
+          <select
+            value={filterClass}
+            onChange={(e) => { setFilterClass(e.target.value); setCurrentPage(1); }}
+            style={selectStyle}
+          >
+            <option value="">Tất cả Lớp</option>
+            {classes.map((c) => (
+              <option key={c._id} value={c.name}>{c.name}</option>
+            ))}
+          </select>
+
+          <select
+            value={filterStage}
+            onChange={(e) => { setFilterStage(e.target.value); setCurrentPage(1); }}
+            style={selectStyle}
+          >
+            <option value="">Tất cả Giai đoạn</option>
+            <option value="Lý thuyết">Lý thuyết</option>
+            <option value="Checkpoint 1">Checkpoint 1</option>
+            <option value="Checkpoint 2">Checkpoint 2</option>
+            <option value="Sản phẩm cuối khóa">Sản phẩm cuối khóa</option>
+            <option value="Thuyết trình">Thuyết trình</option>
+          </select>
+
+          {currentUser?.role === 'admin' && (
+            <select
+              value={filterTeacher}
+              onChange={(e) => { setFilterTeacher(e.target.value); setCurrentPage(1); }}
+              style={selectStyle}
+            >
+              <option value="">Tất cả Giáo viên</option>
+              {teachers.map((t, idx) => (
+                <option key={idx} value={t}>{t}</option>
+              ))}
+            </select>
+          )}
+        </>
+      );
+    }
+
+    if (activeTab === 'students') {
+      return (
+        <>
+          <select
+            value={filterClass}
+            onChange={(e) => { setFilterClass(e.target.value); setCurrentPage(1); }}
+            style={selectStyle}
+          >
+            <option value="">Tất cả Lớp</option>
+            {classes.map((c) => (
+              <option key={c._id} value={c.name}>{c.name}</option>
+            ))}
+          </select>
+
+          <select
+            value={filterStatus}
+            onChange={(e) => { setFilterStatus(e.target.value); setCurrentPage(1); }}
+            style={selectStyle}
+          >
+            <option value="">Tất cả Trạng thái</option>
+            <option value="active">Hoạt động</option>
+            <option value="inactive">Bị khóa</option>
+          </select>
+        </>
+      );
+    }
+
+    if (activeTab === 'classes' && currentUser?.role === 'admin') {
+      return (
+        <select
+          value={filterTeacher}
+          onChange={(e) => { setFilterTeacher(e.target.value); setCurrentPage(1); }}
+          style={selectStyle}
+        >
+          <option value="">Tất cả Giáo viên</option>
+          {teachers.map((t, idx) => (
+            <option key={idx} value={t}>{t}</option>
+          ))}
+        </select>
+      );
+    }
+
+    if (activeTab === 'users' && currentUser?.role === 'admin') {
+      return (
+        <>
+          <select
+            value={filterRole}
+            onChange={(e) => { setFilterRole(e.target.value); setCurrentPage(1); }}
+            style={selectStyle}
+          >
+            <option value="">Tất cả Vai trò</option>
+            <option value="admin">Quản trị viên</option>
+            <option value="teacher">Giáo viên</option>
+          </select>
+
+          <select
+            value={filterStatus}
+            onChange={(e) => { setFilterStatus(e.target.value); setCurrentPage(1); }}
+            style={selectStyle}
+          >
+            <option value="">Tất cả Trạng thái</option>
+            <option value="active">Hoạt động</option>
+            <option value="inactive">Bị khóa</option>
+          </select>
+        </>
+      );
+    }
+
+    return null;
+  };
+
   return (
     <>
       <div style={{ textAlign: 'center', marginBottom: '2rem', marginTop: '2rem' }}>
@@ -910,43 +1191,46 @@ export default function AdminDashboard() {
           {/* Header Controls for CRUD */}
           {activeTab !== 'overview' && (
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
-              {/* Search */}
-              <div className="search-wrapper-container">
-                <Search
-                  size={16}
-                  style={{
-                    position: 'absolute',
-                    left: '12px',
-                    color: 'var(--text-muted)',
-                    opacity: 0.7,
-                    pointerEvents: 'none'
-                  }}
-                />
-                <input
-                  type="text"
-                  placeholder="Tìm kiếm..."
-                  value={searchInput}
-                  onChange={(e) => setSearchInput(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-                  className="form-input-field"
-                  style={{
-                    paddingLeft: '36px',
-                    paddingRight: searchInput ? '36px' : '12px',
-                    width: '100%',
-                    border: 'none',
-                    background: 'transparent',
-                    boxShadow: 'none'
-                  }}
-                />
-                {searchInput && (
-                  <button
-                    type="button"
-                    onClick={handleClearSearch}
-                    className="clear-search-btn"
-                  >
-                    ✕
-                  </button>
-                )}
+              {/* Search & Filters */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap', flex: '1 1 auto', minWidth: '280px' }}>
+                <div className="search-wrapper-container">
+                  <Search
+                    size={16}
+                    style={{
+                      position: 'absolute',
+                      left: '12px',
+                      color: 'var(--text-muted)',
+                      opacity: 0.7,
+                      pointerEvents: 'none'
+                    }}
+                  />
+                  <input
+                    type="text"
+                    placeholder="Tìm kiếm..."
+                    value={searchInput}
+                    onChange={(e) => setSearchInput(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+                    className="form-input-field"
+                    style={{
+                      paddingLeft: '36px',
+                      paddingRight: searchInput ? '36px' : '12px',
+                      width: '100%',
+                      border: 'none',
+                      background: 'transparent',
+                      boxShadow: 'none'
+                    }}
+                  />
+                  {searchInput && (
+                    <button
+                      type="button"
+                      onClick={handleClearSearch}
+                      className="clear-search-btn"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+                {renderFilters()}
               </div>
 
               {/* Action Buttons */}
@@ -1033,12 +1317,12 @@ export default function AdminDashboard() {
                     {users.map((item) => (
                       <tr key={item._id} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)', fontSize: '0.875rem' }}>
                         <td style={{ padding: '1rem' }}><input type="checkbox" checked={selectedIds.includes(item._id)} onChange={() => handleSelectRow(item._id)} /></td>
-                        <td data-label="Tên đăng nhập" style={{ padding: '1rem', color: 'var(--text-primary)', fontWeight: '600' }}>{item.username}</td>
-                        <td data-label="Tên hiển thị" style={{ padding: '1rem' }}>{item.displayName}</td>
-                        <td data-label="Email" style={{ padding: '1rem' }}>{item.email || '-'}</td>
+                        <td data-label="Tên đăng nhập" style={{ padding: '1rem', color: 'var(--text-primary)', fontWeight: '600' }}>{preventOrphan(item.username)}</td>
+                        <td data-label="Tên hiển thị" style={{ padding: '1rem' }}>{preventOrphan(item.displayName)}</td>
+                        <td data-label="Email" style={{ padding: '1rem' }}>{preventOrphan(item.email || '-')}</td>
                         <td data-label="Trạng thái" style={{ padding: '1rem' }}>
                           <span style={{ color: item.status === 'inactive' ? '#ff8a8a' : 'var(--success)', fontWeight: '600' }}>
-                            {item.status === 'inactive' ? 'Đã khóa' : 'Hoạt động'}
+                            {preventOrphan(item.status === 'inactive' ? 'Đã khóa' : 'Hoạt động')}
                           </span>
                         </td>
                         <td data-label="Quyền hạn" style={{ padding: '1rem' }}>
@@ -1047,10 +1331,10 @@ export default function AdminDashboard() {
                             color: item.role === 'admin' ? 'var(--secondary)' : 'var(--primary)',
                             padding: '2px 8px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: '600'
                           }}>
-                            {item.role === 'admin' ? 'Quản trị viên' : 'Giáo viên'}
+                            {preventOrphan(item.role === 'admin' ? 'Quản trị viên' : 'Giáo viên')}
                           </span>
                         </td>
-                        <td data-label="Ngày tạo" style={{ padding: '1rem' }}>{formatDate(item.createdAt)}</td>
+                        <td data-label="Ngày tạo" style={{ padding: '1rem' }}>{preventOrphan(formatDate(item.createdAt))}</td>
                         <td data-label="Thao tác" style={{ padding: '1rem', display: 'flex', gap: '0.5rem', justifyContent: 'center' }}>
                           <button className="btn btn-neutral" style={{ padding: '4px 10px', height: 'auto', fontSize: '0.8rem' }} onClick={() => handleOpenEditModal(item)}>Sửa</button>
                           {item.username !== 'admin' && item.username !== currentUser?.username && item.role !== currentUser?.role && (
@@ -1081,20 +1365,17 @@ export default function AdminDashboard() {
                     {classes.map((item) => (
                       <tr key={item._id} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)', fontSize: '0.875rem' }}>
                         <td style={{ padding: '1rem' }}><input type="checkbox" checked={selectedIds.includes(item._id)} onChange={() => handleSelectRow(item._id)} /></td>
-                        <td data-label="Tên lớp học" style={{ padding: '1rem', color: 'var(--text-primary)', fontWeight: '600' }}>{item.name}</td>
-                        <td data-label="Giáo viên phụ trách" style={{ padding: '1rem' }}>{item.teacherName}</td>
+                        <td data-label="Tên lớp học" style={{ padding: '1rem', color: 'var(--text-primary)', fontWeight: '600' }}>{preventOrphan(item.name)}</td>
+                        <td data-label="Giáo viên phụ trách" style={{ padding: '1rem' }}>{preventOrphan(item.teacherName)}</td>
                         <td data-label="Lịch học & Cài đặt" style={{ padding: '1rem', fontSize: '0.825rem', lineHeight: '1.4' }}>
-                          <div><strong style={{ color: '#ccc' }}>Bắt đầu:</strong> {item.startDate ? new Date(item.startDate).toLocaleDateString('vi-VN') : 'Chưa đặt'}</div>
-                          <div><strong style={{ color: '#ccc' }}>Giờ học:</strong> {item.startTime || '08:00'} - {item.endTime || '10:00'}</div>
-                          <div style={{ color: item.allowLateUpload ? 'var(--success)' : '#ff8a8a', fontWeight: '600', marginTop: '2px' }}>
-                            {item.allowLateUpload ? '✓ Cho phép nộp muộn' : '✗ Chặn nộp muộn'}
-                          </div>
+                          <div><strong style={{ color: '#ccc' }}>{preventOrphan('Bắt đầu:')}</strong> {preventOrphan(item.startDate ? new Date(item.startDate).toLocaleDateString('vi-VN') : 'Chưa đặt')}</div>
+                          <div><strong style={{ color: '#ccc' }}>{preventOrphan('Giờ học:')}</strong> {preventOrphan(`${item.startTime || '08:00'} - ${item.endTime || '10:00'}`)}</div>
                         </td>
                         <td data-label="Thời gian nộp các cổng nộp" style={{ padding: '1rem', fontSize: '0.825rem', lineHeight: '1.4' }}>
-                          <div><strong style={{ color: '#ccc' }}>CP1:</strong> {getMilestoneRangeDisplay(item, 'cp1')}</div>
-                          <div><strong style={{ color: '#ccc' }}>CP2:</strong> {getMilestoneRangeDisplay(item, 'cp2')}</div>
-                          <div><strong style={{ color: '#ccc' }}>SPCK:</strong> {getMilestoneRangeDisplay(item, 'spck')}</div>
-                          <div><strong style={{ color: '#ccc' }}>Thuyết trình:</strong> {getMilestoneRangeDisplay(item, 'presentation')}</div>
+                          <div><strong style={{ color: '#ccc' }}>{preventOrphan('CP1:')}</strong> {getMilestoneRangeDisplay(item, 'cp1')}</div>
+                          <div><strong style={{ color: '#ccc' }}>{preventOrphan('CP2:')}</strong> {getMilestoneRangeDisplay(item, 'cp2')}</div>
+                          <div><strong style={{ color: '#ccc' }}>{preventOrphan('SPCK:')}</strong> {getMilestoneRangeDisplay(item, 'spck')}</div>
+                          <div><strong style={{ color: '#ccc' }}>{preventOrphan('Thuyết trình:')}</strong> {getMilestoneRangeDisplay(item, 'presentation')}</div>
                         </td>
                         <td data-label="Sĩ số" style={{ padding: '1rem', textAlign: 'center' }}>
                           <span style={{ 
@@ -1137,24 +1418,24 @@ export default function AdminDashboard() {
                     {students.map((item) => (
                       <tr key={item._id} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)', fontSize: '0.875rem' }}>
                         <td style={{ padding: '1rem' }}><input type="checkbox" checked={selectedIds.includes(item._id)} onChange={() => handleSelectRow(item._id)} /></td>
-                        <td data-label="Tên học viên" style={{ padding: '1rem', color: 'var(--text-primary)', fontWeight: '600' }}>{item.name}</td>
+                        <td data-label="Tên học viên" style={{ padding: '1rem', color: 'var(--text-primary)', fontWeight: '600' }}>{preventOrphan(item.name)}</td>
                         <td data-label="Mã lớp học" style={{ padding: '1rem' }}>
                           <span style={{ background: 'rgba(99, 102, 241, 0.1)', color: 'var(--primary)', padding: '2px 8px', borderRadius: '4px', fontSize: '0.8rem', fontWeight: '600' }}>
-                            {item.className}
+                            {preventOrphan(item.className)}
                           </span>
                         </td>
-                        <td data-label="Mã tra cứu" style={{ padding: '1rem', color: 'var(--success)', fontWeight: '600' }}>{item.studentCode}</td>
+                        <td data-label="Mã tra cứu" style={{ padding: '1rem', color: 'var(--success)', fontWeight: '600' }}>{preventOrphan(item.studentCode)}</td>
                         <td data-label="Số bài nộp" style={{ padding: '1rem' }}>
                           <span style={{ color: item.submissionCount && item.submissionCount > 0 ? 'var(--success)' : 'var(--text-muted)', fontWeight: '600' }}>
-                            {item.submissionCount || 0}
+                            {preventOrphan(item.submissionCount || 0)}
                           </span>
                         </td>
                         <td data-label="Trạng thái" style={{ padding: '1rem' }}>
                           <span style={{ color: item.status === 'inactive' ? '#ff8a8a' : 'var(--success)', fontWeight: '600' }}>
-                            {item.status === 'inactive' ? 'Đã khóa' : 'Hoạt động'}
+                            {preventOrphan(item.status === 'inactive' ? 'Đã khóa' : 'Hoạt động')}
                           </span>
                         </td>
-                        <td data-label="Giới hạn tải lên" style={{ padding: '1rem', fontWeight: '500' }}>{item.maxUploadSize || 20} MB</td>
+                        <td data-label="Giới hạn tải lên" style={{ padding: '1rem', fontWeight: '500' }}>{preventOrphan(`${item.maxUploadSize || 20} MB`)}</td>
                         <td data-label="Thao tác" style={{ padding: '1rem', display: 'flex', gap: '0.5rem', justifyContent: 'center' }}>
                           <button className="btn btn-neutral" style={{ padding: '4px 10px', height: 'auto', fontSize: '0.8rem' }} onClick={() => handleOpenEditModal(item)}>Sửa</button>
                           <button className="btn btn-danger" style={{ padding: '4px 10px', height: 'auto', fontSize: '0.8rem' }} onClick={() => handleDeleteItem(item._id)}>Xóa</button>
@@ -1192,9 +1473,9 @@ export default function AdminDashboard() {
                     {submissions.map((item) => (
                       <tr key={item._id} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)', fontSize: '0.875rem' }}>
                         <td style={{ padding: '1rem' }}><input type="checkbox" checked={selectedIds.includes(item._id)} onChange={() => handleSelectRow(item._id)} /></td>
-                        <td data-label="Học viên" style={{ padding: '1rem', color: 'var(--text-primary)', fontWeight: '600' }}>{item.fullName}</td>
-                        <td data-label="Lớp" style={{ padding: '1rem' }}>{item.className}</td>
-                        <td data-label="Giai đoạn/Buổi" style={{ padding: '1rem' }}>{item.stage} ({item.session})</td>
+                        <td data-label="Học viên" style={{ padding: '1rem', color: 'var(--text-primary)', fontWeight: '600' }}>{preventOrphan(item.fullName)}</td>
+                        <td data-label="Lớp" style={{ padding: '1rem' }}>{preventOrphan(item.className)}</td>
+                        <td data-label="Giai đoạn/Buổi" style={{ padding: '1rem' }}>{preventOrphan(`${item.stage} (${item.session})`)}</td>
                         <td data-label="File/Liên kết" style={{ padding: '1rem' }}>
                           {item.fileUrl ? (
                             (() => {
@@ -1270,7 +1551,7 @@ export default function AdminDashboard() {
                             <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem', fontStyle: 'italic' }}>Không có tệp</span>
                           )}
                         </td>
-                        <td data-label="Ngày nộp" style={{ padding: '1rem' }}>{formatDate(item.createdAt)}</td>
+                        <td data-label="Ngày nộp" style={{ padding: '1rem' }}>{preventOrphan(formatDate(item.createdAt))}</td>
                         <td data-label="Thao tác" style={{ padding: '1rem', textAlign: 'center' }}>
                           {currentUser?.role === 'admin' || currentUser?.role === 'teacher' ? (
                             <button className="btn btn-danger" style={{ padding: '4px 10px', height: 'auto', fontSize: '0.8rem' }} onClick={() => handleDeleteItem(item._id)}>Xóa</button>
@@ -1396,15 +1677,15 @@ export default function AdminDashboard() {
                     </select>
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                    <label className="form-label">Email (Đọc duy nhất)</label>
+                    <label className="form-label">Email</label>
                     <div style={{ display: 'flex', gap: '0.5rem', width: '100%' }}>
                       <input
                         type="email"
                         value={userEmail}
-                        placeholder="Chưa liên kết tài khoản Google..."
+                        onChange={(e) => setUserEmail(e.target.value)}
+                        placeholder="Nhập email nhận thông báo..."
                         className="form-input-field"
-                        readOnly
-                        style={{ flex: 1, opacity: 0.8, cursor: 'not-allowed', backgroundColor: 'rgba(255,255,255,0.02)' }}
+                        style={{ flex: 1 }}
                       />
                       {editingId && userRole === 'teacher' && userEmail && (
                         <button
@@ -1531,7 +1812,7 @@ export default function AdminDashboard() {
                   )}
                   
                   {/* === Date & time inputs === */}
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginTop: '0.75rem' }}>
+                  <div style={{ marginTop: '0.75rem' }}>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                       <label className="form-label">Ngày bắt đầu lớp học</label>
                       <DateInput
@@ -1560,18 +1841,6 @@ export default function AdminDashboard() {
                         }}
                         className="form-input-field"
                       />
-                    </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                      <label className="form-label">Cổng nộp muộn</label>
-                      <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', height: '100%' }}>
-                        <input
-                          type="checkbox"
-                          checked={classAllowLateUpload}
-                          onChange={(e) => setClassAllowLateUpload(e.target.checked)}
-                          style={{ width: '1.2rem', height: '1.2rem', cursor: 'pointer' }}
-                        />
-                        <span style={{ fontSize: '0.85rem', color: '#ccc' }}>Cho phép nộp sau hạn chót</span>
-                      </label>
                     </div>
                   </div>
 
@@ -1635,6 +1904,10 @@ export default function AdminDashboard() {
                         startSetter: setClassCp1StartDate,
                         endVal: classCp1Deadline, 
                         endSetter: setClassCp1Deadline,
+                        lateType: classCp1LateType,
+                        lateTypeSetter: setClassCp1LateType,
+                        lateDeadline: classCp1LateDeadline,
+                        lateDeadlineSetter: setClassCp1LateDeadline,
                         color: 'rgba(99, 102, 241, 0.08)',
                         borderColor: 'rgba(99, 102, 241, 0.2)',
                         titleColor: '#a5b4fc'
@@ -1645,6 +1918,10 @@ export default function AdminDashboard() {
                         startSetter: setClassCp2StartDate,
                         endVal: classCp2Deadline, 
                         endSetter: setClassCp2Deadline,
+                        lateType: classCp2LateType,
+                        lateTypeSetter: setClassCp2LateType,
+                        lateDeadline: classCp2LateDeadline,
+                        lateDeadlineSetter: setClassCp2LateDeadline,
                         color: 'rgba(16, 185, 129, 0.08)',
                         borderColor: 'rgba(16, 185, 129, 0.2)',
                         titleColor: '#a7f3d0'
@@ -1655,6 +1932,10 @@ export default function AdminDashboard() {
                         startSetter: setClassSpckStartDate,
                         endVal: classSpckDeadline, 
                         endSetter: setClassSpckDeadline,
+                        lateType: classSpckLateType,
+                        lateTypeSetter: setClassSpckLateType,
+                        lateDeadline: classSpckLateDeadline,
+                        lateDeadlineSetter: setClassSpckLateDeadline,
                         color: 'rgba(236, 72, 153, 0.08)',
                         borderColor: 'rgba(236, 72, 153, 0.2)',
                         titleColor: '#fbcfe8'
@@ -1665,6 +1946,10 @@ export default function AdminDashboard() {
                         startSetter: setClassPresentationStartDate,
                         endVal: classPresentationDeadline, 
                         endSetter: setClassPresentationDeadline,
+                        lateType: classPresentationLateType,
+                        lateTypeSetter: setClassPresentationLateType,
+                        lateDeadline: classPresentationLateDeadline,
+                        lateDeadlineSetter: setClassPresentationLateDeadline,
                         color: 'rgba(59, 130, 246, 0.08)',
                         borderColor: 'rgba(59, 130, 246, 0.2)',
                         titleColor: '#93c5fd'
@@ -1698,6 +1983,34 @@ export default function AdminDashboard() {
                               className="form-input-field"
                               style={{ fontSize: '0.82rem', padding: '6px 10px' }}
                             />
+                          </div>
+                        </div>
+                        <div style={{ marginTop: '0.75rem', borderTop: '1px solid rgba(255, 255, 255, 0.05)', paddingTop: '0.75rem' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: cp.lateType === 'limited' ? '1fr 1.2fr' : '1fr', gap: '0.75rem' }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+                              <label className="form-label" style={{ fontSize: '0.75rem', color: '#bbb' }}>Cho phép nộp muộn</label>
+                              <select
+                                value={cp.lateType}
+                                onChange={(e) => cp.lateTypeSetter(e.target.value)}
+                                className="form-select-field"
+                                style={{ fontSize: '0.82rem', padding: '6px 24px 6px 10px', height: '2.2rem' }}
+                              >
+                                <option value="none">Không cho phép</option>
+                                <option value="unlimited">Vô thời hạn</option>
+                                <option value="limited">Có thời gian</option>
+                              </select>
+                            </div>
+                            {cp.lateType === 'limited' && (
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+                                <label className="form-label" style={{ fontSize: '0.75rem', color: '#bbb' }}>Hạn chót nộp muộn</label>
+                                <DateTimeInput
+                                  value={cp.lateDeadline}
+                                  onChange={cp.lateDeadlineSetter}
+                                  className="form-input-field"
+                                  style={{ fontSize: '0.82rem', padding: '6px 10px', height: '2.2rem' }}
+                                />
+                              </div>
+                            )}
                           </div>
                         </div>
                       </div>

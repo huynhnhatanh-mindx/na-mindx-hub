@@ -64,6 +64,18 @@ export default function PresentationArranger() {
 
   // Load classes list
   useEffect(() => {
+    // Redirect if teacher needs to link Google
+    const userStr = localStorage.getItem('user');
+    if (userStr) {
+      try {
+        const user = JSON.parse(userStr);
+        if (user.role === 'teacher' && (user.requiresGoogleAuth || !user.email)) {
+          navigate('/google-setup');
+          return;
+        }
+      } catch (e) {}
+    }
+
     const loadClasses = async () => {
       setIsLoading(true);
       setError('');

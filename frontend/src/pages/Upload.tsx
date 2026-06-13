@@ -2,7 +2,8 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { formatDateTime } from '../utils/date';
 import ComboBox from '../components/ComboBox';
-import { ArrowLeft, UploadCloud, FileText, CheckCircle2, AlertTriangle, Info, Calendar, Trash2, X } from 'lucide-react';
+import { ArrowLeft, UploadCloud, FileText, CheckCircle2, AlertTriangle, Info, Calendar, Trash2, X, Lock, Clock } from 'lucide-react';
+import { useSSE } from '../hooks/useSSE';
 
 interface UploadResponseFile {
   originalName: string;
@@ -32,6 +33,40 @@ const CLASS_STUDENTS_MAP_FALLBACK: Record<string, string[]> = {
   'HCM3': ['Phan Văn E', 'Đỗ Thị F']
 };
 
+const parseSafeDate = (dtStr: string | Date | null | undefined): Date | null => {
+  if (!dtStr) return null;
+  if (dtStr instanceof Date) return dtStr;
+  const trimmed = typeof dtStr === 'string' ? dtStr.trim() : '';
+  if (!trimmed) return null;
+  const hasTimezone = trimmed.includes('Z') || /([+-]\d{2}:\d{2}|[+-]\d{2})$/.test(trimmed);
+  const d = new Date(hasTimezone ? trimmed : `${trimmed}:00+07:00`);
+  return isNaN(d.getTime()) ? null : d;
+};
+
+const calculateVietnamDeadline = (baseDateStr: string | Date, daysOffset: number, endTimeStr: string): Date => {
+  const baseDate = new Date(baseDateStr);
+  const targetDate = new Date(baseDate.getTime() + daysOffset * 24 * 60 * 60 * 1000);
+  
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Ho_Chi_Minh',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  });
+  
+  const parts = formatter.formatToParts(targetDate);
+  const year = parts.find(p => p.type === 'year')?.value || '2026';
+  const month = parts.find(p => p.type === 'month')?.value || '01';
+  const day = parts.find(p => p.type === 'day')?.value || '01';
+  
+  const [hStr, mStr] = (endTimeStr || "10:00").split(":");
+  const hours = (hStr || "10").padStart(2, '0');
+  const minutes = (mStr || "00").padStart(2, '0');
+  
+  const isoStr = `${year}-${month}-${day}T${hours}:${minutes}:00+07:00`;
+  return new Date(isoStr);
+};
+
 interface StudentDetail {
   name: string;
   maxUploadSize: number;
@@ -47,6 +82,31 @@ function Upload() {
   const [uploadedFiles, setUploadedFiles] = useState<UploadResponseFile[]>([]);
   const [cooldownTime, setCooldownTime] = useState<number>(0);
 
+  // Metadata dynamic dropdown states
+  const [teachersList, setTeachersList] = useState<string[]>([]);
+  const [classesList, setClassesList] = useState<string[]>([]);
+  const [fullClassesData, setFullClassesData] = useState<any[]>([]);
+  const [studentsList, setStudentsList] = useState<string[]>([]);
+  const [studentDetails, setStudentDetails] = useState<StudentDetail[]>([]);
+
+  // Metadata selected fields
+  const [teacher, setTeacher] = useState<string>('');
+  const [className, setClassName] = useState<string>('');
+  const [fullName, setFullName] = useState<string>('');
+  const [stage, setStage] = useState<string>('');
+  const [session, setSession] = useState<string>('');
+
+  // Gate status and countdown states
+  const [gateStatus, setGateStatus] = useState<'not_started' | 'open' | 'late_open' | 'closed' | 'no_gate'>('no_gate');
+  const [gateMessage, setGateMessage] = useState<string>('');
+  const [gateDatesInfo, setGateDatesInfo] = useState<{
+    startDate: Date | null;
+    endDate: Date | null;
+    lateType: string;
+    lateDeadline: Date | null;
+    isTheory: boolean;
+  } | null>(null);
+
   // Link validation & type selection states
   const [submissionType, setSubmissionType] = useState<'file' | 'link'>('file');
   const [presentationLink, setPresentationLink] = useState<string>('');
@@ -61,6 +121,139 @@ function Upload() {
     }, 1000);
     return () => clearInterval(timer);
   }, [cooldownTime]);
+
+  // Reset upload status and error messages when any meta-data changes to avoid stuck disabled submit states
+  useEffect(() => {
+    setUploadStatus('idle');
+    setErrorMessage('');
+  }, [className, stage, teacher, fullName, session, submissionType]);
+
+  const formatDuration = (ms: number): string => {
+    if (ms < 0) return '00g 00p 00s';
+    const totalSecs = Math.floor(ms / 1000);
+    const secs = totalSecs % 60;
+    const totalMins = Math.floor(totalSecs / 60);
+    const mins = totalMins % 60;
+    const totalHours = Math.floor(totalMins / 60);
+    const hours = totalHours % 24;
+    const days = Math.floor(totalHours / 24);
+
+    const pad = (n: number) => String(n).padStart(2, '0');
+    
+    if (days > 0) {
+      return `${days} ngày ${pad(hours)}g ${pad(mins)}p ${pad(secs)}s`;
+    }
+    return `${pad(hours)}g ${pad(mins)}p ${pad(secs)}s`;
+  };
+
+  useEffect(() => {
+    if (!className || !stage || !fullClassesData.length) {
+      setGateStatus('no_gate');
+      setGateMessage('');
+      setGateDatesInfo(null);
+      return;
+    }
+
+    const cls = fullClassesData.find((c: any) => c.name.toLowerCase().trim() === className.toLowerCase().trim());
+    if (!cls) {
+      setGateStatus('no_gate');
+      setGateMessage('');
+      setGateDatesInfo(null);
+      return;
+    }
+
+    const stageLower = stage.toLowerCase();
+    const isTheory = stageLower.includes('ly thuyet') || stageLower.includes('lý thuyết') || stageLower.includes('theory');
+
+    if (isTheory) {
+      setGateStatus('no_gate');
+      setGateMessage('Không áp dụng hạn chót (luôn được phép nộp)');
+      setGateDatesInfo({
+        startDate: null,
+        endDate: null,
+        lateType: 'none',
+        lateDeadline: null,
+        isTheory: true
+      });
+      return;
+    }
+
+    const updateGate = () => {
+      let startDate: Date | null = null;
+      let endDate: Date | null = null;
+      let lateType = 'none';
+      let lateDeadline: Date | null = null;
+
+      if (stageLower.includes('checkpoint 1')) {
+        startDate = cls.checkpoint1StartDate ? parseSafeDate(cls.checkpoint1StartDate) : (cls.startDate ? calculateVietnamDeadline(cls.startDate, 28, cls.startTime || "08:00") : null);
+        endDate = cls.checkpoint1Deadline ? parseSafeDate(cls.checkpoint1Deadline) : (cls.startDate ? calculateVietnamDeadline(cls.startDate, 28, cls.endTime || "10:00") : null);
+        lateType = cls.checkpoint1LateType || 'none';
+        lateDeadline = cls.checkpoint1LateDeadline ? parseSafeDate(cls.checkpoint1LateDeadline) : null;
+      } else if (stageLower.includes('checkpoint 2')) {
+        startDate = cls.checkpoint2StartDate ? parseSafeDate(cls.checkpoint2StartDate) : (cls.startDate ? calculateVietnamDeadline(cls.startDate, 56, cls.startTime || "08:00") : null);
+        endDate = cls.checkpoint2Deadline ? parseSafeDate(cls.checkpoint2Deadline) : (cls.startDate ? calculateVietnamDeadline(cls.startDate, 56, cls.endTime || "10:00") : null);
+        lateType = cls.checkpoint2LateType || 'none';
+        lateDeadline = cls.checkpoint2LateDeadline ? parseSafeDate(cls.checkpoint2LateDeadline) : null;
+      } else if (stageLower.includes('san pham cuoi khoa') || stageLower.includes('sản phẩm cuối khóa')) {
+        startDate = cls.finalProjectStartDate ? parseSafeDate(cls.finalProjectStartDate) : (cls.startDate ? calculateVietnamDeadline(cls.startDate, 0, cls.startTime || "08:00") : null);
+        endDate = cls.finalProjectDeadline ? parseSafeDate(cls.finalProjectDeadline) : (cls.startDate ? calculateVietnamDeadline(cls.startDate, 85, cls.endTime || "10:00") : null);
+        lateType = cls.finalProjectLateType || 'none';
+        lateDeadline = cls.finalProjectLateDeadline ? parseSafeDate(cls.finalProjectLateDeadline) : null;
+      } else if (stageLower.includes('thuyet trinh') || stageLower.includes('thuyết trình') || stageLower.includes('presentation')) {
+        startDate = cls.presentationStartDate ? parseSafeDate(cls.presentationStartDate) : (cls.startDate ? calculateVietnamDeadline(cls.startDate, 0, cls.startTime || "08:00") : null);
+        endDate = cls.presentationDeadline ? parseSafeDate(cls.presentationDeadline) : (cls.startDate ? calculateVietnamDeadline(cls.startDate, 91, cls.endTime || "10:00") : null);
+        lateType = cls.presentationLateType || 'none';
+        lateDeadline = cls.presentationLateDeadline ? parseSafeDate(cls.presentationLateDeadline) : null;
+      }
+
+      if (!startDate || !endDate) {
+        setGateStatus('no_gate');
+        setGateMessage('Chưa cấu hình lịch học hoặc hạn chót cho lớp này');
+        setGateDatesInfo(null);
+        return;
+      }
+
+      const effectiveLateType = (lateType === 'infinite' || lateType === 'unlimited') ? 'unlimited' :
+                                (lateType === 'duration' || lateType === 'limited') ? 'limited' : 'none';
+      const now = new Date();
+
+      setGateDatesInfo({
+        startDate,
+        endDate,
+        lateType: effectiveLateType,
+        lateDeadline,
+        isTheory: false
+      });
+
+      if (now < startDate) {
+        setGateStatus('not_started');
+        setGateMessage(`Cổng nộp bài sẽ mở sau: ${formatDuration(startDate.getTime() - now.getTime())}`);
+      } else if (now <= endDate) {
+        setGateStatus('open');
+        setGateMessage(`Thời gian còn lại để nộp bài: ${formatDuration(endDate.getTime() - now.getTime())}`);
+      } else {
+        if (effectiveLateType === 'none') {
+          setGateStatus('closed');
+          setGateMessage('Cổng nộp bài đã đóng (đã quá hạn chót chính thức).');
+        } else if (effectiveLateType === 'unlimited') {
+          setGateStatus('late_open');
+          setGateMessage('Bạn đang nộp muộn (Không giới hạn thời gian nộp muộn).');
+        } else if (effectiveLateType === 'limited') {
+          if (lateDeadline && now <= lateDeadline) {
+            setGateStatus('late_open');
+            setGateMessage(`Thời gian nộp muộn còn lại: ${formatDuration(lateDeadline.getTime() - now.getTime())}`);
+          } else {
+            setGateStatus('closed');
+            setGateMessage('Cổng nộp bài đã đóng (đã quá hạn chót nộp muộn).');
+          }
+        }
+      }
+    };
+
+    updateGate();
+    const intervalId = setInterval(updateGate, 1000);
+    return () => clearInterval(intervalId);
+  }, [className, stage, fullClassesData]);
 
   // States for file preview
   const [previewFile, setPreviewFile] = useState<File | null>(null);
@@ -141,12 +334,6 @@ function Upload() {
     };
   }, []);
 
-  // States for metadata dropdown options, dynamically loaded from backend/database
-  const [teachersList, setTeachersList] = useState<string[]>([]);
-  const [classesList, setClassesList] = useState<string[]>([]);
-  const [fullClassesData, setFullClassesData] = useState<any[]>([]);
-  const [studentsList, setStudentsList] = useState<string[]>([]);
-  const [studentDetails, setStudentDetails] = useState<StudentDetail[]>([]);
   const stagesList = ['Checkpoint 1', 'Checkpoint 2', 'Sản phẩm cuối khóa', 'Bài thuyết trình', 'Buổi học lý thuyết'];
 
   const sessionsMap: Record<string, string[]> = {
@@ -171,88 +358,101 @@ function Upload() {
     ]
   };
 
+  // Helper functions to fetch lists (can be triggered dynamically by mounts, events, or SSE updates)
+  const fetchTeachers = async () => {
+    try {
+      const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+      const res = await fetch(`${API_BASE_URL}/api/teachers`);
+      if (!res.ok) throw new Error('Failed to fetch teachers');
+      const data = await res.json();
+      setTeachersList(data);
+    } catch (err) {
+      console.warn('Using offline fallback for teachers list due to error:', err);
+      setTeachersList(TEACHERS_FALLBACK);
+    }
+  };
 
-  // State for metadata fields
-  const [teacher, setTeacher] = useState<string>('');
-  const [className, setClassName] = useState<string>('');
-  const [fullName, setFullName] = useState<string>('');
-  const [stage, setStage] = useState<string>('');
-  const [session, setSession] = useState<string>('');
+  const fetchClasses = async (currentTeacher: string) => {
+    if (!currentTeacher.trim()) {
+      setClassesList([]);
+      setFullClassesData([]);
+      return;
+    }
+    try {
+      const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+      const res = await fetch(`${API_BASE_URL}/api/classes?teacherName=${encodeURIComponent(currentTeacher.trim())}&full=true`);
+      if (!res.ok) throw new Error('Failed to fetch classes');
+      const data = await res.json();
+      setFullClassesData(data);
+      setClassesList(data.map((c: any) => c.name));
+    } catch (err) {
+      console.warn('Using offline fallback for classes list due to error:', err);
+      const trimmedTeacher = currentTeacher.trim();
+      const fallbackClasses = TEACHER_CLASSES_MAP_FALLBACK[trimmedTeacher] || [];
+      setClassesList(fallbackClasses);
+      setFullClassesData(fallbackClasses.map(name => ({ name, teacherName: currentTeacher })));
+    }
+  };
+
+  const fetchStudents = async (currentClass: string) => {
+    if (!currentClass.trim()) {
+      setStudentsList([]);
+      setStudentDetails([]);
+      return;
+    }
+    try {
+      const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+      const res = await fetch(`${API_BASE_URL}/api/students?className=${encodeURIComponent(currentClass.trim())}`);
+      if (!res.ok) throw new Error('Failed to fetch students');
+      const data = await res.json();
+
+      if (data.length > 0 && typeof data[0] === 'object') {
+        setStudentDetails(data);
+        setStudentsList(data.map((s: any) => s.name));
+      } else {
+        setStudentDetails(data.map((name: string) => ({ name, maxUploadSize: 20 })));
+        setStudentsList(data);
+      }
+    } catch (err) {
+      console.warn('Using offline fallback for students list due to error:', err);
+      const trimmedClass = currentClass.trim();
+      const fallbackStudents = CLASS_STUDENTS_MAP_FALLBACK[trimmedClass] || [];
+      setStudentDetails(fallbackStudents.map(name => ({ name, maxUploadSize: 20 })));
+      setStudentsList(fallbackStudents);
+    }
+  };
 
   // Fetch teachers on component mount
   useEffect(() => {
-    const fetchTeachers = async () => {
-      try {
-        const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
-        const res = await fetch(`${API_BASE_URL}/api/teachers`);
-        if (!res.ok) throw new Error('Failed to fetch teachers');
-        const data = await res.json();
-        setTeachersList(data);
-      } catch (err) {
-        console.warn('Using offline fallback for teachers list due to error:', err);
-        setTeachersList(TEACHERS_FALLBACK);
-      }
-    };
     fetchTeachers();
   }, []);
 
   // Fetch classes when selected teacher changes
   useEffect(() => {
-    if (!teacher.trim()) {
-      setClassesList([]);
-      setFullClassesData([]);
-      return;
-    }
-    const fetchClasses = async () => {
-      try {
-        const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
-        const res = await fetch(`${API_BASE_URL}/api/classes?teacherName=${encodeURIComponent(teacher.trim())}&full=true`);
-        if (!res.ok) throw new Error('Failed to fetch classes');
-        const data = await res.json();
-        setFullClassesData(data);
-        setClassesList(data.map((c: any) => c.name));
-      } catch (err) {
-        console.warn('Using offline fallback for classes list due to error:', err);
-        const trimmedTeacher = teacher.trim();
-        const fallbackClasses = TEACHER_CLASSES_MAP_FALLBACK[trimmedTeacher] || [];
-        setClassesList(fallbackClasses);
-        setFullClassesData(fallbackClasses.map(name => ({ name, teacherName: teacher })));
-      }
-    };
-    fetchClasses();
+    fetchClasses(teacher);
   }, [teacher]);
 
   // Fetch students when selected class changes
   useEffect(() => {
-    if (!className.trim()) {
-      setStudentsList([]);
-      setStudentDetails([]);
-      return;
-    }
-    const fetchStudents = async () => {
-      try {
-        const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
-        const res = await fetch(`${API_BASE_URL}/api/students?className=${encodeURIComponent(className.trim())}`);
-        if (!res.ok) throw new Error('Failed to fetch students');
-        const data = await res.json();
-
-        if (data.length > 0 && typeof data[0] === 'object') {
-          setStudentDetails(data);
-          setStudentsList(data.map((s: any) => s.name));
-        } else {
-          setStudentDetails(data.map((name: string) => ({ name, maxUploadSize: 20 })));
-          setStudentsList(data);
-        }
-      } catch (err) {
-        console.warn('Using offline fallback for students list due to error:', err);
-        const trimmedClass = className.trim();
-        const fallbackStudents = CLASS_STUDENTS_MAP_FALLBACK[trimmedClass] || [];
-        setStudentDetails(fallbackStudents.map(name => ({ name, maxUploadSize: 20 })));
-        setStudentsList(fallbackStudents);
-      }
-    };
-    fetchStudents();
+    fetchStudents(className);
   }, [className]);
+
+  // Real-time synchronization of dropdown list data using useSSE (tokenless guest subscription)
+  useSSE({
+    'teacher-update': () => {
+      console.log('[SSE Realtime Sync] Teachers list updated, reloading dropdown...');
+      fetchTeachers();
+    },
+    'class-update': () => {
+      console.log('[SSE Realtime Sync] Classes list updated, reloading dropdown...');
+      fetchTeachers();
+      fetchClasses(teacher);
+    },
+    'student-update': () => {
+      console.log('[SSE Realtime Sync] Students list updated, reloading dropdown...');
+      fetchStudents(className);
+    }
+  });
 
   // Handle teacher change to reset dependent fields
   const handleTeacherChange = (newTeacher: string) => {
@@ -270,11 +470,7 @@ function Upload() {
   // Handle stage change and adjust session selection
   const handleStageChange = (newStage: string) => {
     setStage(newStage);
-    const isLinkAllowed = 
-      newStage === 'Bài thuyết trình' || 
-      newStage === 'Sản phẩm cuối khóa' || 
-      newStage === 'Checkpoint 1' || 
-      newStage === 'Checkpoint 2';
+    const isLinkAllowed = newStage === 'Bài thuyết trình';
     if (!isLinkAllowed) {
       setSubmissionType('file');
     }
@@ -358,116 +554,7 @@ function Upload() {
     return found && found.maxUploadSize ? found.maxUploadSize : 20;
   };
 
-  const getSelectedClassDeadline = (): string | null => {
-    if (!className || !stage || !fullClassesData.length) return null;
-    const cls = fullClassesData.find((c: any) => c.name.toLowerCase() === className.toLowerCase());
-    if (!cls) return null;
 
-    const stageLower = stage.toLowerCase();
-    const isTheory = stageLower.includes('ly thuyet') || stageLower.includes('lý thuyết') || stageLower.includes('theory');
-    if (isTheory) return 'Không áp dụng hạn chót (luôn được phép nộp)';
-
-    const parseSafeDate = (dtStr: string): Date => {
-      const hasTimezone = dtStr.includes('Z') || /([+-]\d{2}:\d{2}|[+-]\d{2})$/.test(dtStr);
-      return new Date(hasTimezone ? dtStr : `${dtStr}:00+07:00`);
-    };
-
-    let startDate: Date | null = null;
-    let deadlineDate: Date | null = null;
-    let isManual = false;
-
-    if (stageLower.includes('checkpoint 1')) {
-      if (cls.checkpoint1StartDate) {
-        startDate = parseSafeDate(cls.checkpoint1StartDate);
-        isManual = true;
-      } else if (cls.startDate) {
-        startDate = parseSafeDate(cls.startDate);
-        startDate.setDate(startDate.getDate() + 28);
-        const [h, m] = (cls.startTime || "08:00").split(":");
-        startDate.setHours(parseInt(h) || 8, parseInt(m) || 0, 0, 0);
-      }
-
-      if (cls.checkpoint1Deadline) {
-        deadlineDate = parseSafeDate(cls.checkpoint1Deadline);
-        isManual = true;
-      } else if (cls.startDate) {
-        deadlineDate = parseSafeDate(cls.startDate);
-        deadlineDate.setDate(deadlineDate.getDate() + 28);
-        const [h, m] = (cls.endTime || "10:00").split(":");
-        deadlineDate.setHours(parseInt(h) || 10, parseInt(m) || 0, 0, 0);
-      }
-    } else if (stageLower.includes('checkpoint 2')) {
-      if (cls.checkpoint2StartDate) {
-        startDate = parseSafeDate(cls.checkpoint2StartDate);
-        isManual = true;
-      } else if (cls.startDate) {
-        startDate = parseSafeDate(cls.startDate);
-        startDate.setDate(startDate.getDate() + 56);
-        const [h, m] = (cls.startTime || "08:00").split(":");
-        startDate.setHours(parseInt(h) || 8, parseInt(m) || 0, 0, 0);
-      }
-
-      if (cls.checkpoint2Deadline) {
-        deadlineDate = parseSafeDate(cls.checkpoint2Deadline);
-        isManual = true;
-      } else if (cls.startDate) {
-        deadlineDate = parseSafeDate(cls.startDate);
-        deadlineDate.setDate(deadlineDate.getDate() + 56);
-        const [h, m] = (cls.endTime || "10:00").split(":");
-        deadlineDate.setHours(parseInt(h) || 10, parseInt(m) || 0, 0, 0);
-      }
-    } else if (stageLower.includes('san pham cuoi khoa') || stageLower.includes('sản phẩm cuối khóa')) {
-      if (cls.finalProjectStartDate) {
-        startDate = parseSafeDate(cls.finalProjectStartDate);
-        isManual = true;
-      } else if (cls.startDate) {
-        startDate = parseSafeDate(cls.startDate);
-        // Start date is class start date at start time (0 days offset)
-        const [h, m] = (cls.startTime || "08:00").split(":");
-        startDate.setHours(parseInt(h) || 8, parseInt(m) || 0, 0, 0);
-      }
-
-      if (cls.finalProjectDeadline) {
-        deadlineDate = parseSafeDate(cls.finalProjectDeadline);
-        isManual = true;
-      } else if (cls.startDate) {
-        deadlineDate = parseSafeDate(cls.startDate);
-        // End date is session 13 end time + 24 hours (85 days offset)
-        deadlineDate.setDate(deadlineDate.getDate() + 85);
-        const [h, m] = (cls.endTime || "10:00").split(":");
-        deadlineDate.setHours(parseInt(h) || 10, parseInt(m) || 0, 0, 0);
-      }
-    } else if (stageLower.includes('thuyet trinh') || stageLower.includes('thuyết trình') || stageLower.includes('presentation')) {
-      if (cls.presentationStartDate) {
-        startDate = parseSafeDate(cls.presentationStartDate);
-        isManual = true;
-      } else if (cls.startDate) {
-        startDate = parseSafeDate(cls.startDate);
-        // Start date is class start date at start time (0 days offset)
-        const [h, m] = (cls.startTime || "08:00").split(":");
-        startDate.setHours(parseInt(h) || 8, parseInt(m) || 0, 0, 0);
-      }
-
-      if (cls.presentationDeadline) {
-        deadlineDate = parseSafeDate(cls.presentationDeadline);
-        isManual = true;
-      } else if (cls.startDate) {
-        deadlineDate = parseSafeDate(cls.startDate);
-        // End date is session 14 end time (91 days offset)
-        deadlineDate.setDate(deadlineDate.getDate() + 91);
-        const [h, m] = (cls.endTime || "10:00").split(":");
-        deadlineDate.setHours(parseInt(h) || 10, parseInt(m) || 0, 0, 0);
-      }
-    }
-
-    if (!startDate || isNaN(startDate.getTime()) || !deadlineDate || isNaN(deadlineDate.getTime())) {
-      return 'Chưa cấu hình lịch học hoặc hạn chót cho lớp này';
-    }
-
-    const formatDt = (d: Date) => formatDateTime(d);
-
-    return `Từ ${formatDt(startDate)} đến ${formatDt(deadlineDate)}${isManual ? ' (Thủ công)' : ''}${cls.allowLateUpload ? ' (Cho phép nộp muộn)' : ''}`;
-  };
 
   // Re-validate selected files when files list or student name changes
   useEffect(() => {
@@ -544,6 +631,12 @@ function Upload() {
   // Submit files to backend
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (isGateLocked) {
+      setUploadStatus('error');
+      setErrorMessage(gateStatus === 'not_started' ? 'Cổng nộp bài chưa mở. Không thể gửi bài tập lúc này.' : 'Cổng nộp bài đã đóng. Không thể gửi bài tập quá hạn.');
+      return;
+    }
 
     if (submissionType === 'file') {
       if (selectedFiles.length === 0) return;
@@ -719,6 +812,140 @@ function Upload() {
   };
 
   const isMetadataIncomplete = !teacher.trim() || !className.trim() || !fullName.trim() || !stage.trim() || !session.trim();
+  const isGateLocked = gateStatus === 'closed' || gateStatus === 'not_started';
+
+  const renderGateBanner = () => {
+    if (!className || !stage || !gateDatesInfo) return null;
+
+    const { startDate, endDate, lateType, lateDeadline, isTheory } = gateDatesInfo;
+    if (isTheory) return null;
+
+    let bannerBg = 'rgba(255, 255, 255, 0.02)';
+    let borderColor = 'var(--card-border)';
+    let borderLeftColor = 'var(--card-border)';
+    let badgeBg = 'rgba(255, 255, 255, 0.05)';
+    let badgeColor = 'var(--text-secondary)';
+    let statusText = '';
+    let statusIcon = <Info size={18} />;
+    let statusColor = 'var(--text-primary)';
+
+    if (gateStatus === 'open') {
+      bannerBg = 'rgba(16, 185, 129, 0.14)';
+      borderColor = 'var(--success)';
+      borderLeftColor = 'var(--success)';
+      badgeBg = 'var(--success-glow)';
+      badgeColor = 'var(--success)';
+      statusColor = 'var(--success)';
+      statusText = 'CỔNG NỘP BÀI ĐANG MỞ';
+      statusIcon = <CheckCircle2 size={18} style={{ color: 'var(--success)' }} />;
+    } else if (gateStatus === 'late_open') {
+      bannerBg = 'rgba(245, 158, 11, 0.14)';
+      borderColor = 'var(--warning)';
+      borderLeftColor = 'var(--warning)';
+      badgeBg = 'var(--warning-glow)';
+      badgeColor = 'var(--warning)';
+      statusColor = 'var(--warning)';
+      statusText = 'CỔNG NỘP MUỘN ĐANG MỞ';
+      statusIcon = <AlertTriangle size={18} style={{ color: 'var(--warning)' }} />;
+    } else if (gateStatus === 'not_started') {
+      bannerBg = 'rgba(99, 102, 241, 0.1)';
+      borderColor = 'var(--primary)';
+      borderLeftColor = 'var(--primary)';
+      badgeBg = 'var(--primary-glow)';
+      badgeColor = 'var(--primary)';
+      statusColor = 'var(--primary)';
+      statusText = 'CỔNG NỘP BÀI CHƯA MỞ';
+      statusIcon = <Clock size={18} style={{ color: 'var(--primary)' }} />;
+    } else if (gateStatus === 'closed') {
+      bannerBg = 'rgba(239, 68, 68, 0.14)';
+      borderColor = 'var(--error)';
+      borderLeftColor = 'var(--error)';
+      badgeBg = 'var(--error-glow)';
+      badgeColor = 'var(--error)';
+      statusColor = 'var(--error)';
+      statusText = 'CỔNG NỘP BÀI ĐÃ ĐÓNG';
+      statusIcon = <Lock size={18} style={{ color: 'var(--error)' }} />;
+    }
+
+    return (
+      <div style={{
+        background: bannerBg,
+        border: `2px solid ${borderColor}`,
+        borderLeft: `6px solid ${borderLeftColor}`,
+        borderRadius: '12px',
+        padding: '1.5rem',
+        marginBottom: '2rem',
+        boxShadow: '0 4px 20px rgba(0, 0, 0, 0.15)',
+        backdropFilter: 'blur(5px)',
+        transition: 'all 0.3s ease'
+      }}>
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: '0.75rem',
+          borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
+          paddingBottom: '0.75rem',
+          marginBottom: '0.75rem'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            {statusIcon}
+            <span style={{
+              fontSize: '0.85rem',
+              fontWeight: '700',
+              letterSpacing: '0.05em',
+              color: badgeColor
+            }}>
+              {statusText}
+            </span>
+          </div>
+
+          {gateMessage && (
+            <div style={{
+              background: badgeBg,
+              color: badgeColor,
+              padding: '6px 12px',
+              borderRadius: '20px',
+              fontSize: '0.85rem',
+              fontWeight: '700',
+              fontFamily: 'monospace',
+              border: `1px solid ${borderColor}`
+            }}>
+              {gateMessage}
+            </div>
+          )}
+        </div>
+
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: '1fr',
+          gap: '0.5rem',
+          fontSize: '0.85rem',
+          color: 'var(--text-secondary)'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <Calendar size={14} style={{ color: statusColor }} />
+            <span>Thời gian chính thức: <b>{startDate ? formatDateTime(startDate) : 'N/A'}</b> đến <b style={{ color: statusColor, fontSize: '0.95rem' }}>{endDate ? formatDateTime(endDate) : 'N/A'}</b></span>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <Info size={14} style={{ color: statusColor }} />
+            <span>
+              Quy định nộp muộn: {' '}
+              {lateType === 'none' && <b style={{ color: gateStatus === 'closed' ? 'var(--error)' : 'var(--text-primary)' }}>Không cho phép nộp muộn</b>}
+              {lateType === 'unlimited' && <b style={{ color: 'var(--warning)' }}>Cho phép nộp muộn vô thời hạn</b>}
+              {lateType === 'limited' && (
+                <>
+                  Cho phép nộp muộn đến ngày <b style={{ color: 'var(--warning)', fontSize: '0.95rem' }}>{lateDeadline ? formatDateTime(lateDeadline) : 'N/A'}</b>
+                </>
+              )}
+            </span>
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   return (
     <>
@@ -812,7 +1039,9 @@ function Upload() {
               />
             </div>
 
-            {(stage === 'Bài thuyết trình' || stage === 'Sản phẩm cuối khóa' || stage === 'Checkpoint 1' || stage === 'Checkpoint 2') && !isMetadataIncomplete && (
+            {renderGateBanner()}
+
+            {stage === 'Bài thuyết trình' && !isMetadataIncomplete && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginBottom: '2rem' }}>
                 <label className="form-label">Hình thức nộp bài</label>
                 <div style={{
@@ -891,7 +1120,7 @@ function Upload() {
                           setErrorMessage('');
                         }
                       }}
-                      placeholder="Dán link Canva hoặc bài thuyết trình của bạn vào đây..."
+                      placeholder={isGateLocked ? "Cổng nộp bài đang khóa..." : "Dán link Canva hoặc bài thuyết trình của bạn vào đây..."}
                       className="form-input-field"
                       style={{ 
                         width: '100%', 
@@ -905,11 +1134,12 @@ function Upload() {
                         marginBottom: 0
                       }}
                       required
+                      disabled={isGateLocked}
                     />
                     <button
                       type="button"
                       onClick={handleValidateLinkOnly}
-                      disabled={isValidatingLink || !presentationLink.trim()}
+                      disabled={isGateLocked || isValidatingLink || !presentationLink.trim()}
                       className="btn btn-neutral"
                       style={{
                         alignSelf: 'flex-start',
@@ -997,40 +1227,24 @@ function Upload() {
                     <Info size={14} />
                     Phương thức nộp link không tính giới hạn dung lượng tải lên
                   </div>
-                  {getSelectedClassDeadline() && (
-                    <div style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '0.4rem',
-                      background: 'rgba(99, 102, 241, 0.1)',
-                      color: 'var(--primary)',
-                      padding: '4px 10px',
-                      borderRadius: '6px',
-                      fontSize: '0.8rem',
-                      fontWeight: '600',
-                      border: '1px solid rgba(99, 102, 241, 0.2)'
-                    }}>
-                      <Calendar size={14} />
-                      Hạn nộp bài: {getSelectedClassDeadline()}
-                    </div>
-                  )}
+
                 </div>
               </div>
             ) : (
               <div
-                className={`dropzone ${isDragging && !isMetadataIncomplete ? 'dragging' : ''}`}
-                onDragOver={isMetadataIncomplete ? (e) => e.preventDefault() : handleDragOver}
+                className={`dropzone ${isDragging && !isMetadataIncomplete && !isGateLocked ? 'dragging' : ''}`}
+                onDragOver={isMetadataIncomplete || isGateLocked ? (e) => e.preventDefault() : handleDragOver}
                 onDragLeave={handleDragLeave}
-                onDrop={isMetadataIncomplete ? (e) => e.preventDefault() : handleDrop}
-                onClick={isMetadataIncomplete ? undefined : handleBrowseClick}
+                onDrop={isMetadataIncomplete || isGateLocked ? (e) => e.preventDefault() : handleDrop}
+                onClick={isMetadataIncomplete || isGateLocked ? undefined : handleBrowseClick}
                 style={{
                   border: '2px dashed var(--card-border)',
                   borderRadius: '12px',
                   padding: '3rem 2rem',
                   textAlign: 'center',
-                  cursor: isMetadataIncomplete ? 'not-allowed' : 'pointer',
-                  backgroundColor: isDragging && !isMetadataIncomplete ? 'rgba(99, 102, 241, 0.08)' : 'rgba(0, 0, 0, 0.2)',
-                  borderColor: isDragging && !isMetadataIncomplete ? 'var(--primary)' : 'var(--card-border)',
+                  cursor: isMetadataIncomplete || isGateLocked ? 'not-allowed' : 'pointer',
+                  backgroundColor: isDragging && !isMetadataIncomplete && !isGateLocked ? 'rgba(99, 102, 241, 0.08)' : 'rgba(0, 0, 0, 0.2)',
+                  borderColor: isGateLocked ? 'var(--error)' : (isDragging && !isMetadataIncomplete ? 'var(--primary)' : 'var(--card-border)'),
                   transition: 'var(--transition-smooth)',
                   marginBottom: '2rem',
                   display: 'flex',
@@ -1038,7 +1252,7 @@ function Upload() {
                   alignItems: 'center',
                   justifyContent: 'center',
                   gap: '1rem',
-                  opacity: isMetadataIncomplete ? 0.4 : 1
+                  opacity: isMetadataIncomplete || isGateLocked ? 0.4 : 1
                 }}
               >
                 <input
@@ -1046,7 +1260,7 @@ function Upload() {
                 ref={fileInputRef}
                 onChange={handleFileChange}
                 multiple
-                disabled={isMetadataIncomplete}
+                disabled={isMetadataIncomplete || isGateLocked}
                 style={{ display: 'none' }}
               />
 
@@ -1055,15 +1269,15 @@ function Upload() {
                 width: '64px',
                 height: '64px',
                 borderRadius: '50%',
-                background: isDragging && !isMetadataIncomplete ? 'rgba(99, 102, 241, 0.2)' : 'rgba(255, 255, 255, 0.03)',
+                background: isGateLocked ? 'rgba(239, 68, 68, 0.1)' : (isDragging && !isMetadataIncomplete ? 'rgba(99, 102, 241, 0.2)' : 'rgba(255, 255, 255, 0.03)'),
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                color: isDragging && !isMetadataIncomplete ? 'var(--primary)' : 'var(--text-secondary)',
-                border: '1px solid rgba(255, 255, 255, 0.05)',
+                color: isGateLocked ? 'var(--error)' : (isDragging && !isMetadataIncomplete ? 'var(--primary)' : 'var(--text-secondary)'),
+                border: isGateLocked ? '1px solid rgba(239, 68, 68, 0.2)' : '1px solid rgba(255, 255, 255, 0.05)',
                 transition: 'var(--transition-smooth)'
               }}>
-                <UploadCloud size={32} />
+                {isGateLocked ? <Lock size={32} /> : <UploadCloud size={32} />}
               </div>
 
               {isMetadataIncomplete ? (
@@ -1073,6 +1287,15 @@ function Upload() {
                   </p>
                   <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
                     Vui lòng điền đầy đủ thông tin bên trên để nộp bài
+                  </p>
+                </div>
+              ) : isGateLocked ? (
+                <div>
+                  <p style={{ fontWeight: '600', fontSize: '1.05rem', color: 'var(--error)', marginBottom: '0.25rem' }}>
+                    {gateStatus === 'not_started' ? 'Cổng nộp bài chưa mở' : 'Cổng nộp bài đã đóng'}
+                  </p>
+                  <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                    {gateStatus === 'not_started' ? 'Vui lòng quay lại khi đến giờ nộp bài' : 'Đã quá thời gian nộp bài cho phép'}
                   </p>
                 </div>
               ) : (
@@ -1099,23 +1322,7 @@ function Upload() {
                       <Info size={14} />
                       Giới hạn dung lượng bài nộp: {getSelectedStudentLimit()} MB
                     </div>
-                    {getSelectedClassDeadline() && (
-                      <div style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '0.4rem',
-                        background: 'rgba(99, 102, 241, 0.1)',
-                        color: 'var(--primary)',
-                        padding: '4px 10px',
-                        borderRadius: '6px',
-                        fontSize: '0.8rem',
-                        fontWeight: '600',
-                        border: '1px solid rgba(99, 102, 241, 0.2)'
-                      }}>
-                        <Calendar size={14} />
-                        Hạn nộp bài: {getSelectedClassDeadline()}
-                      </div>
-                    )}
+
                   </div>
                 </div>
               )}
@@ -1281,13 +1488,13 @@ function Upload() {
             <button
               type="submit"
               className="btn btn-primary"
-              disabled={(submissionType === 'file' ? selectedFiles.length === 0 : (!presentationLink.trim() || !isLinkValidatedSuccessfully)) || isUploading || uploadStatus === 'error' || cooldownTime > 0}
+              disabled={isGateLocked || (submissionType === 'file' ? selectedFiles.length === 0 : (!presentationLink.trim() || !isLinkValidatedSuccessfully)) || isUploading || uploadStatus === 'error' || cooldownTime > 0}
               style={{
                 height: '3rem',
                 fontSize: '1rem'
               }}
             >
-              {isUploading ? 'Đang gửi bài...' : cooldownTime > 0 ? `Đợi ${cooldownTime}s để nộp tiếp...` : 'Nộp bài'}
+              {isUploading ? 'Đang gửi bài...' : (isGateLocked ? (gateStatus === 'not_started' ? 'Cổng nộp bài chưa mở' : 'Đã quá hạn nộp bài') : (cooldownTime > 0 ? `Đợi ${cooldownTime}s để nộp tiếp...` : 'Nộp bài'))}
             </button>
           </form>
         </div>

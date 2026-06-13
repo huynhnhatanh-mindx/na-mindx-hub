@@ -300,15 +300,15 @@ export default function Settings() {
 
             {/* Email Input */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-              <label className="form-label">Email tài khoản (Liên kết qua Google và chỉ đọc)</label>
+              <label className="form-label">Email tài khoản</label>
               <div style={{ display: 'flex', gap: '0.5rem', width: '100%' }}>
                 <input
                   type="email"
                   value={email}
-                  placeholder="Chưa liên kết email..."
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="Nhập email nhận thông báo..."
                   className="form-input-field"
-                  style={{ flex: 1, opacity: 0.7, cursor: 'not-allowed', backgroundColor: 'rgba(255, 255, 255, 0.02)' }}
-                  readOnly
+                  style={{ flex: 1 }}
                 />
                 {(currentUser?.role === 'teacher' || currentUser?.role === 'admin') && (
                   email ? (
@@ -409,7 +409,7 @@ export default function Settings() {
                   <input
                     type="checkbox"
                     checked={emailNotificationsEnabled}
-                    disabled={!email}
+                    disabled={!email.trim()}
                     onChange={(e) => setEmailNotificationsEnabled(e.target.checked)}
                     style={{ opacity: 0, width: 0, height: 0 }}
                   />
@@ -424,7 +424,7 @@ export default function Settings() {
                     transition: 'var(--transition-fast)',
                     borderRadius: '24px',
                     border: '1px solid var(--card-border)',
-                    opacity: email ? 1 : 0.5,
+                    opacity: email.trim() ? 1 : 0.5,
                     boxShadow: emailNotificationsEnabled ? '0 0 12px var(--primary-glow)' : 'none'
                   }}>
                     <span style={{
@@ -442,9 +442,9 @@ export default function Settings() {
                   </span>
                 </label>
               </div>
-              {!email && (
+              {!email.trim() && (
                 <span style={{ fontSize: '0.75rem', color: '#ff8a8a', marginTop: '0.35rem', display: 'block' }}>
-                  ⚠️ Vui lòng liên kết tài khoản Google trước để có thể kích hoạt tùy chọn này.
+                  ⚠️ Vui lòng nhập địa chỉ email trước để có thể kích hoạt tùy chọn này.
                 </span>
               )}
             </div>

@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { formatDateTime } from '../utils/date';
-import { ArrowLeft, Search, Link2 } from 'lucide-react';
+import { ArrowLeft, Search } from 'lucide-react';
+import { useSSE } from '../hooks/useSSE';
+import { preventOrphan } from '../utils/text';
 
 interface Submission {
   _id: string;
@@ -17,6 +19,7 @@ interface Submission {
 }
 
 export default function Submissions() {
+  const navigate = useNavigate();
   const [submissions, setSubmissions] = useState<Submission[]>([]);
   const [filteredSubmissions, setFilteredSubmissions] = useState<Submission[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -27,7 +30,27 @@ export default function Submissions() {
   // Filter dropdown states
   const [selectedClass, setSelectedClass] = useState('');
   const [selectedStage, setSelectedStage] = useState('');
+  const [selectedTeacher, setSelectedTeacher] = useState('');
   const [classOptions, setClassOptions] = useState<string[]>([]);
+  const [teacherOptions, setTeacherOptions] = useState<string[]>([]);
+
+  // Register SSE for submissions
+  useSSE({
+    'submission-update': () => {
+      console.log('[SSE] Submissions updated, reloading...');
+      if (user) {
+        fetchLoggedSubmissions();
+      }
+    },
+    'force-logout': (data) => {
+      console.log('[SSE] Force logout event received:', data);
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+      window.dispatchEvent(new Event('storage'));
+      alert(data?.reason || 'Tài khoản của bạn đã bị khóa hoặc vô hiệu hóa.');
+      navigate('/login');
+    }
+  });
 
   const fetchLoggedSubmissions = async () => {
     setError('');
@@ -157,13 +180,15 @@ export default function Submissions() {
     }
   };
 
-  // Dynamically extract class list from fetched submissions
+  // Dynamically extract class and teacher list from fetched submissions
   useEffect(() => {
     const classes = Array.from(new Set(submissions.map((sub) => sub.className).filter(Boolean)));
     setClassOptions(classes);
+    const teachers = Array.from(new Set(submissions.map((sub) => sub.teacher).filter(Boolean)));
+    setTeacherOptions(teachers);
   }, [submissions]);
 
-  // Filter submissions when search term, class, or stage changes
+  // Filter submissions when search term, class, teacher, or stage changes
   useEffect(() => {
     let filtered = submissions;
 
@@ -186,6 +211,13 @@ export default function Submissions() {
       );
     }
 
+    // Teacher filter
+    if (selectedTeacher) {
+      filtered = filtered.filter(
+        (sub) => sub.teacher === selectedTeacher
+      );
+    }
+
     // Stage filter
     if (selectedStage) {
       filtered = filtered.filter(
@@ -194,7 +226,7 @@ export default function Submissions() {
     }
 
     setFilteredSubmissions(filtered);
-  }, [searchTerm, selectedClass, selectedStage, submissions]);
+  }, [searchTerm, selectedClass, selectedTeacher, selectedStage, submissions]);
 
   const formatDate = (dateStr: string) => formatDateTime(dateStr);
 
@@ -299,6 +331,20 @@ export default function Submissions() {
                     <option value="checkpoint 1">Checkpoint 1</option>
                     <option value="checkpoint 2">Checkpoint 2</option>
                     <option value="sản phẩm cuối khóa">Sản phẩm cuối khóa</option>
+                  </select>
+                </div>
+
+                {/* Teacher Filter Dropdown */}
+                <div style={{ flex: '1 1 150px', maxWidth: '200px' }}>
+                  <select
+                    value={selectedTeacher}
+                    onChange={(e) => setSelectedTeacher(e.target.value)}
+                    className="form-select-field"
+                  >
+                    <option value="">Tất cả giáo viên</option>
+                    {teacherOptions.map((teacher) => (
+                      <option key={teacher} value={teacher}>{teacher}</option>
+                    ))}
                   </select>
                 </div>
               </div>
@@ -441,37 +487,94 @@ export default function Submissions() {
                         onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.01)')}
                         onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
                       >
-                        <td data-label="Học Viên" style={{ padding: '1rem', color: 'var(--text-primary)', fontWeight: '600' }}>{sub.fullName}</td>
+                         <td data-label="Học Viên" style={{ padding: '1rem', color: 'var(--text-primary)', fontWeight: '600' }}>{preventOrphan(sub.fullName)}</td>
                         <td data-label="Lớp" style={{ padding: '1rem' }}>
                           <span style={{ background: 'rgba(99, 102, 241, 0.1)', color: 'var(--primary)', padding: '2px 8px', borderRadius: '4px', fontSize: '0.8rem', fontWeight: '600' }}>
-                            {sub.className}
+                            {preventOrphan(sub.className)}
                           </span>
                         </td>
-                        <td data-label="Giáo Viên" style={{ padding: '1rem' }}>{sub.teacher}</td>
-                        <td data-label="Bài Học" style={{ padding: '1rem' }}>{sub.stage} ({sub.session})</td>
-                        <td data-label="Tên Tệp Tin" style={{ padding: '1rem' }}>
-                          <a 
-                            href={sub.fileUrl} 
-                            target="_blank" 
-                            rel="noopener noreferrer" 
-                            style={{ 
-                              color: 'var(--secondary)', 
-                              textDecoration: 'none', 
-                              fontWeight: '500',
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: '0.35rem'
-                            }}
-                            onMouseEnter={(e) => (e.currentTarget.style.textDecoration = 'underline')}
-                            onMouseLeave={(e) => (e.currentTarget.style.textDecoration = 'none')}
-                          >
-                            <Link2 size={14} />
-                            <span style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                              {sub.fileName}
-                            </span>
-                          </a>
+                        <td data-label="Giáo Viên" style={{ padding: '1rem' }}>{preventOrphan(sub.teacher)}</td>
+                        <td data-label="Bài Học" style={{ padding: '1rem' }}>{preventOrphan(`${sub.stage} (${sub.session})`)}</td>
+                        <td data-label="Tên Tệp Tin/Liên kết" style={{ padding: '1rem' }}>
+                          {sub.fileUrl ? (
+                            (() => {
+                              const isCanva = sub.fileUrl.includes('canva.com') || sub.fileUrl.includes('canva.link');
+                              const isDrive = sub.fileUrl.includes('drive.google.com') || sub.fileUrl.includes('docs.google.com');
+                              const isMega = sub.fileUrl.includes('mega.nz') || sub.fileUrl.includes('mega.co.nz');
+                              
+                              let badgeColor = '#818cf8';
+                              let badgeBg = 'rgba(99, 102, 241, 0.08)';
+                              let badgeBorder = '1px solid rgba(99, 102, 241, 0.2)';
+                              let dotColor = '#6366f1';
+                              let labelText = 'Xem liên kết';
+                              let isDot = false;
+
+                              if (isCanva) {
+                                badgeColor = '#38bdf8';
+                                badgeBg = 'rgba(56, 189, 248, 0.08)';
+                                badgeBorder = '1px solid rgba(56, 189, 248, 0.2)';
+                                dotColor = '#00c4cc';
+                                labelText = 'Canva Link';
+                                isDot = true;
+                              } else if (isDrive) {
+                                badgeColor = '#34d399';
+                                badgeBg = 'rgba(16, 185, 129, 0.08)';
+                                badgeBorder = '1px solid rgba(16, 185, 129, 0.2)';
+                                dotColor = '#10b981';
+                                labelText = sub.fileUrl.includes('presentation') ? 'Google Slides' : 'Google Drive';
+                                isDot = true;
+                              } else if (isMega) {
+                                badgeColor = '#f87171';
+                                badgeBg = 'rgba(239, 68, 68, 0.08)';
+                                badgeBorder = '1px solid rgba(239, 68, 68, 0.2)';
+                                dotColor = '#ef4444';
+                                labelText = 'MEGA Link';
+                                isDot = true;
+                              }
+
+                              return (
+                                <a 
+                                  href={sub.fileUrl} 
+                                  target="_blank" 
+                                  rel="noopener noreferrer" 
+                                  title={sub.fileName}
+                                  style={{
+                                    color: badgeColor,
+                                    textDecoration: 'none',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '0.35rem',
+                                    fontWeight: '600',
+                                    padding: '6px 12px',
+                                    background: badgeBg,
+                                    border: badgeBorder,
+                                    borderRadius: '6px',
+                                    fontSize: '0.8rem',
+                                    transition: 'all 0.2s',
+                                    maxWidth: '180px',
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis',
+                                    whiteSpace: 'nowrap'
+                                  }}
+                                  className="submission-link-badge"
+                                >
+                                  {isDot ? (
+                                    <span style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', backgroundColor: dotColor, flexShrink: 0 }}></span>
+                                  ) : (
+                                    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: 'middle', flexShrink: 0 }}>
+                                      <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+                                      <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+                                    </svg>
+                                  )}
+                                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{labelText}</span>
+                                </a>
+                              );
+                            })()
+                          ) : (
+                            <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem', fontStyle: 'italic' }}>Không có tệp</span>
+                          )}
                         </td>
-                        <td data-label="Ngày Nộp" style={{ padding: '1rem' }}>{formatDate(sub.createdAt)}</td>
+                        <td data-label="Ngày Nộp" style={{ padding: '1rem' }}>{preventOrphan(formatDate(sub.createdAt))}</td>
                       </tr>
                     ))}
                   </tbody>
