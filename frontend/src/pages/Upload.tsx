@@ -1045,6 +1045,31 @@ function Upload() {
               />
             </div>
 
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '1.5rem', marginBottom: '1.5rem' }}>
+              <label className="form-label" style={{ fontWeight: '500', fontSize: '0.95rem' }}>
+                Ghi chú (không bắt buộc)
+              </label>
+              <textarea
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                placeholder="Nhập nguyện vọng, lưu ý hoặc lời nhắn nếu có..."
+                className="form-input-field"
+                style={{
+                  width: '100%',
+                  height: '80px',
+                  padding: '0.75rem 1rem',
+                  fontSize: '0.95rem',
+                  borderRadius: '8px',
+                  border: '1px solid var(--card-border)',
+                  background: 'rgba(255, 255, 255, 0.03)',
+                  color: 'var(--text-primary)',
+                  resize: 'vertical',
+                  fontFamily: 'inherit'
+                }}
+                disabled={isUploading}
+              />
+            </div>
+
             {renderGateBanner()}
 
             {stage === 'Bài thuyết trình' && !isMetadataIncomplete && (
@@ -1487,33 +1512,6 @@ function Upload() {
                 <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
                   {errorMessage}
                 </p>
-              </div>
-            )}
-
-            {!isMetadataIncomplete && !isGateLocked && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginBottom: '2rem' }}>
-                <label className="form-label" style={{ fontWeight: '500', fontSize: '0.95rem' }}>
-                  Ghi chú (không bắt buộc)
-                </label>
-                <textarea
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  placeholder="Nhập nguyện vọng, lưu ý hoặc lời nhắn nếu có..."
-                  className="form-input-field"
-                  style={{
-                    width: '100%',
-                    height: '100px',
-                    padding: '0.75rem 1rem',
-                    fontSize: '0.95rem',
-                    borderRadius: '8px',
-                    border: '1px solid var(--card-border)',
-                    background: 'rgba(255, 255, 255, 0.03)',
-                    color: 'var(--text-primary)',
-                    resize: 'vertical',
-                    fontFamily: 'inherit'
-                  }}
-                  disabled={isUploading}
-                />
               </div>
             )}
 
