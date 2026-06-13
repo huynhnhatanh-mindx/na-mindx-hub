@@ -7,7 +7,7 @@ import ContactAdmin from './pages/ContactAdmin';
 import Login from './pages/Login';
 import AdminDashboard from './pages/AdminDashboard';
 import Settings from './pages/Settings';
-import Changelog from './pages/Changelog';
+import Features from './pages/Features';
 import PresentationArranger from './pages/PresentationArranger';
 import GoogleSetup from './pages/GoogleSetup';
 import ForgotPassword from './pages/ForgotPassword';
@@ -74,7 +74,7 @@ function App() {
           <Route path="login" element={<Login />} />
           <Route path="forgot-password" element={<ForgotPassword />} />
           <Route path="reset-password" element={<ResetPassword />} />
-          <Route path="changelog" element={<Changelog />} />
+          <Route path="features" element={<Features />} />
           
           {/* Route thiết lập liên kết tài khoản Google cho Giáo viên */}
           <Route element={<GoogleSetupRoute />}>

@@ -79,8 +79,8 @@ function Header() {
             </li>
           )}
           <li>
-            <NavLink to="/changelog" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-              Phiên bản
+            <NavLink to="/features" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
+              Chức năng
             </NavLink>
           </li>
           {!user && (
