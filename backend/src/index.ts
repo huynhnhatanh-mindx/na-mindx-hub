@@ -302,7 +302,7 @@ async function checkLinkPublicAccess(url: string): Promise<{ isAccessible: boole
 
     const finalUrl = response.url;
     const lowerFinalUrl = finalUrl.toLowerCase();
-    
+
     const privateKeywords = [
       'login',
       'signin',
@@ -365,10 +365,10 @@ async function deleteSubmissionFileFromStorage(submission: any) {
   if (!submission || !submission.fileUrl) return;
 
   const fileUrl = submission.fileUrl;
-  const isWebLink = fileUrl.startsWith('http') && 
-                    !fileUrl.includes('drive.google.com') && 
-                    !fileUrl.includes('mega.nz') &&
-                    !extractGoogleDriveFileId(fileUrl);
+  const isWebLink = fileUrl.startsWith('http') &&
+    !fileUrl.includes('drive.google.com') &&
+    !fileUrl.includes('mega.nz') &&
+    !extractGoogleDriveFileId(fileUrl);
   if (isWebLink) {
     console.log(`[Safe Delete]: Skipping cloud storage deletion for web link submission: ${fileUrl}`);
     return;
@@ -449,14 +449,14 @@ async function generateStudentCode(name: string): Promise<string> {
   if (parts.length === 0 || !parts[0]) return 'hv';
   const firstName = parts[parts.length - 1];
   const otherParts = parts.slice(0, parts.length - 1);
-  
+
   const cleanFirstName = normalizeUsername(firstName);
   const cleanOtherInitials = otherParts
     .map(word => normalizeUsername(word)[0] || '')
     .join('');
-    
+
   const baseCode = cleanFirstName + cleanOtherInitials;
-  
+
   let finalCode = baseCode || 'hv';
   let counter = 1;
   while (await StudentModel.findOne({ studentCode: finalCode })) {
@@ -474,7 +474,7 @@ function parseVietnamDate(dateInput: any): Date | null {
   }
   const d = new Date(dateInput);
   if (isNaN(d.getTime())) return null;
-  
+
   if (typeof dateInput === 'string') {
     const cleanInput = dateInput.trim();
     // Match yyyy-mm-dd or yyyy-mm-ddThh:mm without timezone info
@@ -496,23 +496,23 @@ function parseVietnamDate(dateInput: any): Date | null {
 
 function calculateVietnamDeadline(baseDate: Date, daysOffset: number, endTimeStr: string): Date {
   const targetDate = new Date(baseDate.getTime() + daysOffset * 24 * 60 * 60 * 1000);
-  
+
   const formatter = new Intl.DateTimeFormat('en-US', {
     timeZone: 'Asia/Ho_Chi_Minh',
     year: 'numeric',
     month: '2-digit',
     day: '2-digit'
   });
-  
+
   const parts = formatter.formatToParts(targetDate);
   const year = parts.find(p => p.type === 'year')?.value || '2026';
   const month = parts.find(p => p.type === 'month')?.value || '01';
   const day = parts.find(p => p.type === 'day')?.value || '01';
-  
+
   const [hStr, mStr] = (endTimeStr || "10:00").split(":");
   const hours = (hStr || "10").padStart(2, '0');
   const minutes = (mStr || "00").padStart(2, '0');
-  
+
   const isoStr = `${year}-${month}-${day}T${hours}:${minutes}:00+07:00`;
   return new Date(isoStr);
 }
@@ -533,7 +533,7 @@ function formatVietnamDateTime(d: Date): string {
   const day = parts.find(p => p.type === 'day')?.value || '01';
   const hour = parts.find(p => p.type === 'hour')?.value || '10';
   const minute = parts.find(p => p.type === 'minute')?.value || '00';
-  
+
   return `${hour}:${minute} ngày ${day}/${month}/${year}`;
 }
 
@@ -944,7 +944,7 @@ app.get('/api/health', (req: Request, res: Response) => {
 // Hello API for Frontend connection test
 app.get('/api/hello', (req: Request, res: Response) => {
   res.json({
-    message: 'Hello from NAK Project Backend! connection established successfully.'
+    message: 'Hello from NA MindX Hub Backend! connection established successfully.'
   });
 });
 
@@ -1071,7 +1071,7 @@ function verifySecureToken(token: string): { username: string; role: string } | 
 
     const parts = payload.split(':');
     if (parts.length < 3) return null;
-    
+
     // Check expiration (24 hours)
     const tokenTime = parseInt(parts[2], 10);
     const EXPIRATION_TIME = 24 * 60 * 60 * 1000;
@@ -1187,7 +1187,7 @@ function forceLogoutUser(username: string) {
 app.get('/api/realtime/stream', (req: Request, res: Response) => {
   const token = req.query.token as string;
   let verified = token ? verifySecureToken(token) : null;
-  
+
   const isGuest = !verified;
   const username = verified ? verified.username : 'guest-' + crypto.randomUUID().substring(0, 8);
   const role = verified ? verified.role : 'guest';
@@ -1228,7 +1228,7 @@ app.get('/api/realtime/stream', (req: Request, res: Response) => {
 app.use('/api/admin', (req, res, next) => {
   if (['POST', 'PUT', 'DELETE'].includes(req.method)) {
     const originalJson = res.json.bind(res);
-    res.json = function(body?: any): any {
+    res.json = function (body?: any): any {
       const result = originalJson(body);
       if (res.statusCode >= 200 && res.statusCode < 300) {
         const urlPath = req.originalUrl;
@@ -1330,7 +1330,7 @@ app.get('/api/auth/google/url', async (req: Request, res: Response) => {
 
     const oauth2Client = getGoogleOAuthClient();
     const state = Buffer.from(verified.username).toString('base64');
-    
+
     const url = oauth2Client.generateAuthUrl({
       access_type: 'offline',
       prompt: 'consent',
@@ -1359,10 +1359,10 @@ app.get('/api/auth/google/callback', async (req: Request, res: Response) => {
 
     const username = Buffer.from(stateBase64, 'base64').toString('utf8');
     const oauth2Client = getGoogleOAuthClient();
-    
+
     // Đổi code lấy tokens
     const { tokens } = await oauth2Client.getToken(code);
-    
+
     // Kiểm tra xem người dùng đã cấp quyền Google Drive hay chưa
     const grantedScopes = tokens.scope || '';
     if (!grantedScopes.includes('https://www.googleapis.com/auth/drive')) {
@@ -1536,7 +1536,7 @@ app.post('/api/auth/forgot-password', async (req: Request, res: Response) => {
     // Gửi email
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
     const resetLink = `${frontendUrl}/reset-password?token=${resetToken}`;
-    
+
     const htmlContent = `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 25px; border: 1px solid #e2e8f0; border-radius: 12px; background-color: #ffffff; color: #1e293b;">
         <div style="text-align: center; margin-bottom: 20px;">
@@ -1970,11 +1970,11 @@ app.post('/api/admin/users/bulk-delete', adminAuth, async (req: Request, res: Re
   try {
     const { ids } = req.body;
     if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: 'Dữ liệu không hợp lệ.' });
-    
+
     // Check if trying to delete self or admin
     const reqUser = (req as any).user;
     const usersToDelete = await UserModel.find({ _id: { $in: ids } });
-    
+
     for (const u of usersToDelete) {
       if (u.username === reqUser.username) {
         return res.status(400).json({ error: 'Không thể tự xóa tài khoản của chính mình trong danh sách hàng loạt.' });
@@ -2008,10 +2008,10 @@ app.post('/api/admin/users/bulk-update-status', adminAuth, async (req: Request, 
     if (!Array.isArray(ids) || !ids.length || !['active', 'inactive'].includes(status)) {
       return res.status(400).json({ error: 'Dữ liệu không hợp lệ.' });
     }
-    
+
     const reqUser = (req as any).user;
     const usersToUpdate = await UserModel.find({ _id: { $in: ids } });
-    
+
     for (const u of usersToUpdate) {
       if (status === 'inactive' && u.username === reqUser.username) {
         return res.status(400).json({ error: 'Không thể tự khóa tài khoản của chính mình.' });
@@ -2020,7 +2020,7 @@ app.post('/api/admin/users/bulk-update-status', adminAuth, async (req: Request, 
         return res.status(400).json({ error: 'Không thể khóa tài khoản admin hệ thống.' });
       }
     }
-    
+
     await UserModel.updateMany({ _id: { $in: ids } }, { status });
     await logAudit('BULK_UPDATE_STATUS', 'User', `Cập nhật trạng thái "${status}" cho ${ids.length} tài khoản`, reqUser.username, reqUser.role);
 
@@ -2051,13 +2051,13 @@ app.get('/api/admin/classes', adminOrTeacherAuth, async (req: Request, res: Resp
     } else if (role === 'admin' && teacherName) {
       query.teacherName = teacherName;
     }
-    
+
     if (search) {
       query.name = { $regex: search, $options: 'i' };
     }
 
     const response = await buildPaginatedResponse(ClassModel, query, page, limit);
-    
+
     // Add student count to each class
     const classesWithCount = await Promise.all(response.data.map(async (cls: any) => {
       const studentCount = await StudentModel.countDocuments({ className: cls.name });
@@ -2187,7 +2187,7 @@ app.put('/api/admin/classes/:id', adminOrTeacherAuth, async (req: Request, res: 
       }
       const oldName = cls.name;
       cls.name = name.trim().toUpperCase();
-      
+
       // Đồng bộ tên lớp mới cho học viên và các bài nộp cũ
       await StudentModel.updateMany({ className: oldName }, { className: cls.name });
       await SubmissionModel.updateMany({ className: oldName }, { className: cls.name });
@@ -2248,11 +2248,11 @@ app.post('/api/admin/classes/bulk-delete', adminOrTeacherAuth, async (req: Reque
   try {
     const { ids } = req.body;
     if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: 'Dữ liệu không hợp lệ.' });
-    
+
     const classesToDelete = await ClassModel.find({ _id: { $in: ids } });
     const classNames = classesToDelete.map(c => c.name);
     await StudentModel.updateMany({ className: { $in: classNames } }, { className: 'Chưa phân công lớp' });
-    
+
     await ClassModel.deleteMany({ _id: { $in: ids } });
     await logAudit('BULK_DELETE', 'Class', `Xóa ${ids.length} lớp học hàng loạt`, (req as any).user.username, (req as any).user.role);
     res.json({ message: 'Xóa hàng loạt thành công.' });
@@ -2388,15 +2388,15 @@ app.post('/api/admin/teachers/bulk-delete', adminAuth, async (req: Request, res:
   try {
     const { ids } = req.body;
     if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: 'Dữ liệu không hợp lệ.' });
-    
+
     const teachersToDelete = await TeacherModel.find({ _id: { $in: ids } });
     const teacherNames = teachersToDelete.map(t => t.name);
-    
+
     if (useMongoDB) {
       await UserModel.deleteMany({ displayName: { $in: teacherNames }, role: 'teacher' });
     }
     await ClassModel.updateMany({ teacherName: { $in: teacherNames } }, { teacherName: 'Chưa phân công' });
-    
+
     await TeacherModel.deleteMany({ _id: { $in: ids } });
     await logAudit('BULK_DELETE', 'Teacher', `Xóa ${ids.length} giáo viên hàng loạt`, (req as any).user.username, (req as any).user.role);
     res.json({ message: 'Xóa hàng loạt thành công.' });
@@ -2421,7 +2421,7 @@ app.get('/api/admin/students', adminOrTeacherAuth, async (req: Request, res: Res
       const teacherName = user ? user.displayName : '';
       const teacherClasses = await ClassModel.find({ teacherName });
       const classNames = teacherClasses.map(c => c.name);
-      
+
       if (classNameFilter) {
         if (classNames.includes(classNameFilter.trim())) {
           query.className = classNameFilter.trim();
@@ -2449,9 +2449,9 @@ app.get('/api/admin/students', adminOrTeacherAuth, async (req: Request, res: Res
         { studentCode: { $regex: search, $options: 'i' } }
       ];
     }
-    
+
     const response = await buildPaginatedResponse(StudentModel, query, page, limit);
-    
+
     response.data = await Promise.all(response.data.map(async (student: any) => {
       const studentObj = student.toObject ? student.toObject() : student;
       const submissionCount = await SubmissionModel.countDocuments({ fullName: studentObj.name, className: studentObj.className });
@@ -2589,7 +2589,7 @@ app.put('/api/admin/students/:id', adminOrTeacherAuth, async (req: Request, res:
     if (!finalStudentCode) {
       finalStudentCode = await generateStudentCode(name || student.name);
     }
-    
+
     if (finalStudentCode !== student.studentCode) {
       const codeExisting = await StudentModel.findOne({ studentCode: finalStudentCode });
       if (codeExisting) {
@@ -2616,11 +2616,11 @@ app.put('/api/admin/students/:id', adminOrTeacherAuth, async (req: Request, res:
       }
       student.className = finalClassName;
     }
-    
+
     if ((userRole === 'admin' || userRole === 'teacher') && req.body.maxUploadSize !== undefined) {
       (student as any).maxUploadSize = Number(req.body.maxUploadSize);
     }
-    
+
     if (status) {
       student.status = status;
     }
@@ -2691,7 +2691,7 @@ app.post('/api/admin/submissions/bulk-delete', adminOrTeacherAuth, async (req: R
   try {
     const { ids } = req.body;
     if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: 'Dữ liệu không hợp lệ.' });
-    
+
     let submissionsToDelete: any[] = [];
     if (useMongoDB) {
       submissionsToDelete = await SubmissionModel.find({ _id: { $in: ids } });
@@ -2926,7 +2926,7 @@ app.post('/api/upload-link', async (req: Request, res: Response) => {
       if (cls) {
         const stageLower = stage.toLowerCase();
         const isTheory = stageLower.includes('ly thuyet') || stageLower.includes('lý thuyết') || stageLower.includes('theory');
-        
+
         if (!isTheory) {
           let startDeadline: Date | null = null;
           let endDeadline: Date | null = null;
@@ -2956,7 +2956,7 @@ app.post('/api/upload-link', async (req: Request, res: Response) => {
           }
 
           const effectiveLateType = (lateType === 'infinite' || lateType === 'unlimited') ? 'unlimited' :
-                                    (lateType === 'duration' || lateType === 'limited') ? 'limited' : 'none';
+            (lateType === 'duration' || lateType === 'limited') ? 'limited' : 'none';
 
           if (startDeadline && new Date() < startDeadline) {
             const formattedStart = formatVietnamDateTime(startDeadline);
@@ -3230,7 +3230,7 @@ app.post('/api/upload', (req: Request, res: Response, next: any) => {
         const stageLower = stage.toLowerCase();
         // Ignore theory lessons
         const isTheory = stageLower.includes('ly thuyet') || stageLower.includes('lý thuyết') || stageLower.includes('theory');
-        
+
         if (!isTheory) {
           let startDeadline: Date | null = null;
           let endDeadline: Date | null = null;
@@ -3260,7 +3260,7 @@ app.post('/api/upload', (req: Request, res: Response, next: any) => {
           }
 
           const effectiveLateType = (lateType === 'infinite' || lateType === 'unlimited') ? 'unlimited' :
-                                    (lateType === 'duration' || lateType === 'limited') ? 'limited' : 'none';
+            (lateType === 'duration' || lateType === 'limited') ? 'limited' : 'none';
 
           if (startDeadline && new Date() < startDeadline) {
             for (const f of files) {
@@ -3399,10 +3399,10 @@ app.post('/api/upload', (req: Request, res: Response, next: any) => {
 
           const readStream = fs.createReadStream(localPath);
           readStream.pipe(progressStream);
-          
+
           fileUrl = await uploadToTeacherGoogleDrive(teacherUser, progressStream, targetFileName, file.mimetype, className, stage);
           console.log(`[Google Drive - Giáo viên]: Tải lên thành công! Link: ${fileUrl}`);
-          
+
           if (fs.existsSync(localPath)) {
             fs.unlinkSync(localPath);
           }
@@ -3520,7 +3520,7 @@ app.post('/api/upload', (req: Request, res: Response, next: any) => {
       fs.writeFileSync(submissionsFile, JSON.stringify(submissions, null, 2), 'utf8');
     }
 
-        let successMessage = 'Đã lưu bài nộp thành công!';
+    let successMessage = 'Đã lưu bài nộp thành công!';
     if (storageProvider === 'mega') {
       successMessage = 'Đã tải bài lên MEGA thành công!';
     } else if (storageProvider === 'google-drive') {
@@ -3543,7 +3543,7 @@ app.post('/api/upload', (req: Request, res: Response, next: any) => {
       try {
         const teacherUser = await UserModel.findOne({ displayName: resolvedTeacherName, role: 'teacher' });
         if (teacherUser && teacherUser.email && teacherUser.emailNotificationsEnabled) {
-          const filesHtmlList = fileDetails.map(f => 
+          const filesHtmlList = fileDetails.map(f =>
             `<li><a href="${f.fileUrl}" target="_blank" style="color: #4f46e5; text-decoration: none; font-weight: 600;">${f.fileName}</a></li>`
           ).join('');
 
@@ -3596,7 +3596,7 @@ app.post('/api/upload', (req: Request, res: Response, next: any) => {
               <p style="font-size: 12px; color: #94a3b8; text-align: center; margin: 0;">Đây là thư gửi tự động từ hệ thống NA MindX Hub. Vui lòng không trả lời email này.</p>
             </div>
           `;
-          
+
           sendMailHelper(teacherUser.email, emailSubject, emailHtml);
         }
       } catch (emailErr: any) {
@@ -3646,18 +3646,18 @@ app.post('/api/upload', (req: Request, res: Response, next: any) => {
 app.get('/api/admin/dashboard-stats', adminOrTeacherAuth, async (req: Request, res: Response) => {
   try {
     const { role, username } = (req as any).user;
-    
+
     if (role === 'teacher') {
       const user = await UserModel.findOne({ username });
       const teacherName = user ? user.displayName : '';
-      
+
       const teacherClasses = await ClassModel.find({ teacherName });
       const classNames = teacherClasses.map(c => c.name);
-      
+
       const totalClasses = teacherClasses.length;
       const totalStudents = await StudentModel.countDocuments({ className: { $in: classNames } });
       const totalSubmissions = await SubmissionModel.countDocuments({ teacher: teacherName });
-      
+
       return res.json({
         users: 0,
         teachers: 0,
@@ -3666,13 +3666,13 @@ app.get('/api/admin/dashboard-stats', adminOrTeacherAuth, async (req: Request, r
         submissions: totalSubmissions
       });
     }
-    
+
     const totalUsers = await UserModel.countDocuments({});
     const totalTeachers = await TeacherModel.countDocuments({});
     const totalClasses = await ClassModel.countDocuments({});
     const totalStudents = await StudentModel.countDocuments({});
     const totalSubmissions = await SubmissionModel.countDocuments({});
-    
+
     res.json({
       users: totalUsers,
       teachers: totalTeachers,
@@ -3696,5 +3696,37 @@ app.use((req: Request, res: Response) => {
 // Start Server
 app.listen(PORT, () => {
   console.log(`[server]: Backend is running at http://localhost:${PORT}`);
+
+  // Self-ping keep-alive task to prevent Render spin-down
+  const externalUrl = process.env.RENDER_EXTERNAL_URL || process.env.SELF_PING_URL;
+  if (externalUrl) {
+    const cleanUrl = externalUrl.endsWith('/') ? externalUrl.slice(0, -1) : externalUrl;
+    const pingEndpoint = `${cleanUrl}/api/health`;
+    
+    console.log(`[self-ping]: Initializing keep-alive task targeting: ${pingEndpoint}`);
+    
+    const pingSelf = () => {
+      try {
+        const isHttps = pingEndpoint.startsWith('https');
+        const httpModule = isHttps ? require('https') : require('http');
+        console.log(`[self-ping]: Sending keep-alive request...`);
+        httpModule.get(pingEndpoint, (res: any) => {
+          console.log(`[self-ping]: Keep-alive ping response: ${res.statusCode}`);
+        }).on('error', (err: any) => {
+          console.error(`[self-ping]: Keep-alive ping failed: ${err.message}`);
+        });
+      } catch (err: any) {
+        console.error(`[self-ping]: Keep-alive ping error: ${err.message}`);
+      }
+    };
+
+    // Ping once on startup
+    setTimeout(pingSelf, 5000);
+
+    // Ping every 10 minutes
+    setInterval(pingSelf, 10 * 60 * 1000);
+  } else {
+    console.log('[self-ping]: No RENDER_EXTERNAL_URL or SELF_PING_URL configured. Self-ping keep-alive is inactive.');
+  }
 });
 

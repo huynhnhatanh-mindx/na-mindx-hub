@@ -326,9 +326,6 @@ export default function Settings() {
                         alignItems: 'center',
                         justifyContent: 'center',
                         gap: '0.5rem',
-                        background: 'rgba(239, 68, 68, 0.15)',
-                        border: '1px solid rgba(239, 68, 68, 0.3)',
-                        color: '#ff8a8a',
                         cursor: isLoading ? 'not-allowed' : 'pointer',
                         width: 'auto'
                       }}
@@ -356,9 +353,9 @@ export default function Settings() {
                         alignItems: 'center',
                         justifyContent: 'center',
                         gap: '0.5rem',
-                        background: 'rgba(99, 102, 241, 0.15)',
-                        border: '1px solid rgba(99, 102, 241, 0.3)',
-                        color: '#818cf8',
+                        background: 'var(--primary-glow)',
+                        border: '1px solid var(--primary-glow)',
+                        color: 'var(--primary)',
                         cursor: isLoading ? 'not-allowed' : 'pointer',
                         width: 'auto'
                       }}
@@ -443,7 +440,7 @@ export default function Settings() {
                 </label>
               </div>
               {!email.trim() && (
-                <span style={{ fontSize: '0.75rem', color: '#ff8a8a', marginTop: '0.35rem', display: 'block' }}>
+                <span style={{ fontSize: '0.75rem', color: 'var(--error)', marginTop: '0.35rem', display: 'block' }}>
                   ⚠️ Vui lòng nhập địa chỉ email trước để có thể kích hoạt tùy chọn này.
                 </span>
               )}
@@ -490,32 +487,32 @@ export default function Settings() {
                     borderRadius: '14px',
                     cursor: 'pointer',
                     border: `2px solid ${theme === 'dark' ? 'var(--primary)' : 'var(--card-border)'}`,
-                    boxShadow: theme === 'dark' ? '0 0 0 3px rgba(99, 102, 241, 0.15)' : 'none',
+                    boxShadow: theme === 'dark' ? '0 0 0 3px rgba(225, 29, 72, 0.15)' : 'none',
                     overflow: 'hidden',
                     transition: 'all 0.25s ease',
                     transform: theme === 'dark' ? 'scale(1.02)' : 'scale(1)'
                   }}
                 >
                   {/* Mini dark UI mockup */}
-                  <div style={{ background: '#0f172a', padding: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                  <div style={{ background: '#0f0506', padding: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
                     <div style={{ display: 'flex', gap: '0.3rem', marginBottom: '0.2rem' }}>
                       <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#ef4444' }} />
                       <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#f59e0b' }} />
                       <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#10b981' }} />
                     </div>
                     <div style={{ background: 'rgba(255,255,255,0.06)', borderRadius: '6px', padding: '0.4rem 0.5rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                      <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: 'linear-gradient(135deg, #818cf8, #4f46e5)' }} />
-                      <div style={{ height: '5px', width: '55px', borderRadius: '3px', background: 'linear-gradient(90deg, #c7d2fe, #818cf8)' }} />
+                      <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: 'linear-gradient(135deg, #fda4af, #e11d48)' }} />
+                      <div style={{ height: '5px', width: '55px', borderRadius: '3px', background: 'linear-gradient(90deg, #fecdd3, #fb7185)' }} />
                     </div>
                     <div style={{ background: 'rgba(255,255,255,0.04)', borderRadius: '6px', padding: '0.5rem', display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
                       <div style={{ height: '4px', width: '80%', borderRadius: '3px', background: 'rgba(255,255,255,0.15)' }} />
                       <div style={{ height: '4px', width: '60%', borderRadius: '3px', background: 'rgba(255,255,255,0.08)' }} />
-                      <div style={{ height: '20px', borderRadius: '4px', background: 'linear-gradient(90deg, #6366f1, #a855f7)', marginTop: '0.25rem' }} />
+                      <div style={{ height: '20px', borderRadius: '4px', background: 'linear-gradient(90deg, #e11d48, #be123c)', marginTop: '0.25rem' }} />
                     </div>
                   </div>
                   {/* Label */}
                   <div style={{
-                    background: theme === 'dark' ? 'rgba(99, 102, 241, 0.12)' : 'rgba(15,23,42,0.85)',
+                    background: theme === 'dark' ? 'rgba(225, 29, 72, 0.12)' : 'rgba(15,23,42,0.85)',
                     padding: '0.6rem 0.75rem',
                     display: 'flex',
                     alignItems: 'center',
@@ -523,9 +520,9 @@ export default function Settings() {
                     justifyContent: 'center'
                   }}>
                     <span style={{ fontSize: '1rem' }}>🌙</span>
-                    <span style={{ fontSize: '0.85rem', fontWeight: '600', color: theme === 'dark' ? '#818cf8' : '#94a3b8' }}>Giao diện Tối</span>
+                    <span style={{ fontSize: '0.85rem', fontWeight: '600', color: theme === 'dark' ? '#fb7185' : '#94a3b8' }}>Giao diện Tối</span>
                     {theme === 'dark' && (
-                      <span style={{ marginLeft: 'auto', fontSize: '0.7rem', background: '#6366f1', color: '#fff', borderRadius: '99px', padding: '1px 7px', fontWeight: '700' }}>Đang dùng</span>
+                      <span style={{ marginLeft: 'auto', fontSize: '0.7rem', background: '#e11d48', color: '#fff', borderRadius: '99px', padding: '1px 7px', fontWeight: '700' }}>Đang dùng</span>
                     )}
                   </div>
                 </div>
@@ -537,43 +534,43 @@ export default function Settings() {
                     borderRadius: '14px',
                     cursor: 'pointer',
                     border: `2px solid ${theme === 'light' ? 'var(--primary)' : 'var(--card-border)'}`,
-                    boxShadow: theme === 'light' ? '0 0 0 3px rgba(99, 102, 241, 0.15)' : 'none',
+                    boxShadow: theme === 'light' ? '0 0 0 3px rgba(220, 38, 38, 0.15)' : 'none',
                     overflow: 'hidden',
                     transition: 'all 0.25s ease',
                     transform: theme === 'light' ? 'scale(1.02)' : 'scale(1)'
                   }}
                 >
                   {/* Mini light UI mockup */}
-                  <div style={{ background: '#f0f4ff', padding: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                  <div style={{ background: '#fff5f5', padding: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
                     <div style={{ display: 'flex', gap: '0.3rem', marginBottom: '0.2rem' }}>
                       <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#ef4444' }} />
                       <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#f59e0b' }} />
                       <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#10b981' }} />
                     </div>
-                    <div style={{ background: 'rgba(255,255,255,0.9)', borderRadius: '6px', padding: '0.4rem 0.5rem', display: 'flex', alignItems: 'center', gap: '0.35rem', border: '1px solid rgba(99,102,241,0.12)' }}>
-                      <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: 'linear-gradient(135deg, #818cf8, #4f46e5)' }} />
-                      <div style={{ height: '5px', width: '55px', borderRadius: '3px', background: 'linear-gradient(90deg, #4f46e5, #7c3aed)' }} />
+                    <div style={{ background: 'rgba(255,255,255,0.9)', borderRadius: '6px', padding: '0.4rem 0.5rem', display: 'flex', alignItems: 'center', gap: '0.35rem', border: '1px solid rgba(225,29,72,0.12)' }}>
+                      <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: 'linear-gradient(135deg, #fb7185, #dc2626)' }} />
+                      <div style={{ height: '5px', width: '55px', borderRadius: '3px', background: 'linear-gradient(90deg, #dc2626, #991b1b)' }} />
                     </div>
-                    <div style={{ background: 'rgba(255,255,255,0.85)', borderRadius: '6px', padding: '0.5rem', display: 'flex', flexDirection: 'column', gap: '0.3rem', border: '1px solid rgba(99,102,241,0.1)' }}>
+                    <div style={{ background: 'rgba(255,255,255,0.85)', borderRadius: '6px', padding: '0.5rem', display: 'flex', flexDirection: 'column', gap: '0.3rem', border: '1px solid rgba(225,29,72,0.1)' }}>
                       <div style={{ height: '4px', width: '80%', borderRadius: '3px', background: 'rgba(30,41,59,0.2)' }} />
                       <div style={{ height: '4px', width: '60%', borderRadius: '3px', background: 'rgba(30,41,59,0.12)' }} />
-                      <div style={{ height: '20px', borderRadius: '4px', background: 'linear-gradient(90deg, #4f46e5, #7c3aed)', marginTop: '0.25rem' }} />
+                      <div style={{ height: '20px', borderRadius: '4px', background: 'linear-gradient(90deg, #dc2626, #991b1b)', marginTop: '0.25rem' }} />
                     </div>
                   </div>
                   {/* Label */}
                   <div style={{
-                    background: theme === 'light' ? 'rgba(79, 70, 229, 0.08)' : 'rgba(240,244,255,0.9)',
+                    background: theme === 'light' ? 'rgba(220, 38, 38, 0.08)' : 'rgba(255,245,245,0.9)',
                     padding: '0.6rem 0.75rem',
                     display: 'flex',
                     alignItems: 'center',
                     gap: '0.5rem',
                     justifyContent: 'center',
-                    borderTop: '1px solid rgba(99,102,241,0.1)'
+                    borderTop: '1px solid rgba(225,29,72,0.1)'
                   }}>
                     <span style={{ fontSize: '1rem' }}>☀️</span>
-                    <span style={{ fontSize: '0.85rem', fontWeight: '600', color: theme === 'light' ? '#4f46e5' : '#475569' }}>Giao diện Sáng</span>
+                    <span style={{ fontSize: '0.85rem', fontWeight: '600', color: theme === 'light' ? '#dc2626' : '#475569' }}>Giao diện Sáng</span>
                     {theme === 'light' && (
-                      <span style={{ marginLeft: 'auto', fontSize: '0.7rem', background: '#4f46e5', color: '#fff', borderRadius: '99px', padding: '1px 7px', fontWeight: '700' }}>Đang dùng</span>
+                      <span style={{ marginLeft: 'auto', fontSize: '0.7rem', background: '#dc2626', color: '#fff', borderRadius: '99px', padding: '1px 7px', fontWeight: '700' }}>Đang dùng</span>
                     )}
                   </div>
                 </div>
@@ -587,12 +584,13 @@ export default function Settings() {
             {/* Error Message */}
             {error && (
               <div style={{
-                background: 'rgba(239, 68, 68, 0.06)',
-                border: '1px solid rgba(239, 68, 68, 0.3)',
+                background: 'var(--error-glow)',
+                border: '1px solid var(--error-glow)',
                 padding: '0.75rem 1rem',
                 borderRadius: '8px',
-                color: '#fce8e6',
+                color: 'var(--error)',
                 fontSize: '0.85rem',
+                fontWeight: '600',
                 textAlign: 'center'
               }}>
                 {error}
@@ -602,12 +600,13 @@ export default function Settings() {
             {/* Success Message */}
             {success && (
               <div style={{
-                background: 'rgba(16, 185, 129, 0.06)',
-                border: '1px solid rgba(16, 185, 129, 0.3)',
+                background: 'var(--success-glow)',
+                border: '1px solid var(--success-glow)',
                 padding: '0.75rem 1rem',
                 borderRadius: '8px',
-                color: '#e6fcf5',
+                color: 'var(--success)',
                 fontSize: '0.85rem',
+                fontWeight: '600',
                 textAlign: 'center'
               }}>
                 {success}

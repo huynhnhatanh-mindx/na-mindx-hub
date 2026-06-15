@@ -105,13 +105,9 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                   height: '2.5rem',
                   padding: '0 1.25rem',
                   fontSize: '0.875rem',
-                  background: 'rgba(239, 68, 68, 0.2)',
-                  border: '1px solid rgba(239, 68, 68, 0.4)',
-                  color: '#ff8a8a',
-                  cursor: 'pointer'
+                  cursor: 'pointer',
+                  width: 'auto'
                 }}
-                onMouseOver={(e) => e.currentTarget.style.background = 'rgba(239, 68, 68, 0.35)'}
-                onMouseOut={(e) => e.currentTarget.style.background = 'rgba(239, 68, 68, 0.2)'}
               >
                 Đồng ý
               </button>

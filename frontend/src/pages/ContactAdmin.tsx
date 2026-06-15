@@ -31,12 +31,12 @@ export default function ContactAdmin() {
               width: '80px',
               height: '80px',
               borderRadius: '50%',
-              background: 'rgba(99, 102, 241, 0.1)',
+              background: 'var(--primary-glow)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               color: 'var(--primary)',
-              boxShadow: '0 0 20px rgba(99, 102, 241, 0.2)'
+              boxShadow: '0 0 20px var(--primary-glow)'
             }}>
               <Phone size={40} />
             </div>

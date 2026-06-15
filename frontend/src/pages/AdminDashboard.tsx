@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { formatDateTime } from '../utils/date';
-import { Search, Plus } from 'lucide-react';
+import { Search, Plus, Link2 } from 'lucide-react';
 import { useToast } from '../components/Toast';
 import { useSSE } from '../hooks/useSSE';
 import { preventOrphan } from '../utils/text';
@@ -167,6 +167,7 @@ export default function AdminDashboard() {
   // Pagination & Bulk
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
+  const [jumpPageInput, setJumpPageInput] = useState('');
   const [searchInput, setSearchInput] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -174,6 +175,47 @@ export default function AdminDashboard() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [currentUser, setCurrentUser] = useState<any>(null);
+
+  const getPageNumbers = () => {
+    const pages = [];
+    const maxVisiblePages = 5;
+    if (totalPages <= maxVisiblePages) {
+      for (let i = 1; i <= totalPages; i++) {
+        pages.push(i);
+      }
+    } else {
+      pages.push(1);
+      let start = Math.max(2, currentPage - 1);
+      let end = Math.min(totalPages - 1, currentPage + 1);
+      if (currentPage <= 3) {
+        end = 4;
+      } else if (currentPage >= totalPages - 2) {
+        start = totalPages - 3;
+      }
+      if (start > 2) {
+        pages.push('...');
+      }
+      for (let i = start; i <= end; i++) {
+        pages.push(i);
+      }
+      if (end < totalPages - 1) {
+        pages.push('...');
+      }
+      pages.push(totalPages);
+    }
+    return pages;
+  };
+
+  const handleJumpPageSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const pageNum = parseInt(jumpPageInput, 10);
+    if (!isNaN(pageNum) && pageNum >= 1 && pageNum <= totalPages) {
+      setCurrentPage(pageNum);
+      setJumpPageInput('');
+    } else {
+      showToast(`Vui lòng nhập trang từ 1 đến ${totalPages}`, 'warning');
+    }
+  };
 
   // Data lists
   const [users, setUsers] = useState<UserData[]>([]);
@@ -628,7 +670,7 @@ export default function AdminDashboard() {
 
     return (
       <div style={{ display: 'flex', flexDirection: 'column' }}>
-        <span style={{ color: isAuto ? '#aaa' : 'var(--success)', fontWeight: isAuto ? '400' : '600' }}>
+        <span style={{ color: isAuto ? 'var(--text-muted)' : 'var(--success)', fontWeight: isAuto ? '400' : '600' }}>
           {preventOrphan(`${formatDt(startVal)} - ${formatDt(endVal)}${isAuto ? ' (Tự động)' : ''}`)}
         </span>
         {lateType !== 'none' && (
@@ -1331,14 +1373,15 @@ export default function AdminDashboard() {
                         <td data-label="Tên hiển thị" style={{ padding: '1rem' }}>{preventOrphan(item.displayName)}</td>
                         <td data-label="Email" style={{ padding: '1rem' }}>{preventOrphan(item.email || '-')}</td>
                         <td data-label="Trạng thái" style={{ padding: '1rem' }}>
-                          <span style={{ color: item.status === 'inactive' ? '#ff8a8a' : 'var(--success)', fontWeight: '600' }}>
+                          <span style={{ color: item.status === 'inactive' ? 'var(--error)' : 'var(--success)', fontWeight: '600' }}>
                             {preventOrphan(item.status === 'inactive' ? 'Đã khóa' : 'Hoạt động')}
                           </span>
                         </td>
                         <td data-label="Quyền hạn" style={{ padding: '1rem' }}>
                           <span style={{
-                            background: item.role === 'admin' ? 'rgba(168, 85, 247, 0.15)' : 'rgba(99, 102, 241, 0.15)',
-                            color: item.role === 'admin' ? 'var(--secondary)' : 'var(--primary)',
+                            background: item.role === 'admin' ? 'rgba(239, 68, 68, 0.22)' : 'var(--primary-glow)',
+                            color: 'var(--primary)',
+                            border: item.role === 'admin' ? '1px solid var(--primary)' : '1px solid transparent',
                             padding: '2px 8px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: '600'
                           }}>
                             {preventOrphan(item.role === 'admin' ? 'Quản trị viên' : 'Giáo viên')}
@@ -1378,18 +1421,18 @@ export default function AdminDashboard() {
                         <td data-label="Tên lớp học" style={{ padding: '1rem', color: 'var(--text-primary)', fontWeight: '600' }}>{preventOrphan(item.name)}</td>
                         <td data-label="Giáo viên phụ trách" style={{ padding: '1rem' }}>{preventOrphan(item.teacherName)}</td>
                         <td data-label="Lịch học & Cài đặt" style={{ padding: '1rem', fontSize: '0.825rem', lineHeight: '1.4' }}>
-                          <div><strong style={{ color: '#ccc' }}>{preventOrphan('Bắt đầu:')}</strong> {preventOrphan(item.startDate ? new Date(item.startDate).toLocaleDateString('vi-VN') : 'Chưa đặt')}</div>
-                          <div><strong style={{ color: '#ccc' }}>{preventOrphan('Giờ học:')}</strong> {preventOrphan(`${item.startTime || '08:00'} - ${item.endTime || '10:00'}`)}</div>
+                          <div><strong style={{ color: 'var(--text-muted)' }}>{preventOrphan('Bắt đầu:')}</strong> {preventOrphan(item.startDate ? new Date(item.startDate).toLocaleDateString('vi-VN') : 'Chưa đặt')}</div>
+                          <div><strong style={{ color: 'var(--text-muted)' }}>{preventOrphan('Giờ học:')}</strong> {preventOrphan(`${item.startTime || '08:00'} - ${item.endTime || '10:00'}`)}</div>
                         </td>
                         <td data-label="Thời gian nộp các cổng nộp" style={{ padding: '1rem', fontSize: '0.825rem', lineHeight: '1.4' }}>
-                          <div><strong style={{ color: '#ccc' }}>{preventOrphan('CP1:')}</strong> {getMilestoneRangeDisplay(item, 'cp1')}</div>
-                          <div><strong style={{ color: '#ccc' }}>{preventOrphan('CP2:')}</strong> {getMilestoneRangeDisplay(item, 'cp2')}</div>
-                          <div><strong style={{ color: '#ccc' }}>{preventOrphan('SPCK:')}</strong> {getMilestoneRangeDisplay(item, 'spck')}</div>
-                          <div><strong style={{ color: '#ccc' }}>{preventOrphan('Thuyết trình:')}</strong> {getMilestoneRangeDisplay(item, 'presentation')}</div>
+                          <div><strong style={{ color: 'var(--text-muted)' }}>{preventOrphan('CP1:')}</strong> {getMilestoneRangeDisplay(item, 'cp1')}</div>
+                          <div><strong style={{ color: 'var(--text-muted)' }}>{preventOrphan('CP2:')}</strong> {getMilestoneRangeDisplay(item, 'cp2')}</div>
+                          <div><strong style={{ color: 'var(--text-muted)' }}>{preventOrphan('SPCK:')}</strong> {getMilestoneRangeDisplay(item, 'spck')}</div>
+                          <div><strong style={{ color: 'var(--text-muted)' }}>{preventOrphan('Thuyết trình:')}</strong> {getMilestoneRangeDisplay(item, 'presentation')}</div>
                         </td>
                         <td data-label="Sĩ số" style={{ padding: '1rem', textAlign: 'center' }}>
                           <span style={{ 
-                            background: 'rgba(99, 102, 241, 0.1)', 
+                            background: 'var(--primary-glow)', 
                             color: 'var(--primary)', 
                             padding: '4px 10px', 
                             borderRadius: '20px', 
@@ -1430,7 +1473,7 @@ export default function AdminDashboard() {
                         <td style={{ padding: '1rem' }}><input type="checkbox" checked={selectedIds.includes(item._id)} onChange={() => handleSelectRow(item._id)} /></td>
                         <td data-label="Tên học viên" style={{ padding: '1rem', color: 'var(--text-primary)', fontWeight: '600' }}>{preventOrphan(item.name)}</td>
                         <td data-label="Mã lớp học" style={{ padding: '1rem' }}>
-                          <span style={{ background: 'rgba(99, 102, 241, 0.1)', color: 'var(--primary)', padding: '2px 8px', borderRadius: '4px', fontSize: '0.8rem', fontWeight: '600' }}>
+                          <span style={{ background: 'var(--primary-glow)', color: 'var(--primary)', padding: '2px 8px', borderRadius: '4px', fontSize: '0.8rem', fontWeight: '600' }}>
                             {preventOrphan(item.className)}
                           </span>
                         </td>
@@ -1441,7 +1484,7 @@ export default function AdminDashboard() {
                           </span>
                         </td>
                         <td data-label="Trạng thái" style={{ padding: '1rem' }}>
-                          <span style={{ color: item.status === 'inactive' ? '#ff8a8a' : 'var(--success)', fontWeight: '600' }}>
+                          <span style={{ color: item.status === 'inactive' ? 'var(--error)' : 'var(--success)', fontWeight: '600' }}>
                             {preventOrphan(item.status === 'inactive' ? 'Đã khóa' : 'Hoạt động')}
                           </span>
                         </td>
@@ -1456,14 +1499,7 @@ export default function AdminDashboard() {
                 </table>
               )}
 
-              {/* Pagination */}
-              {activeTab !== 'overview' && totalPages > 1 && (
-                <div style={{ display: 'flex', justifyContent: 'center', gap: '0.5rem', marginTop: '1.5rem', marginBottom: '1.5rem' }}>
-                  <button disabled={currentPage === 1} onClick={() => setCurrentPage(prev => prev - 1)} className="btn btn-neutral">Trước</button>
-                  <span style={{ padding: '0.5rem 1rem', background: 'rgba(255,255,255,0.05)', borderRadius: '8px' }}>Trang {currentPage} / {totalPages}</span>
-                  <button disabled={currentPage === totalPages} onClick={() => setCurrentPage(prev => prev + 1)} className="btn btn-neutral">Sau</button>
-                </div>
-              )}
+
 
               {/* --- BẢNG BÀI NỘP --- */}
               {activeTab === 'submissions' && (
@@ -1494,10 +1530,10 @@ export default function AdminDashboard() {
                               const isDrive = item.fileUrl.includes('drive.google.com') || item.fileUrl.includes('docs.google.com');
                               const isMega = item.fileUrl.includes('mega.nz') || item.fileUrl.includes('mega.co.nz');
                               
-                              let badgeColor = '#818cf8';
-                              let badgeBg = 'rgba(99, 102, 241, 0.08)';
-                              let badgeBorder = '1px solid rgba(99, 102, 241, 0.2)';
-                              let dotColor = '#6366f1';
+                              let badgeColor = 'var(--primary)';
+                              let badgeBg = 'var(--primary-glow)';
+                              let badgeBorder = '1px solid var(--primary-glow)';
+                              let dotColor = 'var(--primary)';
                               let labelText = 'Xem liên kết';
                               let isDot = false;
  
@@ -1549,10 +1585,7 @@ export default function AdminDashboard() {
                                   {isDot ? (
                                     <span style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', backgroundColor: dotColor }}></span>
                                   ) : (
-                                    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: 'middle' }}>
-                                      <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
-                                      <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
-                                    </svg>
+                                    <Link2 size={13} style={{ verticalAlign: 'middle' }} />
                                   )}
                                   <span>{labelText}</span>
                                 </a>
@@ -1595,6 +1628,115 @@ export default function AdminDashboard() {
                     ))}
                   </tbody>
                 </table>
+              )}
+
+              {/* Numbered Pagination & Jump Box */}
+              {activeTab !== 'overview' && totalPages > 1 && (
+                <div style={{ 
+                  display: 'flex', 
+                  flexWrap: 'wrap',
+                  alignItems: 'center', 
+                  justifyContent: 'center', 
+                  gap: '0.75rem', 
+                  marginTop: '2rem', 
+                  marginBottom: '1.5rem',
+                  padding: '1rem',
+                  background: 'rgba(255, 255, 255, 0.02)',
+                  borderRadius: '12px',
+                  border: '1px solid var(--card-border)'
+                }}>
+                  <button 
+                    disabled={currentPage === 1} 
+                    onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))} 
+                    className="btn btn-neutral"
+                    style={{ width: 'auto', padding: '0.5rem 1rem', fontSize: '0.85rem', height: '36px' }}
+                  >
+                    Trước
+                  </button>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'wrap' }}>
+                    {getPageNumbers().map((p, idx) => {
+                      if (p === '...') {
+                        return (
+                          <span key={`ell-${idx}`} style={{ padding: '0.25rem 0.5rem', color: 'var(--text-muted)' }}>
+                            ...
+                          </span>
+                        );
+                      }
+                      const isCurrent = p === currentPage;
+                      return (
+                        <button
+                          key={`page-${p}`}
+                          onClick={() => setCurrentPage(Number(p))}
+                          className={isCurrent ? "btn btn-primary" : "btn btn-neutral"}
+                          style={{
+                            width: '36px',
+                            height: '36px',
+                            padding: 0,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontSize: '0.85rem',
+                            fontWeight: '600',
+                            borderRadius: '8px',
+                            background: isCurrent ? 'var(--primary)' : 'rgba(255, 255, 255, 0.03)',
+                            border: isCurrent ? 'none' : '1px solid var(--card-border)',
+                            color: isCurrent ? '#fff' : 'var(--text-primary)'
+                          }}
+                        >
+                          {p}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <button 
+                    disabled={currentPage === totalPages} 
+                    onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))} 
+                    className="btn btn-neutral"
+                    style={{ width: 'auto', padding: '0.5rem 1rem', fontSize: '0.85rem', height: '36px' }}
+                  >
+                    Sau
+                  </button>
+
+                  <form onSubmit={handleJumpPageSubmit} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginLeft: '0.5rem' }}>
+                    <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Đi tới:</span>
+                    <input
+                      type="number"
+                      min="1"
+                      max={totalPages}
+                      value={jumpPageInput}
+                      onChange={(e) => setJumpPageInput(e.target.value)}
+                      placeholder={`${currentPage}`}
+                      style={{
+                        width: '55px',
+                        height: '36px',
+                        padding: '0 0.5rem',
+                        textAlign: 'center',
+                        borderRadius: '8px',
+                        border: '1px solid var(--card-border)',
+                        background: 'rgba(0, 0, 0, 0.2)',
+                        color: 'var(--text-primary)',
+                        outline: 'none',
+                        fontSize: '0.85rem'
+                      }}
+                    />
+                    <button
+                      type="submit"
+                      className="btn btn-neutral"
+                      style={{
+                        width: 'auto',
+                        height: '36px',
+                        padding: '0 0.85rem',
+                        fontSize: '0.82rem',
+                        borderRadius: '8px',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      Đi
+                    </button>
+                  </form>
+                </div>
               )}
 
               {!isLoading && (
@@ -1733,10 +1875,8 @@ export default function AdminDashboard() {
                             alignItems: 'center',
                             justifyContent: 'center',
                             gap: '0.5rem',
-                            background: 'rgba(239, 68, 68, 0.15)',
-                            border: '1px solid rgba(239, 68, 68, 0.3)',
-                            color: '#ff8a8a',
-                            cursor: 'pointer'
+                            cursor: 'pointer',
+                            width: 'auto'
                           }}
                         >
                           <svg viewBox="0 0 24 24" width="16" height="16" style={{ flexShrink: 0 }}>
@@ -1940,9 +2080,9 @@ export default function AdminDashboard() {
                         lateTypeSetter: setClassCp1LateType,
                         lateDeadline: classCp1LateDeadline,
                         lateDeadlineSetter: setClassCp1LateDeadline,
-                        color: 'rgba(99, 102, 241, 0.08)',
-                        borderColor: 'rgba(99, 102, 241, 0.2)',
-                        titleColor: '#a5b4fc'
+                        color: 'var(--primary-glow)',
+                        borderColor: 'rgba(239, 68, 68, 0.2)',
+                        titleColor: 'var(--primary)'
                       },
                       { 
                         title: 'Checkpoint 2 (Buổi 9)', 
@@ -1954,9 +2094,9 @@ export default function AdminDashboard() {
                         lateTypeSetter: setClassCp2LateType,
                         lateDeadline: classCp2LateDeadline,
                         lateDeadlineSetter: setClassCp2LateDeadline,
-                        color: 'rgba(16, 185, 129, 0.08)',
-                        borderColor: 'rgba(16, 185, 129, 0.2)',
-                        titleColor: '#a7f3d0'
+                        color: 'var(--primary-glow)',
+                        borderColor: 'rgba(239, 68, 68, 0.2)',
+                        titleColor: 'var(--primary)'
                       },
                       { 
                         title: 'Sản phẩm cuối khóa (Buổi 10-14)', 
@@ -1968,9 +2108,9 @@ export default function AdminDashboard() {
                         lateTypeSetter: setClassSpckLateType,
                         lateDeadline: classSpckLateDeadline,
                         lateDeadlineSetter: setClassSpckLateDeadline,
-                        color: 'rgba(236, 72, 153, 0.08)',
-                        borderColor: 'rgba(236, 72, 153, 0.2)',
-                        titleColor: '#fbcfe8'
+                        color: 'var(--primary-glow)',
+                        borderColor: 'rgba(239, 68, 68, 0.2)',
+                        titleColor: 'var(--primary)'
                       },
                       { 
                         title: 'Bài thuyết trình (Buổi tự do)', 
@@ -1982,9 +2122,9 @@ export default function AdminDashboard() {
                         lateTypeSetter: setClassPresentationLateType,
                         lateDeadline: classPresentationLateDeadline,
                         lateDeadlineSetter: setClassPresentationLateDeadline,
-                        color: 'rgba(59, 130, 246, 0.08)',
-                        borderColor: 'rgba(59, 130, 246, 0.2)',
-                        titleColor: '#93c5fd'
+                        color: 'var(--primary-glow)',
+                        borderColor: 'rgba(239, 68, 68, 0.2)',
+                        titleColor: 'var(--primary)'
                       }
                     ].map((cp, idx) => (
                       <div key={idx} style={{

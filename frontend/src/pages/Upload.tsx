@@ -854,7 +854,7 @@ function Upload() {
       statusText = 'CỔNG NỘP MUỘN ĐANG MỞ';
       statusIcon = <AlertTriangle size={18} style={{ color: 'var(--warning)' }} />;
     } else if (gateStatus === 'not_started') {
-      bannerBg = 'rgba(99, 102, 241, 0.1)';
+      bannerBg = 'var(--primary-glow)';
       borderColor = 'var(--primary)';
       borderLeftColor = 'var(--primary)';
       badgeBg = 'var(--primary-glow)';
@@ -1253,7 +1253,7 @@ function Upload() {
                     borderRadius: '6px',
                     fontSize: '0.8rem',
                     fontWeight: '600',
-                    border: '1px solid rgba(56, 189, 248, 0.2)'
+                    border: '1px solid var(--primary-glow)'
                   }}>
                     <Info size={14} />
                     Phương thức nộp link không tính giới hạn dung lượng tải lên
@@ -1274,7 +1274,7 @@ function Upload() {
                   padding: '3rem 2rem',
                   textAlign: 'center',
                   cursor: isMetadataIncomplete || isGateLocked ? 'not-allowed' : 'pointer',
-                  backgroundColor: isDragging && !isMetadataIncomplete && !isGateLocked ? 'rgba(99, 102, 241, 0.08)' : 'rgba(0, 0, 0, 0.2)',
+                  backgroundColor: isDragging && !isMetadataIncomplete && !isGateLocked ? 'var(--primary-glow)' : 'rgba(0, 0, 0, 0.2)',
                   borderColor: isGateLocked ? 'var(--error)' : (isDragging && !isMetadataIncomplete ? 'var(--primary)' : 'var(--card-border)'),
                   transition: 'var(--transition-smooth)',
                   marginBottom: '2rem',
@@ -1300,7 +1300,7 @@ function Upload() {
                 width: '64px',
                 height: '64px',
                 borderRadius: '50%',
-                background: isGateLocked ? 'rgba(239, 68, 68, 0.1)' : (isDragging && !isMetadataIncomplete ? 'rgba(99, 102, 241, 0.2)' : 'rgba(255, 255, 255, 0.03)'),
+                background: isGateLocked ? 'rgba(239, 68, 68, 0.1)' : (isDragging && !isMetadataIncomplete ? 'var(--primary-glow)' : 'rgba(255, 255, 255, 0.03)'),
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
@@ -1401,7 +1401,7 @@ function Upload() {
                           type="button"
                           onClick={() => setPreviewFile(file)}
                           style={{
-                            background: 'rgba(99, 102, 241, 0.1)',
+                            background: 'var(--primary-glow)',
                             border: 'none',
                             color: 'var(--primary)',
                             cursor: 'pointer',
@@ -1414,8 +1414,8 @@ function Upload() {
                             fontWeight: '600',
                             transition: 'var(--transition-fast)'
                           }}
-                          onMouseOver={(e) => e.currentTarget.style.background = 'rgba(99, 102, 241, 0.2)'}
-                          onMouseOut={(e) => e.currentTarget.style.background = 'rgba(99, 102, 241, 0.1)'}
+                          onMouseOver={(e) => e.currentTarget.style.background = 'rgba(239, 68, 68, 0.2)'}
+                          onMouseOut={(e) => e.currentTarget.style.background = 'var(--primary-glow)'}
                         >
                           Xem trước
                         </button>

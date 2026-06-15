@@ -140,10 +140,8 @@ function Header() {
                     <Settings size={18} />
                   </NavLink>
                   <button 
-                    className="btn" 
+                    className="btn btn-danger" 
                     style={{ 
-                      background: 'rgba(239, 68, 68, 0.15)', 
-                      color: '#ff8a8a',
                       padding: '0.4rem 1rem',
                       height: '2.2rem',
                       flex: 1,
@@ -195,10 +193,8 @@ function Header() {
               </NavLink>
 
               <button 
-                className="btn" 
+                className="btn btn-danger" 
                 style={{ 
-                  background: 'rgba(239, 68, 68, 0.15)', 
-                  color: '#ff8a8a',
                   padding: '0.4rem 1rem',
                   height: '2.2rem',
                   width: 'auto',

@@ -72,13 +72,13 @@ function Home() {
               width: '48px',
               height: '48px',
               borderRadius: '12px',
-              background: 'rgba(99, 102, 241, 0.15)',
+              background: 'var(--primary-glow)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               color: 'var(--primary)',
               marginBottom: '1.5rem',
-              border: '1px solid rgba(99, 102, 241, 0.2)'
+              border: '1px solid var(--primary-glow)'
             }}>
               <UploadCloud size={24} />
             </div>
@@ -101,13 +101,13 @@ function Home() {
               width: '48px',
               height: '48px',
               borderRadius: '12px',
-              background: 'rgba(168, 85, 247, 0.15)',
+              background: 'var(--secondary-glow)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              color: 'var(--secondary)',
+              color: 'var(--primary)',
               marginBottom: '1.5rem',
-              border: '1px solid rgba(168, 85, 247, 0.2)'
+              border: '1px solid var(--secondary-glow)'
             }}>
               <FileText size={24} />
             </div>

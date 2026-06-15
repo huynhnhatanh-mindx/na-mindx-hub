@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { formatDateTime } from '../utils/date';
-import { ArrowLeft, Search } from 'lucide-react';
+import { ArrowLeft, Search, Link2 } from 'lucide-react';
 import { useSSE } from '../hooks/useSSE';
 import { preventOrphan } from '../utils/text';
 
@@ -364,8 +364,8 @@ export default function Submissions() {
           {/* Search/Query Panel */}
           {user ? (
             <div style={{
-              background: 'rgba(99, 102, 241, 0.05)',
-              border: '1px solid rgba(99, 102, 241, 0.2)',
+              background: 'var(--primary-glow)',
+              border: '1px solid var(--primary-glow)',
               borderRadius: '12px',
               padding: '1.5rem',
               marginBottom: '2rem',
@@ -500,7 +500,7 @@ export default function Submissions() {
                       >
                          <td data-label="Học Viên" style={{ padding: '1rem', color: 'var(--text-primary)', fontWeight: '600' }}>{preventOrphan(sub.fullName)}</td>
                         <td data-label="Lớp" style={{ padding: '1rem' }}>
-                          <span style={{ background: 'rgba(99, 102, 241, 0.1)', color: 'var(--primary)', padding: '2px 8px', borderRadius: '4px', fontSize: '0.8rem', fontWeight: '600' }}>
+                          <span style={{ background: 'var(--primary-glow)', color: 'var(--primary)', padding: '2px 8px', borderRadius: '4px', fontSize: '0.8rem', fontWeight: '600' }}>
                             {preventOrphan(sub.className)}
                           </span>
                         </td>
@@ -513,10 +513,10 @@ export default function Submissions() {
                               const isDrive = sub.fileUrl.includes('drive.google.com') || sub.fileUrl.includes('docs.google.com');
                               const isMega = sub.fileUrl.includes('mega.nz') || sub.fileUrl.includes('mega.co.nz');
                               
-                              let badgeColor = '#818cf8';
-                              let badgeBg = 'rgba(99, 102, 241, 0.08)';
-                              let badgeBorder = '1px solid rgba(99, 102, 241, 0.2)';
-                              let dotColor = '#6366f1';
+                              let badgeColor = 'var(--primary)';
+                              let badgeBg = 'var(--primary-glow)';
+                              let badgeBorder = '1px solid var(--primary-glow)';
+                              let dotColor = 'var(--primary)';
                               let labelText = 'Xem liên kết';
                               let isDot = false;
 
@@ -572,10 +572,7 @@ export default function Submissions() {
                                   {isDot ? (
                                     <span style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', backgroundColor: dotColor, flexShrink: 0 }}></span>
                                   ) : (
-                                    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: 'middle', flexShrink: 0 }}>
-                                      <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
-                                      <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
-                                    </svg>
+                                    <Link2 size={13} style={{ verticalAlign: 'middle', flexShrink: 0 }} />
                                   )}
                                   <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{labelText}</span>
                                 </a>

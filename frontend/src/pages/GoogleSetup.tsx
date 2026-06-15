@@ -180,14 +180,14 @@ export default function GoogleSetup() {
                 width: '80px',
                 height: '80px',
                 borderRadius: '50%',
-                background: 'rgba(99, 102, 241, 0.1)',
-                border: '1px solid rgba(99, 102, 241, 0.2)',
+                background: 'var(--primary-glow)',
+                border: '1px solid var(--primary-glow)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 color: 'var(--primary)',
                 marginBottom: '0.5rem',
-                boxShadow: '0 0 25px rgba(99, 102, 241, 0.15)'
+                boxShadow: '0 0 25px var(--primary-glow)'
               }}>
                 <Cloud size={40} className="pulse" />
               </div>
@@ -331,9 +331,9 @@ export default function GoogleSetup() {
                       type="submit"
                       className="btn"
                       style={{
-                        background: 'rgba(99, 102, 241, 0.2)',
-                        color: 'var(--secondary)',
-                        border: '1px solid var(--secondary)',
+                        background: 'var(--primary-glow)',
+                        color: 'var(--primary)',
+                        border: '1px solid var(--primary-glow)',
                         fontSize: '0.85rem',
                         height: '2.5rem',
                         padding: '0 1rem',
@@ -424,7 +424,7 @@ export default function GoogleSetup() {
               
               <p style={{ color: 'var(--text-secondary)', fontSize: '0.95rem', lineHeight: '1.6' }}>
                 Hệ thống gặp lỗi trong quá trình xác thực và lưu trữ tokens Google OAuth:<br />
-                <span style={{ color: '#ff8a8a', display: 'inline-block', marginTop: '0.5rem', fontSize: '0.9rem', background: 'rgba(239, 68, 68, 0.08)', padding: '6px 12px', borderRadius: '6px' }}>{errorMessage || 'Lỗi không xác định.'}</span>
+                <span style={{ color: 'var(--error)', display: 'inline-block', marginTop: '0.5rem', fontSize: '0.9rem', background: 'rgba(239, 68, 68, 0.08)', padding: '6px 12px', borderRadius: '6px' }}>{errorMessage || 'Lỗi không xác định.'}</span>
               </p>
               
               <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '0.75rem', marginTop: '1.5rem' }}>

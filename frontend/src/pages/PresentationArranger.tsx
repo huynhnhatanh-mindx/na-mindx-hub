@@ -271,19 +271,19 @@ export default function PresentationArranger() {
     
     // Draw premium background gradient
     const gradient = ctx.createLinearGradient(0, 0, 0, height);
-    gradient.addColorStop(0, '#1e1b4b'); // Deep indigo
-    gradient.addColorStop(0.5, '#0f172a'); // Slate 900
-    gradient.addColorStop(1, '#020617'); // Darkest blue
+    gradient.addColorStop(0, '#310d0d'); // Deep dark charcoal red
+    gradient.addColorStop(0.5, '#111827'); // Deep charcoal
+    gradient.addColorStop(1, '#0b0f19'); // Rich black
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, width, height);
     
     // Accent glows
-    ctx.fillStyle = 'rgba(99, 102, 241, 0.08)';
+    ctx.fillStyle = 'rgba(239, 68, 68, 0.08)';
     ctx.beginPath();
     ctx.arc(width - 100, 100, 200, 0, Math.PI * 2);
     ctx.fill();
     
-    ctx.fillStyle = 'rgba(168, 85, 247, 0.06)';
+    ctx.fillStyle = 'rgba(224, 36, 36, 0.05)';
     ctx.beginPath();
     ctx.arc(100, height - 100, 250, 0, Math.PI * 2);
     ctx.fill();
@@ -295,7 +295,7 @@ export default function PresentationArranger() {
     ctx.textBaseline = 'middle';
     ctx.fillText('DANH SÁCH THỨ TỰ THUYẾT TRÌNH', width / 2, 60);
     
-    ctx.fillStyle = '#818cf8';
+    ctx.fillStyle = '#ef4444';
     ctx.font = 'bold 20px Outfit, sans-serif';
     ctx.fillText(`Lớp học: ${selectedClass} | Sĩ số: ${studentsList.length} học viên`, width / 2, 100);
     
@@ -333,8 +333,8 @@ export default function PresentationArranger() {
       const badgeX = padding + 20;
       const badgeY = rowY + (rowH - badgeSize) / 2;
       
-      ctx.fillStyle = 'rgba(99, 102, 241, 0.15)';
-      ctx.strokeStyle = '#6366f1';
+      ctx.fillStyle = 'rgba(239, 68, 68, 0.15)';
+      ctx.strokeStyle = '#ef4444';
       ctx.lineWidth = 1.5;
       ctx.beginPath();
       if (ctx.roundRect) {
@@ -346,7 +346,7 @@ export default function PresentationArranger() {
       ctx.stroke();
       
       // STT number
-      ctx.fillStyle = '#818cf8';
+      ctx.fillStyle = '#ef4444';
       ctx.font = 'bold 16px Outfit, sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
@@ -439,8 +439,8 @@ export default function PresentationArranger() {
               
               {/* Game Status Banner */}
               <div style={{
-                background: isCompleted ? 'var(--success-glow)' : 'rgba(99, 102, 241, 0.05)',
-                border: `1px solid ${isCompleted ? 'rgba(16,185,129,0.3)' : 'rgba(99,102,241,0.2)'}`,
+                background: isCompleted ? 'var(--success-glow)' : 'var(--primary-glow)',
+                border: `1px solid ${isCompleted ? 'rgba(16,185,129,0.3)' : 'var(--primary-glow)'}`,
                 borderRadius: '12px',
                 padding: '1.25rem',
                 display: 'flex',
@@ -525,7 +525,7 @@ export default function PresentationArranger() {
                           width: '32px',
                           height: '32px',
                           borderRadius: '6px',
-                          background: slot.lockedUser ? 'var(--success-glow)' : 'rgba(99, 102, 241, 0.1)',
+                          background: slot.lockedUser ? 'var(--success-glow)' : 'var(--primary-glow)',
                           border: `1px solid ${slot.lockedUser ? 'var(--success)' : 'var(--primary)'}`,
                           color: slot.lockedUser ? 'var(--success)' : 'var(--primary)',
                           display: 'flex',
@@ -554,9 +554,9 @@ export default function PresentationArranger() {
                                   <span 
                                     key={vol} 
                                     style={{
-                                      background: slot.volunteers.length > 1 ? 'rgba(239, 68, 68, 0.15)' : 'rgba(99, 102, 241, 0.15)',
-                                      color: slot.volunteers.length > 1 ? '#ff8a8a' : '#818cf8',
-                                      border: `1.5px solid ${slot.volunteers.length > 1 ? 'rgba(239, 68, 68, 0.3)' : 'rgba(99, 102, 241, 0.3)'}`,
+                                      background: slot.volunteers.length > 1 ? 'var(--error-glow)' : 'var(--primary-glow)',
+                                      color: slot.volunteers.length > 1 ? 'var(--error)' : 'var(--primary)',
+                                      border: `1px solid ${slot.volunteers.length > 1 ? 'rgba(239, 68, 68, 0.3)' : 'var(--primary-glow)'}`,
                                       padding: '2px 8px',
                                       borderRadius: '6px',
                                       fontSize: '0.8rem',
