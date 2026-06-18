@@ -7,7 +7,8 @@ import { Outlet } from 'react-router-dom';
 function Layout() {
   // Collapse state stored in local storage for user convenience
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
-    return localStorage.getItem('sidebar-collapsed') === 'true';
+    const stored = localStorage.getItem('sidebar-collapsed');
+    return stored === null ? true : stored === 'true';
   });
   
   // Mobile drawer menu state
