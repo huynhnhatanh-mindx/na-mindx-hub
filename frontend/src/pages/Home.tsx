@@ -8,14 +8,25 @@ function Home() {
   const [backendStatus, setBackendStatus] = useState<BackendStatus>('checking');
   const [user, setUser] = useState<any>(null);
 
-  // Check Backend Connection status and User role on mount
-  useEffect(() => {
+  const checkUser = () => {
     const userStr = localStorage.getItem('user');
     if (userStr) {
       try {
         setUser(JSON.parse(userStr));
-      } catch (e) { }
+      } catch (e) {
+        setUser(null);
+      }
+    } else {
+      setUser(null);
     }
+  };
+
+  // Check Backend Connection status and User role on mount
+  useEffect(() => {
+    checkUser();
+    
+    // Sync login/logout state in real-time
+    window.addEventListener('storage', checkUser);
 
     const checkConnection = async () => {
       try {
@@ -34,7 +45,11 @@ function Home() {
 
     checkConnection();
     const interval = setInterval(checkConnection, 15000);
-    return () => clearInterval(interval);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('storage', checkUser);
+    };
   }, []);
 
   return (
