@@ -109,6 +109,11 @@ function Header() {
                   Xếp lịch thuyết trình
                 </NavLink>
               </li>
+              <li>
+                <NavLink to="/group-arranger" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
+                  Chia nhóm
+                </NavLink>
+              </li>
             </>
           )}
 

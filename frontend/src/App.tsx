@@ -9,6 +9,7 @@ import AdminDashboard from './pages/AdminDashboard';
 import Settings from './pages/Settings';
 import Features from './pages/Features';
 import PresentationArranger from './pages/PresentationArranger';
+import GroupArranger from './pages/GroupArranger';
 import GoogleSetup from './pages/GoogleSetup';
 import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
@@ -86,6 +87,7 @@ function App() {
             <Route path="admin" element={<AdminDashboard />} />
             <Route path="settings" element={<Settings />} />
             <Route path="presentation-arranger" element={<PresentationArranger />} />
+            <Route path="group-arranger" element={<GroupArranger />} />
           </Route>
           
           {/* Catch-all 404 Route */}
