@@ -176,16 +176,6 @@ export default function Sidebar({ isCollapsed, isMobileOpen, onCloseMobile }: Si
                     <span className="sidebar-link-text">Chia nhóm</span>
                   </NavLink>
                 </li>
-                <li>
-                  <NavLink 
-                    to="/settings" 
-                    className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}
-                    onClick={onCloseMobile}
-                  >
-                    <Settings size={18} />
-                    <span className="sidebar-link-text">Cài đặt cá nhân</span>
-                  </NavLink>
-                </li>
               </>
             )}
           </ul>
