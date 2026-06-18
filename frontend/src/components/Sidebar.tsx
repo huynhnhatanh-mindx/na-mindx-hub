@@ -10,8 +10,7 @@ import {
   Users, 
   Settings, 
   LogOut, 
-  LogIn, 
-  User 
+  LogIn 
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -23,6 +22,7 @@ interface SidebarProps {
 export default function Sidebar({ isCollapsed, isMobileOpen, onCloseMobile }: SidebarProps) {
   const navigate = useNavigate();
   const [user, setUser] = useState<any>(null);
+  const [showProfileMenu, setShowProfileMenu] = useState(false);
 
   const checkUser = () => {
     const userStr = localStorage.getItem('user');
@@ -42,7 +42,16 @@ export default function Sidebar({ isCollapsed, isMobileOpen, onCloseMobile }: Si
     
     // Sync login state in real-time
     window.addEventListener('storage', checkUser);
-    return () => window.removeEventListener('storage', checkUser);
+
+    const handleOutsideClick = () => {
+      setShowProfileMenu(false);
+    };
+    document.addEventListener('click', handleOutsideClick);
+
+    return () => {
+      window.removeEventListener('storage', checkUser);
+      document.removeEventListener('click', handleOutsideClick);
+    };
   }, []);
 
   const handleLogout = () => {
@@ -183,70 +192,75 @@ export default function Sidebar({ isCollapsed, isMobileOpen, onCloseMobile }: Si
         </nav>
 
         {/* Bottom User Profile Section */}
-        <div className="sidebar-profile">
-          {user ? (
-            <>
-              {/* Avatar circle */}
-              <div className="sidebar-avatar" onClick={() => { navigate('/settings'); onCloseMobile(); }} style={{ cursor: 'pointer' }} title="Cài đặt tài khoản">
-                {user.avatarUrl ? (
-                  <img src={user.avatarUrl} alt="Avatar" className="sidebar-avatar-img" />
-                ) : (
-                  <span>{getInitials(user.displayName || user.username)}</span>
-                )}
-              </div>
-
-              {/* Profile Details */}
-              <div className="sidebar-profile-info">
-                <span 
-                  className="sidebar-profile-name" 
-                  onClick={() => { navigate('/settings'); onCloseMobile(); }}
+        {user ? (
+          <div 
+            className="sidebar-profile" 
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowProfileMenu(prev => !prev);
+            }}
+            style={{ cursor: 'pointer' }}
+          >
+            {/* Dropdown Menu */}
+            {showProfileMenu && (
+              <div className="sidebar-profile-menu" onClick={(e) => e.stopPropagation()}>
+                <button 
+                  className="sidebar-profile-menu-item" 
+                  onClick={() => {
+                    setShowProfileMenu(false);
+                    onCloseMobile();
+                    navigate('/settings');
+                  }}
                 >
-                  {user.displayName || user.username}
-                </span>
-                <span className="sidebar-profile-role">
-                  {user.role === 'admin' ? 'Admin' : 'Giáo viên'}
-                </span>
-              </div>
-
-              {/* Logout quick button */}
-              <button 
-                onClick={handleLogout} 
-                className="btn-sidebar-action"
-                title="Đăng xuất"
-              >
-                <LogOut size={16} />
-              </button>
-            </>
-          ) : (
-            <>
-              {/* Guest Silhouette Avatar */}
-              <div className="sidebar-avatar" onClick={() => { navigate('/login'); onCloseMobile(); }} style={{ cursor: 'pointer', background: 'rgba(255,255,255,0.05)', borderColor: 'rgba(255,255,255,0.1)', color: 'var(--text-muted)' }}>
-                <User size={18} />
-              </div>
-
-              {/* Guest Details */}
-              <div className="sidebar-profile-info">
-                <span 
-                  className="sidebar-profile-name" 
-                  onClick={() => { navigate('/login'); onCloseMobile(); }}
+                  <Settings size={16} />
+                  <span>Thông tin cá nhân</span>
+                </button>
+                <button 
+                  className="sidebar-profile-menu-item logout" 
+                  onClick={() => {
+                    setShowProfileMenu(false);
+                    handleLogout();
+                  }}
                 >
-                  Khách hàng
-                </span>
-                <span className="sidebar-profile-role">Chưa đăng nhập</span>
+                  <LogOut size={16} />
+                  <span>Đăng xuất</span>
+                </button>
               </div>
+            )}
 
-              {/* Login quick button */}
-              <button 
-                onClick={() => { navigate('/login'); onCloseMobile(); }} 
-                className="btn-sidebar-action"
-                title="Đăng nhập"
-              >
-                <LogIn size={16} />
-              </button>
-            </>
-          )}
-        </div>
+            {/* Avatar circle */}
+            <div className="sidebar-avatar" title="Tài khoản">
+              {user.avatarUrl ? (
+                <img src={user.avatarUrl} alt="Avatar" className="sidebar-avatar-img" />
+              ) : (
+                <span>{getInitials(user.displayName || user.username)}</span>
+              )}
+            </div>
+
+            {/* Profile Details */}
+            <div className="sidebar-profile-info">
+              <span className="sidebar-profile-name">
+                {user.displayName || user.username}
+              </span>
+              <span className="sidebar-profile-role">
+                {user.role === 'admin' ? 'Admin' : 'Giáo viên'}
+              </span>
+            </div>
+          </div>
+        ) : (
+          <div className="sidebar-profile-guest">
+            <button 
+              onClick={() => { navigate('/login'); onCloseMobile(); }} 
+              className="sidebar-login-btn"
+              title="Đăng nhập"
+            >
+              <LogIn size={18} />
+              <span className="sidebar-login-text">Đăng nhập</span>
+            </button>
+          </div>
+        )}
       </aside>
     </>
   );
 }
+
