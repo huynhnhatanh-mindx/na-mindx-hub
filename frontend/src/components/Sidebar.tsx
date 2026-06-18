@@ -90,20 +90,17 @@ export default function Sidebar({ isCollapsed, isMobileOpen, onCloseMobile }: Si
         {/* Navigation Menu List */}
         <nav style={{ flexGrow: 1, display: 'flex', flexDirection: 'column' }}>
           <ul className="sidebar-menu">
-            {/* Standard Guest & General Links (Hidden for admins to keep it tidy, shown for teachers/guests) */}
-            {(!user || user.role !== 'admin') && (
-              <li>
-                <NavLink 
-                  to="/" 
-                  className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}
-                  onClick={onCloseMobile}
-                  end
-                >
-                  <Home size={18} />
-                  <span className="sidebar-link-text">Trang chủ</span>
-                </NavLink>
-              </li>
-            )}
+            <li>
+              <NavLink 
+                to="/" 
+                className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}
+                onClick={onCloseMobile}
+                end
+              >
+                <Home size={18} />
+                <span className="sidebar-link-text">Trang chủ</span>
+              </NavLink>
+            </li>
             
             <li>
               <NavLink 
