@@ -588,6 +588,44 @@ export default function GroupArranger() {
           {phase === 'config' && (
             <div className="glass-card" style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
               
+              {/* Over-allocation warning banner */}
+              {totalConfiguredSize > studentsList.length && (
+                <div style={{
+                  background: 'var(--error-glow)',
+                  border: '1px solid var(--error)',
+                  color: 'var(--error)',
+                  padding: '1rem 1.25rem',
+                  borderRadius: '12px',
+                  fontSize: '0.925rem',
+                  fontWeight: '600',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.75rem',
+                  animation: 'fadeInFast 0.25s ease-out'
+                }}>
+                  ⚠️ Tổng số thành viên phân bổ ({totalConfiguredSize}) vượt quá tổng sĩ số hiện tại của lớp ({studentsList.length})! Vui lòng giảm bớt thành viên trước khi bắt đầu.
+                </div>
+              )}
+
+              {/* Under-allocation warning banner */}
+              {totalConfiguredSize < studentsList.length && (
+                <div style={{
+                  background: 'var(--primary-glow)',
+                  border: '1px solid var(--primary)',
+                  color: 'var(--primary)',
+                  padding: '1rem 1.25rem',
+                  borderRadius: '12px',
+                  fontSize: '0.925rem',
+                  fontWeight: '600',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.75rem',
+                  animation: 'fadeInFast 0.25s ease-out'
+                }}>
+                  💡 Tổng số thành viên phân bổ ({totalConfiguredSize}) chưa đủ sĩ số hiện tại của lớp ({studentsList.length}). Cần bổ sung thêm {studentsList.length - totalConfiguredSize} học viên.
+                </div>
+              )}
+              
               {/* Sĩ số info */}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--card-border)', paddingBottom: '1rem', flexWrap: 'wrap', gap: '1rem' }}>
                 <span style={{ fontSize: '1rem', fontWeight: '600', color: 'var(--text-primary)' }}>
