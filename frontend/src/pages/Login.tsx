@@ -42,11 +42,9 @@ export default function Login() {
       // Dispatch storage event to notify Header component immediately
       window.dispatchEvent(new Event('storage'));
 
-      // Redirect to Google onboarding if teacher needs Google setup, else to admin
+      // Redirect to Google onboarding if teacher needs Google setup, else to homepage
       if (data.user.role === 'teacher' && data.user.requiresGoogleAuth) {
         navigate('/google-setup');
-      } else if (data.user.role === 'admin' || data.user.role === 'teacher') {
-        navigate('/admin');
       } else {
         navigate('/');
       }
