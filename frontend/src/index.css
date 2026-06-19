@@ -2003,5 +2003,80 @@ th, td {
   display: none !important;
 }
 
+/* ==========================================
+   Senior UI/UX Premium Animations & Transitions
+   ========================================== */
+
+/* Enhanced premium cards micro-interactions */
+.glass-card {
+  transition: transform 0.3s cubic-bezier(0.25, 0.8, 0.25, 1),
+              border-color 0.25s cubic-bezier(0.25, 0.8, 0.25, 1),
+              box-shadow 0.3s cubic-bezier(0.25, 0.8, 0.25, 1),
+              background-color 0.25s cubic-bezier(0.25, 0.8, 0.25, 1) !important;
+  will-change: transform, box-shadow, border-color;
+}
+
+.glass-card:hover {
+  transform: translateY(-5px) scale(1.015) !important;
+  border-color: var(--card-hover-border) !important;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.35), var(--card-hover-shadow) !important;
+}
+
+/* Enhanced premium button micro-interactions & active state */
+.btn {
+  transition: background-color 0.25s cubic-bezier(0.25, 0.8, 0.25, 1),
+              border-color 0.25s cubic-bezier(0.25, 0.8, 0.25, 1),
+              transform 0.15s cubic-bezier(0.25, 0.8, 0.25, 1),
+              box-shadow 0.25s cubic-bezier(0.25, 0.8, 0.25, 1) !important;
+  will-change: transform, box-shadow;
+}
+
+.btn:hover {
+  transform: translateY(-1px);
+}
+
+.btn:active {
+  transform: translateY(1px) scale(0.96) !important;
+}
+
+.btn-primary:active {
+  transform: scale(0.96) translateY(0) !important;
+}
+
+/* Premium Reveal animations (Fade-in & Slide-up) */
+.reveal-fade-in-up {
+  opacity: 0;
+  transform: translateY(16px);
+  animation: premiumReveal 0.35s cubic-bezier(0.23, 1, 0.32, 1) forwards;
+}
+
+@keyframes premiumReveal {
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Page transition class */
+.page-transition-container {
+  opacity: 0;
+  transform: translateY(12px);
+  animation: premiumReveal 0.32s cubic-bezier(0.25, 0.8, 0.25, 1) forwards;
+}
+
+/* Modal entrance */
+.modal-reveal-card {
+  opacity: 0;
+  transform: scale(0.95) translateY(12px);
+  animation: modalEntrance 0.32s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+@keyframes modalEntrance {
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
 
 

@@ -2,9 +2,10 @@ import { useState } from 'react';
 import Header from './Header';
 import Footer from './Footer';
 import Sidebar from './Sidebar';
-import { Outlet } from 'react-router-dom';
+import { Outlet, useLocation } from 'react-router-dom';
 
 function Layout() {
+  const { pathname } = useLocation();
   // Collapse state stored in local storage for user convenience
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
     const stored = localStorage.getItem('sidebar-collapsed');
@@ -39,7 +40,7 @@ function Layout() {
           onToggleSidebar={toggleSidebar} 
           onToggleMobileSidebar={toggleMobileSidebar} 
         />
-        <main className="main-content">
+        <main className="main-content page-transition-container" key={pathname}>
           <Outlet />
         </main>
         <Footer />

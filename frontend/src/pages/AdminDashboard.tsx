@@ -22,6 +22,7 @@ interface ClassData {
   teacherName: string;
   studentCount?: number;
   startDate?: string;
+  endDate?: string;
   startTime?: string;
   endTime?: string;
   checkpoint1StartDate?: string;
@@ -33,6 +34,8 @@ interface ClassData {
   presentationStartDate?: string;
   presentationDeadline?: string;
   allowLateUpload?: boolean;
+  isForceEnded?: boolean;
+  status?: string;
 }
 
 interface TeacherData {
@@ -159,6 +162,57 @@ const DateTimeInput = ({ value, onChange, className, style }: {
   );
 };
 
+const renderClassStatusBadge = (status?: string) => {
+  let text = 'Chưa xác định';
+  let bg = 'rgba(255, 255, 255, 0.05)';
+  let color = 'var(--text-muted)';
+  let border = '1px solid rgba(255, 255, 255, 0.1)';
+
+  switch (status) {
+    case 'open':
+      text = 'Đang mở';
+      bg = 'rgba(59, 130, 246, 0.1)';
+      color = '#3b82f6';
+      border = '1px solid rgba(59, 130, 246, 0.2)';
+      break;
+    case 'running':
+      text = 'Đang chạy';
+      bg = 'var(--success-glow)';
+      color = 'var(--success)';
+      border = '1px solid rgba(16, 185, 129, 0.2)';
+      break;
+    case 'pending_close':
+      text = 'Chờ đóng';
+      bg = 'var(--warning-glow)';
+      color = 'var(--warning)';
+      border = '1px solid rgba(245, 158, 11, 0.2)';
+      break;
+    case 'ended':
+      text = 'Đã kết thúc';
+      bg = 'var(--error-glow)';
+      color = 'var(--error)';
+      border = '1px solid rgba(239, 68, 68, 0.2)';
+      break;
+  }
+
+  return (
+    <span style={{
+      display: 'inline-flex',
+      alignItems: 'center',
+      padding: '3px 8px',
+      borderRadius: '6px',
+      fontSize: '0.75rem',
+      fontWeight: '600',
+      background: bg,
+      color: color,
+      border: border,
+      marginTop: '0.25rem'
+    }}>
+      {text}
+    </span>
+  );
+};
+
 export default function AdminDashboard() {
   const navigate = useNavigate();
   const { showToast, showConfirm } = useToast();
@@ -257,6 +311,8 @@ export default function AdminDashboard() {
   const [isNewTeacher, setIsNewTeacher] = useState(false);
   const [newTeacherName, setNewTeacherName] = useState('');
   const [classStartDate, setClassStartDate] = useState('');
+  const [classEndDate, setClassEndDate] = useState('');
+  const [classIsForceEnded, setClassIsForceEnded] = useState(false);
   const [classStartTime, setClassStartTime] = useState('08:00');
   const [classEndTime, setClassEndTime] = useState('10:00');
 
@@ -627,6 +683,22 @@ export default function AdminDashboard() {
     return `${year}-${month}-${day}T${(h || '10').padStart(2, '0')}:${(m || '00').padStart(2, '0')}`;
   };
 
+  const calcAutoEndDate = (startDateStr: string): string => {
+    if (!startDateStr) return '';
+    const baseDate = new Date(`${startDateStr}T00:00:00+07:00`);
+    if (isNaN(baseDate.getTime())) return '';
+    const targetDate = new Date(baseDate.getTime() + 91 * 24 * 60 * 60 * 1000); // Session 14 = 13 weeks offset = 91 days
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Asia/Ho_Chi_Minh',
+      year: 'numeric', month: '2-digit', day: '2-digit'
+    });
+    const parts = formatter.formatToParts(targetDate);
+    const year = parts.find(p => p.type === 'year')?.value || '2026';
+    const month = parts.find(p => p.type === 'month')?.value || '01';
+    const day = parts.find(p => p.type === 'day')?.value || '01';
+    return `${year}-${month}-${day}`;
+  };
+
   const getMilestoneRangeDisplay = (item: ClassData, type: 'cp1' | 'cp2' | 'spck' | 'presentation') => {
     let startVal = '';
     let endVal = '';
@@ -697,6 +769,8 @@ export default function AdminDashboard() {
     setClassName('');
     setClassTeacher(currentUser?.role === 'teacher' ? currentUser.displayName : '');
     setClassStartDate('');
+    setClassEndDate('');
+    setClassIsForceEnded(false);
     setClassStartTime('08:00');
     setClassEndTime('10:00');
     setClassCp1StartDate('');
@@ -746,6 +820,8 @@ export default function AdminDashboard() {
     } else if (activeTab === 'classes') {
       setClassName(item.name);
       setClassStartDate(toLocalYYYYMMDD(item.startDate));
+      setClassEndDate(toLocalYYYYMMDD(item.endDate));
+      setClassIsForceEnded(item.isForceEnded === true);
       setClassStartTime(item.startTime || '08:00');
       setClassEndTime(item.endTime || '10:00');
       const sd = toLocalYYYYMMDD(item.startDate);
@@ -896,6 +972,8 @@ export default function AdminDashboard() {
         newTeacherUsername: isNewTeacher ? newTeacherUsername.trim() : undefined,
         newTeacherPassword: isNewTeacher ? newTeacherPassword.trim() : undefined,
         startDate: classStartDate || null,
+        endDate: classEndDate || null,
+        isForceEnded: classIsForceEnded,
         startTime: classStartTime || "08:00",
         endTime: classEndTime || "10:00",
         checkpoint1StartDate: classCp1StartDate || null,
@@ -1402,54 +1480,113 @@ export default function AdminDashboard() {
 
               {/* --- BẢNG LỚP HỌC --- */}
               {activeTab === 'classes' && (
-                <table className="responsive-table" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
-                  <thead>
-                    <tr style={{ borderBottom: '1px solid var(--card-border)', color: 'var(--text-primary)', fontSize: '0.9rem', fontWeight: '700' }}>
-                      <th style={{ padding: '1rem', width: '40px' }}><input type="checkbox" onChange={(e) => handleSelectAll(e, classes)} checked={classes.length > 0 && selectedIds.length === classes.length} /></th>
-                      <th style={{ padding: '1rem' }}>Tên lớp học</th>
-                      <th style={{ padding: '1rem' }}>Giáo viên phụ trách</th>
-                      <th style={{ padding: '1rem' }}>Lịch học & Cài đặt</th>
-                      <th style={{ padding: '1rem' }}>Hạn chót các cổng nộp</th>
-                      <th style={{ padding: '1rem', textAlign: 'center' }}>Sĩ số</th>
-                      <th style={{ padding: '1rem', textAlign: 'center' }}>Thao tác</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {classes.map((item) => (
-                      <tr key={item._id} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)', fontSize: '0.875rem' }}>
-                        <td style={{ padding: '1rem' }}><input type="checkbox" checked={selectedIds.includes(item._id)} onChange={() => handleSelectRow(item._id)} /></td>
-                        <td data-label="Tên lớp học" style={{ padding: '1rem', color: 'var(--text-primary)', fontWeight: '600' }}>{preventOrphan(item.name)}</td>
-                        <td data-label="Giáo viên phụ trách" style={{ padding: '1rem' }}>{preventOrphan(item.teacherName)}</td>
-                        <td data-label="Lịch học & Cài đặt" style={{ padding: '1rem', fontSize: '0.825rem', lineHeight: '1.4' }}>
-                          <div><strong style={{ color: 'var(--text-muted)' }}>{preventOrphan('Bắt đầu:')}</strong> {preventOrphan(item.startDate ? new Date(item.startDate).toLocaleDateString('vi-VN') : 'Chưa đặt')}</div>
-                          <div><strong style={{ color: 'var(--text-muted)' }}>{preventOrphan('Giờ học:')}</strong> {preventOrphan(`${item.startTime || '08:00'} - ${item.endTime || '10:00'}`)}</div>
-                        </td>
-                        <td data-label="Thời gian nộp các cổng nộp" style={{ padding: '1rem', fontSize: '0.825rem', lineHeight: '1.4' }}>
-                          <div><strong style={{ color: 'var(--text-muted)' }}>{preventOrphan('CP1:')}</strong> {getMilestoneRangeDisplay(item, 'cp1')}</div>
-                          <div><strong style={{ color: 'var(--text-muted)' }}>{preventOrphan('CP2:')}</strong> {getMilestoneRangeDisplay(item, 'cp2')}</div>
-                          <div><strong style={{ color: 'var(--text-muted)' }}>{preventOrphan('SPCK:')}</strong> {getMilestoneRangeDisplay(item, 'spck')}</div>
-                          <div><strong style={{ color: 'var(--text-muted)' }}>{preventOrphan('Thuyết trình:')}</strong> {getMilestoneRangeDisplay(item, 'presentation')}</div>
-                        </td>
-                        <td data-label="Sĩ số" style={{ padding: '1rem', textAlign: 'center' }}>
-                          <span style={{ 
-                            background: 'var(--primary-glow)', 
-                            color: 'var(--primary)', 
-                            padding: '4px 10px', 
-                            borderRadius: '20px', 
-                            fontSize: '0.85rem', 
-                            fontWeight: '700' 
-                          }}>
-                            {item.studentCount ?? 0} học viên
-                          </span>
-                        </td>
-                        <td data-label="Thao tác" style={{ padding: '1rem', display: 'flex', gap: '0.5rem', justifyContent: 'center' }}>
-                          <button className="btn btn-neutral" style={{ padding: '4px 10px', height: 'auto', fontSize: '0.8rem' }} onClick={() => handleOpenEditModal(item)}>Sửa</button>
-                          <button className="btn btn-danger" style={{ padding: '4px 10px', height: 'auto', fontSize: '0.8rem' }} onClick={() => handleDeleteItem(item._id)}>Xóa</button>
-                        </td>
+                <>
+                  {/* --- CHÚ THÍCH TRẠNG THÁI LỚP HỌC --- */}
+                  <div className="glass-card" style={{
+                    marginBottom: '1.5rem',
+                    padding: '1.25rem',
+                    borderRadius: '12px',
+                    background: 'rgba(31, 41, 55, 0.45)',
+                    border: '1px solid rgba(255, 255, 255, 0.05)',
+                  }}>
+                    <h4 style={{
+                      fontSize: '0.9rem',
+                      fontWeight: '700',
+                      color: 'var(--text-primary)',
+                      marginBottom: '1rem',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.5rem'
+                    }}>
+                      📌 Chú thích các trạng thái lớp học
+                    </h4>
+                    <div style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+                      gap: '1rem'
+                    }}>
+                      <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'flex-start' }}>
+                        {renderClassStatusBadge('open')}
+                        <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: '1.4' }}>
+                          <strong>Đang mở:</strong> Ngày hiện tại chưa đến Ngày bắt đầu của lớp học.
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'flex-start' }}>
+                        {renderClassStatusBadge('running')}
+                        <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: '1.4' }}>
+                          <strong>Đang chạy:</strong> Lớp học đã bắt đầu, chưa đến Ngày kết thúc và còn ít nhất một cổng nộp bài còn hạn nộp.
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'flex-start' }}>
+                        {renderClassStatusBadge('pending_close')}
+                        <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: '1.4' }}>
+                          <strong>Chờ đóng:</strong> Đã quá Ngày kết thúc nhưng còn ít nhất một cổng nộp bài đang được gia hạn hoặc cho phép nộp muộn.
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'flex-start' }}>
+                        {renderClassStatusBadge('ended')}
+                        <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: '1.4' }}>
+                          <strong>Đã kết thúc:</strong> Đã quá Ngày kết thúc và tất cả các cổng nộp bài đã đóng, hoặc lớp học được kết thúc nhanh thủ công.
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <table className="responsive-table" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+                    <thead>
+                      <tr style={{ borderBottom: '1px solid var(--card-border)', color: 'var(--text-primary)', fontSize: '0.9rem', fontWeight: '700' }}>
+                        <th style={{ padding: '1rem', width: '40px' }}><input type="checkbox" onChange={(e) => handleSelectAll(e, classes)} checked={classes.length > 0 && selectedIds.length === classes.length} /></th>
+                        <th style={{ padding: '1rem' }}>Tên lớp học</th>
+                        <th style={{ padding: '1rem' }}>Giáo viên phụ trách</th>
+                        <th style={{ padding: '1rem' }}>Lịch học & Cài đặt</th>
+                        <th style={{ padding: '1rem' }}>Hạn chót các cổng nộp</th>
+                        <th style={{ padding: '1rem', textAlign: 'center' }}>Sĩ số</th>
+                        <th style={{ padding: '1rem', textAlign: 'center' }}>Thao tác</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {classes.map((item) => (
+                        <tr key={item._id} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)', fontSize: '0.875rem' }}>
+                          <td style={{ padding: '1rem' }}><input type="checkbox" checked={selectedIds.includes(item._id)} onChange={() => handleSelectRow(item._id)} /></td>
+                          <td data-label="Tên lớp học" style={{ padding: '1rem', color: 'var(--text-primary)', fontWeight: '600' }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
+                              <span>{preventOrphan(item.name)}</span>
+                              {renderClassStatusBadge(item.status)}
+                            </div>
+                          </td>
+                          <td data-label="Giáo viên phụ trách" style={{ padding: '1rem' }}>{preventOrphan(item.teacherName)}</td>
+                          <td data-label="Lịch học & Cài đặt" style={{ padding: '1rem', fontSize: '0.825rem', lineHeight: '1.4' }}>
+                            <div><strong style={{ color: 'var(--text-muted)' }}>{preventOrphan('Bắt đầu:')}</strong> {preventOrphan(item.startDate ? new Date(item.startDate).toLocaleDateString('vi-VN') : 'Chưa đặt')}</div>
+                            <div><strong style={{ color: 'var(--text-muted)' }}>{preventOrphan('Kết thúc:')}</strong> {preventOrphan(item.endDate ? new Date(item.endDate).toLocaleDateString('vi-VN') : 'Chưa đặt')}</div>
+                            <div><strong style={{ color: 'var(--text-muted)' }}>{preventOrphan('Giờ học:')}</strong> {preventOrphan(`${item.startTime || '08:00'} - ${item.endTime || '10:00'}`)}</div>
+                          </td>
+                          <td data-label="Thời gian nộp các cổng nộp" style={{ padding: '1rem', fontSize: '0.825rem', lineHeight: '1.4' }}>
+                            <div><strong style={{ color: 'var(--text-muted)' }}>{preventOrphan('CP1:')}</strong> {getMilestoneRangeDisplay(item, 'cp1')}</div>
+                            <div><strong style={{ color: 'var(--text-muted)' }}>{preventOrphan('CP2:')}</strong> {getMilestoneRangeDisplay(item, 'cp2')}</div>
+                            <div><strong style={{ color: 'var(--text-muted)' }}>{preventOrphan('SPCK:')}</strong> {getMilestoneRangeDisplay(item, 'spck')}</div>
+                            <div><strong style={{ color: 'var(--text-muted)' }}>{preventOrphan('Thuyết trình:')}</strong> {getMilestoneRangeDisplay(item, 'presentation')}</div>
+                          </td>
+                          <td data-label="Sĩ số" style={{ padding: '1rem', textAlign: 'center' }}>
+                            <span style={{ 
+                              background: 'var(--primary-glow)', 
+                              color: 'var(--primary)', 
+                              padding: '4px 10px', 
+                              borderRadius: '20px', 
+                              fontSize: '0.85rem', 
+                              fontWeight: '700' 
+                            }}>
+                              {item.studentCount ?? 0} học viên
+                            </span>
+                          </td>
+                          <td data-label="Thao tác" style={{ padding: '1rem', display: 'flex', gap: '0.5rem', justifyContent: 'center' }}>
+                            <button className="btn btn-neutral" style={{ padding: '4px 10px', height: 'auto', fontSize: '0.8rem' }} onClick={() => handleOpenEditModal(item)}>Sửa</button>
+                            <button className="btn btn-danger" style={{ padding: '4px 10px', height: 'auto', fontSize: '0.8rem' }} onClick={() => handleDeleteItem(item._id)}>Xóa</button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </>
               )}
 
               {/* --- BẢNG HỌC VIÊN --- */}
@@ -1777,7 +1914,7 @@ export default function AdminDashboard() {
             width: '100%', 
             maxWidth: '500px', 
             padding: 'max(1.5rem, 5vw)', 
-            animation: 'scaleUp 0.3s ease-out', 
+            animation: 'modalEntrance 0.32s cubic-bezier(0.34, 1.56, 0.64, 1) forwards', 
             maxHeight: '90vh', 
             overflowY: 'auto' 
           }}>
@@ -1984,7 +2121,7 @@ export default function AdminDashboard() {
                   )}
                   
                   {/* === Date & time inputs === */}
-                  <div style={{ marginTop: '0.75rem' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginTop: '0.75rem' }}>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                       <label className="form-label">Ngày bắt đầu lớp học</label>
                       <DateInput
@@ -1992,6 +2129,9 @@ export default function AdminDashboard() {
                         onChange={(val) => {
                           setClassStartDate(val);
                           if (val) {
+                            if (!editingId) {
+                              setClassEndDate(calcAutoEndDate(val));
+                            }
                             setClassCp1StartDate(calcAutoDeadline(val, 28, classStartTime));
                             setClassCp1Deadline(calcAutoDeadline(val, 28, classEndTime));
                             setClassCp2StartDate(calcAutoDeadline(val, 56, classStartTime));
@@ -2001,6 +2141,7 @@ export default function AdminDashboard() {
                             setClassPresentationStartDate(calcAutoDeadline(val, 0, classStartTime));
                             setClassPresentationDeadline(calcAutoDeadline(val, 91, classEndTime));
                           } else {
+                            setClassEndDate('');
                             setClassCp1StartDate('');
                             setClassCp1Deadline('');
                             setClassCp2StartDate('');
@@ -2011,6 +2152,14 @@ export default function AdminDashboard() {
                             setClassPresentationDeadline('');
                           }
                         }}
+                        className="form-input-field"
+                      />
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                      <label className="form-label">Ngày kết thúc lớp học</label>
+                      <DateInput
+                        value={classEndDate}
+                        onChange={(val) => setClassEndDate(val)}
                         className="form-input-field"
                       />
                     </div>
@@ -2187,6 +2336,38 @@ export default function AdminDashboard() {
                         </div>
                       </div>
                     ))}
+                  </div>
+
+                  {/* === Force Close (Kết thúc nhanh) Checkbox === */}
+                  <div style={{
+                    marginTop: '1rem',
+                    padding: '1rem',
+                    borderRadius: '12px',
+                    background: 'rgba(239, 68, 68, 0.05)',
+                    border: '1px solid rgba(239, 68, 68, 0.2)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '0.5rem'
+                  }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', userSelect: 'none' }}>
+                      <input
+                        type="checkbox"
+                        checked={classIsForceEnded}
+                        onChange={(e) => setClassIsForceEnded(e.target.checked)}
+                        style={{
+                          accentColor: 'var(--primary)',
+                          width: '18px',
+                          height: '18px',
+                          cursor: 'pointer'
+                        }}
+                      />
+                      <span style={{ fontSize: '0.9rem', fontWeight: '700', color: 'var(--primary)' }}>
+                        ⚡ Kết thúc nhanh lớp học (Force Close)
+                      </span>
+                    </label>
+                    <div style={{ fontSize: '0.8rem', color: '#bbb', lineHeight: '1.4' }}>
+                      Kích hoạt tùy chọn này sẽ đóng lập tức tất cả các cổng nộp bài (Milestones & Late uploads) của lớp học này. Trạng thái lớp sẽ chuyển thành <strong>Đã kết thúc</strong> và học viên sẽ không thể nộp thêm bất kỳ bài nào.
+                    </div>
                   </div>
                 </>
               )}
@@ -2398,7 +2579,7 @@ export default function AdminDashboard() {
             width: '100%', 
             maxWidth: '500px', 
             padding: '2rem', 
-            animation: 'scaleUp 0.3s ease-out', 
+            animation: 'modalEntrance 0.32s cubic-bezier(0.34, 1.56, 0.64, 1) forwards', 
             maxHeight: '90vh', 
             overflowY: 'auto' 
           }}>

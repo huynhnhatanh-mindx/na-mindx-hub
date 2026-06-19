@@ -106,6 +106,7 @@ const classSchema = new mongoose.Schema({
   name: { type: String, required: true, unique: true },
   teacherName: { type: String, required: true },
   startDate: { type: Date },
+  endDate: { type: Date },
   startTime: { type: String, default: "08:00" },
   endTime: { type: String, default: "10:00" },
   checkpoint1StartDate: { type: Date },
@@ -124,7 +125,8 @@ const classSchema = new mongoose.Schema({
   presentationDeadline: { type: Date },
   presentationLateType: { type: String, enum: ['none', 'unlimited', 'limited'], default: 'none' },
   presentationLateDeadline: { type: Date },
-  allowLateUpload: { type: Boolean, default: false }
+  allowLateUpload: { type: Boolean, default: false },
+  isForceEnded: { type: Boolean, default: false }
 });
 const ClassModel = mongoose.model('Class', classSchema);
 
@@ -172,6 +174,13 @@ const userSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now }
 });
 const UserModel = mongoose.model('User', userSchema);
+
+const visitorSchema = new mongoose.Schema({
+  count: { type: Number, default: 0 }
+});
+const VisitorModel = mongoose.model('Visitor', visitorSchema);
+
+let localVisits = 0;
 
 function extractGoogleDriveFileId(fileUrl: string): string | null {
   if (!fileUrl) return null;
@@ -537,6 +546,122 @@ function formatVietnamDateTime(d: Date): string {
   return `${hour}:${minute} ngày ${day}/${month}/${year}`;
 }
 
+function isPhaseActive(cls: any, stageLower: string, now: Date = new Date()): boolean {
+  let startDeadline: Date | null = null;
+  let endDeadline: Date | null = null;
+  let lateType = 'none';
+  let lateDeadline: Date | null = null;
+
+  const cleanStage = stageLower.toLowerCase();
+
+  if (cleanStage.includes('checkpoint 1')) {
+    startDeadline = cls.checkpoint1StartDate ? parseVietnamDate(cls.checkpoint1StartDate) : (cls.startDate ? calculateVietnamDeadline(cls.startDate, 28, cls.startTime || "08:00") : null);
+    endDeadline = cls.checkpoint1Deadline ? parseVietnamDate(cls.checkpoint1Deadline) : (cls.startDate ? calculateVietnamDeadline(cls.startDate, 28, cls.endTime || "10:00") : null);
+    lateType = cls.checkpoint1LateType || 'none';
+    lateDeadline = cls.checkpoint1LateDeadline ? parseVietnamDate(cls.checkpoint1LateDeadline) : null;
+  } else if (cleanStage.includes('checkpoint 2')) {
+    startDeadline = cls.checkpoint2StartDate ? parseVietnamDate(cls.checkpoint2StartDate) : (cls.startDate ? calculateVietnamDeadline(cls.startDate, 56, cls.startTime || "08:00") : null);
+    endDeadline = cls.checkpoint2Deadline ? parseVietnamDate(cls.checkpoint2Deadline) : (cls.startDate ? calculateVietnamDeadline(cls.startDate, 56, cls.endTime || "10:00") : null);
+    lateType = cls.checkpoint2LateType || 'none';
+    lateDeadline = cls.checkpoint2LateDeadline ? parseVietnamDate(cls.checkpoint2LateDeadline) : null;
+  } else if (cleanStage.includes('san pham cuoi khoa') || cleanStage.includes('sản phẩm cuối khóa') || cleanStage.includes('final')) {
+    startDeadline = cls.finalProjectStartDate ? parseVietnamDate(cls.finalProjectStartDate) : (cls.startDate ? calculateVietnamDeadline(cls.startDate, 0, cls.startTime || "08:00") : null);
+    endDeadline = cls.finalProjectDeadline ? parseVietnamDate(cls.finalProjectDeadline) : (cls.startDate ? calculateVietnamDeadline(cls.startDate, 85, cls.endTime || "10:00") : null);
+    lateType = cls.finalProjectLateType || 'none';
+    lateDeadline = cls.finalProjectLateDeadline ? parseVietnamDate(cls.finalProjectLateDeadline) : null;
+  } else if (cleanStage.includes('thuyet trinh') || cleanStage.includes('thuyết trình') || cleanStage.includes('presentation')) {
+    startDeadline = cls.presentationStartDate ? parseVietnamDate(cls.presentationStartDate) : (cls.startDate ? calculateVietnamDeadline(cls.startDate, 0, cls.startTime || "08:00") : null);
+    endDeadline = cls.presentationDeadline ? parseVietnamDate(cls.presentationDeadline) : (cls.startDate ? calculateVietnamDeadline(cls.startDate, 91, cls.endTime || "10:00") : null);
+    lateType = cls.presentationLateType || 'none';
+    lateDeadline = cls.presentationLateDeadline ? parseVietnamDate(cls.presentationLateDeadline) : null;
+  }
+
+  const effectiveLateType = (lateType === 'infinite' || lateType === 'unlimited') ? 'unlimited' :
+    (lateType === 'duration' || lateType === 'limited') ? 'limited' : 'none';
+
+  if (startDeadline && now < startDeadline) {
+    return false; // Not open yet
+  }
+
+  if (endDeadline && now > endDeadline) {
+    if (effectiveLateType === 'none') {
+      return false; // Past main deadline, no late submission
+    } else if (effectiveLateType === 'limited') {
+      if (!lateDeadline || now > lateDeadline) {
+        return false; // Past late deadline
+      }
+    }
+  }
+
+  return true; // Still active/open
+}
+
+function getClassStatus(cls: any, now: Date = new Date()): string {
+  if (cls.isForceEnded) {
+    return 'ended'; // Đã kết thúc
+  }
+
+  let start: Date | null = null;
+  if (cls.startDate) {
+    const startBase = parseVietnamDate(cls.startDate);
+    if (startBase) {
+      const formatter = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'Asia/Ho_Chi_Minh',
+        year: 'numeric', month: '2-digit', day: '2-digit'
+      });
+      const parts = formatter.formatToParts(startBase);
+      const year = parts.find(p => p.type === 'year')?.value;
+      const month = parts.find(p => p.type === 'month')?.value;
+      const day = parts.find(p => p.type === 'day')?.value;
+      const timeStr = cls.startTime || '00:00';
+      start = parseVietnamDate(`${year}-${month}-${day}T${timeStr}`);
+    }
+  }
+
+  let end: Date | null = null;
+  if (cls.endDate) {
+    const endBase = parseVietnamDate(cls.endDate);
+    if (endBase) {
+      const formatter = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'Asia/Ho_Chi_Minh',
+        year: 'numeric', month: '2-digit', day: '2-digit'
+      });
+      const parts = formatter.formatToParts(endBase);
+      const year = parts.find(p => p.type === 'year')?.value;
+      const month = parts.find(p => p.type === 'month')?.value;
+      const day = parts.find(p => p.type === 'day')?.value;
+      const timeStr = cls.endTime || '23:59:59';
+      end = parseVietnamDate(`${year}-${month}-${day}T${timeStr}`);
+    }
+  }
+
+  // 1. Đang mở: current time < start date (including start time)
+  if (start && now < start) {
+    return 'open'; // Đang mở
+  }
+
+  // Count active submission deadlines (not expired)
+  let activeCount = 0;
+  const phases = ['checkpoint 1', 'checkpoint 2', 'final', 'presentation'];
+  for (const phase of phases) {
+    if (isPhaseActive(cls, phase, now)) {
+      activeCount++;
+    }
+  }
+
+  // If class end date has passed, we evaluate whether it is ended or pending close
+  if (end && now >= end) {
+    if (activeCount > 0) {
+      return 'pending_close'; // Chờ đóng
+    } else {
+      return 'ended'; // Đã kết thúc
+    }
+  }
+
+  // If class end date has not passed (or not set), but start date has passed
+  return 'running'; // Đang chạy
+}
+
 function escapeRegExp(string: string): string {
   return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -628,6 +753,18 @@ if (process.env.MONGODB_URI) {
         console.log('[Database]: Đã đồng bộ tài khoản cho các giáo viên hiện có.');
       } catch (err: any) {
         console.error('[Migration Error]: Lỗi đồng bộ tài khoản giáo viên lúc khởi động:', err.message);
+      }
+
+      // Safe check: Reset visitor count to 0 if it contains the old mock value
+      try {
+        const doc = await VisitorModel.findOne();
+        if (doc && (doc.count === 18867 || doc.count === 18868)) {
+          doc.count = 0;
+          await doc.save();
+          console.log('[Database]: Đã phát hiện số liệu ảo cũ và reset bộ đếm lượt truy cập về 0.');
+        }
+      } catch (err: any) {
+        console.error('[Database Warning]: Lỗi kiểm tra/reset bộ đếm lượt truy cập:', err.message);
       }
     })
     .catch((err: any) => {
@@ -972,11 +1109,20 @@ app.get('/api/teachers', async (req: Request, res: Response) => {
 // API lấy danh sách Lớp học (có bộ lọc theo Giáo viên)
 app.get('/api/classes', async (req: Request, res: Response) => {
   try {
-    const { teacherName } = req.query;
+    const { teacherName, activeOnly } = req.query;
     const teacherNameStr = typeof teacherName === 'string' ? teacherName : undefined;
     if (useMongoDB) {
       const query = teacherNameStr ? { teacherName: teacherNameStr } : {};
-      const classes = await ClassModel.find(query);
+      let classes = await ClassModel.find(query);
+
+      if (activeOnly === 'true') {
+        const now = new Date();
+        classes = classes.filter(cls => {
+          const status = getClassStatus(cls, now);
+          return status === 'running' || status === 'pending_close';
+        });
+      }
+
       if (req.query.full === 'true') {
         res.json(classes);
       } else {
@@ -1248,6 +1394,45 @@ app.use('/api/admin', (req, res, next) => {
     };
   }
   next();
+});
+
+// API Lượt truy cập (Visitor Counter)
+app.post('/api/visits', async (req: Request, res: Response) => {
+  try {
+    if (useMongoDB) {
+      let visitorDoc = await VisitorModel.findOne();
+      if (!visitorDoc) {
+        visitorDoc = new VisitorModel({ count: 1 }); // Start at 1 for first visit
+        await visitorDoc.save();
+      } else {
+        visitorDoc.count += 1;
+        await visitorDoc.save();
+      }
+      return res.json({ count: visitorDoc.count });
+    } else {
+      localVisits += 1;
+      return res.json({ count: localVisits });
+    }
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/visits', async (req: Request, res: Response) => {
+  try {
+    if (useMongoDB) {
+      let visitorDoc = await VisitorModel.findOne();
+      if (!visitorDoc) {
+        visitorDoc = new VisitorModel({ count: 0 });
+        await visitorDoc.save();
+      }
+      return res.json({ count: visitorDoc.count });
+    } else {
+      return res.json({ count: localVisits });
+    }
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
 });
 
 // API Đăng nhập
@@ -2063,7 +2248,8 @@ app.get('/api/admin/classes', adminOrTeacherAuth, async (req: Request, res: Resp
       const studentCount = await StudentModel.countDocuments({ className: cls.name });
       return {
         ...cls.toObject(),
-        studentCount
+        studentCount,
+        status: getClassStatus(cls)
       };
     }));
 
@@ -2084,6 +2270,7 @@ app.post('/api/admin/classes', adminOrTeacherAuth, async (req: Request, res: Res
     const newTeacherPassword = sanitize(req.body.newTeacherPassword);
 
     const startDate = req.body.startDate ? parseVietnamDate(req.body.startDate) : undefined;
+    const endDate = req.body.endDate ? parseVietnamDate(req.body.endDate) : undefined;
     const startTime = sanitize(req.body.startTime) || "08:00";
     const endTime = sanitize(req.body.endTime) || "10:00";
     const checkpoint1StartDate = req.body.checkpoint1StartDate ? parseVietnamDate(req.body.checkpoint1StartDate) : undefined;
@@ -2103,6 +2290,7 @@ app.post('/api/admin/classes', adminOrTeacherAuth, async (req: Request, res: Res
     const presentationLateType = sanitize(req.body.presentationLateType) || 'none';
     const presentationLateDeadline = req.body.presentationLateDeadline ? parseVietnamDate(req.body.presentationLateDeadline) : undefined;
     const allowLateUpload = req.body.allowLateUpload === true;
+    const isForceEnded = req.body.isForceEnded === true;
 
     if (!name || !teacherName) {
       return res.status(400).json({ error: 'Vui lòng cung cấp tên lớp và tên giáo viên.' });
@@ -2119,6 +2307,7 @@ app.post('/api/admin/classes', adminOrTeacherAuth, async (req: Request, res: Res
       name: cleanClassName,
       teacherName: teacherName.trim(),
       startDate,
+      endDate,
       startTime,
       endTime,
       checkpoint1StartDate,
@@ -2137,7 +2326,8 @@ app.post('/api/admin/classes', adminOrTeacherAuth, async (req: Request, res: Res
       presentationDeadline,
       presentationLateType,
       presentationLateDeadline,
-      allowLateUpload
+      allowLateUpload,
+      isForceEnded
     });
     await newClass.save();
     await logAudit('CREATE', 'Class', `Tạo lớp học: ${newClass.name} (giáo viên: ${teacherName.trim()})`, (req as any).user.username, (req as any).user.role);
@@ -2155,6 +2345,8 @@ app.put('/api/admin/classes/:id', adminOrTeacherAuth, async (req: Request, res: 
     const newTeacherPassword = sanitize(req.body.newTeacherPassword);
 
     const startDate = req.body.startDate === null || req.body.startDate === '' ? null : (req.body.startDate ? parseVietnamDate(req.body.startDate) : undefined);
+    const endDate = req.body.endDate === null || req.body.endDate === '' ? null : (req.body.endDate ? parseVietnamDate(req.body.endDate) : undefined);
+    const isForceEnded = req.body.isForceEnded !== undefined ? req.body.isForceEnded === true : undefined;
     const startTime = req.body.startTime !== undefined ? sanitize(req.body.startTime) : undefined;
     const endTime = req.body.endTime !== undefined ? sanitize(req.body.endTime) : undefined;
     const checkpoint1StartDate = req.body.checkpoint1StartDate === null || req.body.checkpoint1StartDate === '' ? null : (req.body.checkpoint1StartDate ? parseVietnamDate(req.body.checkpoint1StartDate) : undefined);
@@ -2198,6 +2390,8 @@ app.put('/api/admin/classes/:id', adminOrTeacherAuth, async (req: Request, res: 
     }
 
     if (startDate !== undefined) (cls as any).startDate = startDate;
+    if (endDate !== undefined) (cls as any).endDate = endDate;
+    if (isForceEnded !== undefined) (cls as any).isForceEnded = isForceEnded;
     if (startTime !== undefined) (cls as any).startTime = startTime;
     if (endTime !== undefined) (cls as any).endTime = endTime;
     if (checkpoint1StartDate !== undefined) (cls as any).checkpoint1StartDate = checkpoint1StartDate;
@@ -2924,6 +3118,9 @@ app.post('/api/upload-link', async (req: Request, res: Response) => {
     if (useMongoDB && className !== 'N/A') {
       const cls = await ClassModel.findOne({ name: { $regex: new RegExp(`^${escapeRegExp(className)}$`, 'i') } });
       if (cls) {
+        if ((cls as any).isForceEnded) {
+          return res.status(403).json({ error: 'Lớp học này đã kết thúc nhanh bởi Giáo viên/Admin. Tất cả các cổng nộp bài đã đóng.' });
+        }
         const stageLower = stage.toLowerCase();
         const isTheory = stageLower.includes('ly thuyet') || stageLower.includes('lý thuyết') || stageLower.includes('theory');
 
@@ -3226,6 +3423,12 @@ app.post('/api/upload', (req: Request, res: Response, next: any) => {
     if (useMongoDB && className !== 'N/A') {
       const cls = await ClassModel.findOne({ name: { $regex: new RegExp(`^${escapeRegExp(className)}$`, 'i') } });
       if (cls) {
+        if ((cls as any).isForceEnded) {
+          for (const f of files) {
+            if (fs.existsSync(f.path)) fs.unlinkSync(f.path);
+          }
+          return res.status(403).json({ error: 'Lớp học này đã kết thúc nhanh bởi Giáo viên/Admin. Tất cả các cổng nộp bài đã đóng.' });
+        }
         const stage = sanitize(req.body.stage || 'N/A').trim();
         const stageLower = stage.toLowerCase();
         // Ignore theory lessons

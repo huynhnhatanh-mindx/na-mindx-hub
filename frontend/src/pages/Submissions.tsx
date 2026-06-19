@@ -660,7 +660,7 @@ export default function Submissions() {
             width: '100%', 
             maxWidth: '500px', 
             padding: '2rem', 
-            animation: 'scaleUp 0.3s ease-out', 
+            animation: 'modalEntrance 0.32s cubic-bezier(0.34, 1.56, 0.64, 1) forwards', 
             maxHeight: '90vh', 
             overflowY: 'auto' 
           }}>

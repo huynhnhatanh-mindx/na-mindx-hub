@@ -381,7 +381,7 @@ function Upload() {
     }
     try {
       const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
-      const res = await fetch(`${API_BASE_URL}/api/classes?teacherName=${encodeURIComponent(currentTeacher.trim())}&full=true`);
+      const res = await fetch(`${API_BASE_URL}/api/classes?teacherName=${encodeURIComponent(currentTeacher.trim())}&full=true&activeOnly=true`);
       if (!res.ok) throw new Error('Failed to fetch classes');
       const data = await res.json();
       setFullClassesData(data);
@@ -1556,7 +1556,7 @@ function Upload() {
             flexDirection: 'column',
             padding: '2rem',
             gap: '1.5rem',
-            animation: 'scaleUp 0.3s ease-out',
+            animation: 'modalEntrance 0.32s cubic-bezier(0.34, 1.56, 0.64, 1) forwards',
             overflow: 'hidden'
           }}>
             {/* Header */}
