@@ -1,19 +1,20 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Users, Shuffle, Plus, Trash2, Loader2, CheckCircle2 } from "lucide-react";
+import { Users, Shuffle, Loader2, Sparkles, UserCheck } from "lucide-react";
 import { useToast } from "@/components/providers/ToastProvider";
 
 interface Group {
   id: number;
   name: string;
-  members: string[];
+  members: { name: string; isVolunteer: boolean }[];
 }
 
 export default function GroupArrangerPage() {
   const [classes, setClasses] = useState<any[]>([]);
   const [selectedClass, setSelectedClass] = useState<string>("");
   const [studentsList, setStudentsList] = useState<string[]>([]);
+  const [volunteers, setVolunteers] = useState<string[]>([]);
   const [groupSize, setGroupSize] = useState<number>(3);
   const [groups, setGroups] = useState<Group[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -36,6 +37,7 @@ export default function GroupArrangerPage() {
 
   const handleClassChange = async (className: string) => {
     setSelectedClass(className);
+    setVolunteers([]);
     if (!className) {
       setStudentsList([]);
       setGroups([]);
@@ -58,24 +60,53 @@ export default function GroupArrangerPage() {
     }
   };
 
+  const toggleVolunteer = (name: string) => {
+    if (volunteers.includes(name)) {
+      setVolunteers(volunteers.filter((v) => v !== name));
+    } else {
+      setVolunteers([...volunteers, name]);
+    }
+  };
+
   const handleAutoGroup = () => {
     if (studentsList.length === 0) return;
-    const shuffled = [...studentsList].sort(() => Math.random() - 0.5);
-    const result: Group[] = [];
-    let groupIndex = 1;
 
-    for (let i = 0; i < shuffled.length; i += groupSize) {
-      const members = shuffled.slice(i, i + groupSize);
-      result.push({
-        id: groupIndex,
-        name: `Nhóm ${groupIndex}`,
-        members,
-      });
-      groupIndex++;
-    }
+    const volList = studentsList.filter((name) => volunteers.includes(name));
+    const nonVolList = studentsList.filter((name) => !volunteers.includes(name));
+    const shuffledNonVol = [...nonVolList].sort(() => Math.random() - 0.5);
+
+    const totalStudents = studentsList.length;
+    const numGroups = Math.ceil(totalStudents / groupSize);
+
+    const result: Group[] = Array.from({ length: numGroups }, (_, i) => ({
+      id: i + 1,
+      name: `Nhóm ${i + 1}`,
+      members: [],
+    }));
+
+    // Distribute volunteers first (as team leaders across groups)
+    volList.forEach((vName, idx) => {
+      const targetGroupIndex = idx % numGroups;
+      result[targetGroupIndex].members.push({ name: vName, isVolunteer: true });
+    });
+
+    // Fill remaining slots with shuffled non-volunteers
+    shuffledNonVol.forEach((nvName) => {
+      // Find group with least members that hasn't reached groupSize
+      let targetGroup = result.find((g) => g.members.length < groupSize);
+      if (!targetGroup) {
+        targetGroup = result[result.length - 1];
+      }
+      targetGroup.members.push({ name: nvName, isVolunteer: false });
+    });
 
     setGroups(result);
-    showToast(`Đã chia thành ${result.length} nhóm học tập!`, "success");
+    showToast(
+      volList.length > 0
+        ? `Đã phân bổ ${volList.length} học viên Tự nguyện vào các nhóm và chia ngẫu nhiên thành viên còn lại!`
+        : `Đã chia thành ${result.length} nhóm học tập!`,
+      "success"
+    );
   };
 
   return (
@@ -88,11 +119,12 @@ export default function GroupArrangerPage() {
           Chia Nhóm Học Tập Tự Động
         </h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Tạo nhóm học viên ngẫu nhiên hoặc tùy chỉnh số lượng thành viên mỗi nhóm linh hoạt
+          Ưu tiên phân bổ Đội trưởng/Tự nguyện & Tùy chỉnh số lượng thành viên ngẫu nhiên công bằng
         </p>
       </div>
 
       <div className="p-6 rounded-2xl bg-card border border-border shadow-xl space-y-6">
+        {/* Controls */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-end">
           <div>
             <label className="text-xs font-semibold text-foreground uppercase tracking-wider mb-1 block">
@@ -136,6 +168,44 @@ export default function GroupArrangerPage() {
           </button>
         </div>
 
+        {/* Volunteers Selection */}
+        {selectedClass && studentsList.length > 0 && (
+          <div className="p-4 rounded-xl bg-input/20 border border-border space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-primary font-bold text-sm">
+                <Sparkles className="w-4 h-4" />
+                <span>Vòng Tự Nguyện Đội Trưởng ({volunteers.length} học viên)</span>
+              </div>
+              <span className="text-xs text-muted-foreground">
+                Học viên tự nguyện sẽ được phân bổ ưu tiên làm hạt nhân nhóm
+              </span>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              {studentsList.map((name) => {
+                const isSelected = volunteers.includes(name);
+                return (
+                  <button
+                    key={name}
+                    type="button"
+                    onClick={() => toggleVolunteer(name)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all flex items-center gap-1.5 ${
+                      isSelected
+                        ? "bg-primary/20 border-primary text-primary shadow-sm"
+                        : "bg-input/50 border-border text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    <UserCheck className="w-3.5 h-3.5" />
+                    <span>{name}</span>
+                    {isSelected && <span className="text-[10px] bg-primary text-primary-foreground px-1 rounded">Tự nguyện</span>}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Groups Output */}
         {isLoading ? (
           <div className="p-12 text-center text-muted-foreground space-y-3">
             <Loader2 className="w-8 h-8 animate-spin text-primary mx-auto" />
@@ -158,10 +228,17 @@ export default function GroupArrangerPage() {
                   {group.members.map((m, idx) => (
                     <div
                       key={idx}
-                      className="px-3 py-1.5 rounded-lg bg-card border border-border text-xs text-foreground font-medium flex items-center gap-2"
+                      className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center justify-between border ${
+                        m.isVolunteer
+                          ? "bg-primary/10 border-primary/30 text-primary font-bold"
+                          : "bg-card border-border text-foreground"
+                      }`}
                     >
-                      <span className="w-4 text-center text-primary font-bold">{idx + 1}.</span>
-                      <span>{m}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="w-4 text-center font-bold">{idx + 1}.</span>
+                        <span>{m.name}</span>
+                      </div>
+                      {m.isVolunteer && <span className="text-[10px] text-primary">🌟 Tự nguyện</span>}
                     </div>
                   ))}
                 </div>

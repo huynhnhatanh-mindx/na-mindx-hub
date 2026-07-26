@@ -11,10 +11,11 @@ import {
   Eye,
   Plus,
   Trash2,
-  Edit,
+  Edit2,
   Loader2,
   RefreshCw,
-  Search,
+  X,
+  Check,
 } from "lucide-react";
 import { useToast } from "@/components/providers/ToastProvider";
 import { formatDate } from "@/lib/utils";
@@ -23,7 +24,7 @@ export default function AdminDashboardPage() {
   const router = useRouter();
   const { showToast } = useToast();
 
-  const [activeTab, setActiveTab] = useState<"classes" | "teachers" | "students" | "submissions" | "users">("classes");
+  const [activeTab, setActiveTab] = useState<"classes" | "teachers" | "students" | "submissions">("classes");
 
   // Stats
   const [stats, setStats] = useState({
@@ -39,15 +40,17 @@ export default function AdminDashboardPage() {
   const [teachers, setTeachers] = useState<any[]>([]);
   const [students, setStudents] = useState<any[]>([]);
   const [submissions, setSubmissions] = useState<any[]>([]);
-  const [users, setUsers] = useState<any[]>([]);
 
   const [isLoading, setIsLoading] = useState(true);
-  const [search, setSearch] = useState("");
 
-  // Modals & New item forms
+  // New item forms
   const [newClassName, setNewClassName] = useState("");
   const [newTeacherForClass, setNewTeacherForClass] = useState("");
   const [newTeacherName, setNewTeacherName] = useState("");
+
+  // Editing state for teachers
+  const [editingTeacherId, setEditingTeacherId] = useState<string | null>(null);
+  const [editingTeacherName, setEditingTeacherName] = useState("");
 
   // Load Dashboard Data
   const loadData = async () => {
@@ -70,9 +73,6 @@ export default function AdminDashboardPage() {
       } else if (activeTab === "submissions") {
         const res = await fetch("/api/admin/submissions");
         if (res.ok) setSubmissions(await res.json());
-      } else if (activeTab === "users") {
-        const res = await fetch("/api/admin/users");
-        if (res.ok) setUsers(await res.json());
       }
     } catch (err) {
       console.error(err);
@@ -122,6 +122,30 @@ export default function AdminDashboardPage() {
       }
     } catch {
       showToast("Thêm giáo viên thất bại", "error");
+    }
+  };
+
+  // Edit Teacher
+  const handleSaveTeacherEdit = async (teacherId: string) => {
+    if (!editingTeacherName.trim()) return;
+    try {
+      const res = await fetch(`/api/admin/teachers/${teacherId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: editingTeacherName.trim() }),
+      });
+
+      if (res.ok) {
+        showToast("Cập nhật thông tin giáo viên thành công!", "success");
+        setEditingTeacherId(null);
+        setEditingTeacherName("");
+        loadData();
+      } else {
+        const data = await res.json();
+        showToast(data.error || "Cập nhật thất bại", "error");
+      }
+    } catch {
+      showToast("Cập nhật giáo viên thất bại", "error");
     }
   };
 
@@ -214,7 +238,6 @@ export default function AdminDashboardPage() {
           { id: "teachers", label: "Giáo Viên" },
           { id: "students", label: "Học Viên" },
           { id: "submissions", label: "Bài Nộp" },
-          { id: "users", label: "Tài Khoản System" },
         ].map((tab) => (
           <button
             key={tab.id}
@@ -232,6 +255,7 @@ export default function AdminDashboardPage() {
 
       {/* Tab Contents */}
       <div className="p-6 rounded-2xl bg-card border border-border shadow-xl space-y-6">
+        {/* Classes Tab */}
         {activeTab === "classes" && (
           <div className="space-y-6">
             {/* Create Class Form */}
@@ -281,6 +305,7 @@ export default function AdminDashboardPage() {
                         <button
                           onClick={() => handleDeleteItem("classes", cls.id)}
                           className="p-1.5 text-destructive hover:bg-destructive/10 rounded-lg transition-colors"
+                          title="Xóa lớp học"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
@@ -293,6 +318,7 @@ export default function AdminDashboardPage() {
           </div>
         )}
 
+        {/* Teachers Tab */}
         {activeTab === "teachers" && (
           <div className="space-y-6">
             <form onSubmit={handleCreateTeacher} className="p-4 rounded-xl bg-input/30 border border-border flex gap-3">
@@ -323,11 +349,55 @@ export default function AdminDashboardPage() {
                 <tbody className="divide-y divide-border/50">
                   {teachers.map((t) => (
                     <tr key={t.id} className="hover:bg-input/20">
-                      <td className="py-3 px-4 font-bold text-foreground">{t.name}</td>
-                      <td className="py-3 px-4 text-right">
+                      <td className="py-3 px-4 font-bold text-foreground">
+                        {editingTeacherId === t.id ? (
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="text"
+                              value={editingTeacherName}
+                              onChange={(e) => setEditingTeacherName(e.target.value)}
+                              className="px-3 py-1 rounded-lg bg-input border border-primary text-foreground text-sm focus:outline-none"
+                              autoFocus
+                            />
+                            <button
+                              onClick={() => handleSaveTeacherEdit(t.id)}
+                              className="p-1 rounded-lg bg-success/20 text-success hover:bg-success/30 transition-colors"
+                              title="Lưu thay đổi"
+                            >
+                              <Check className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => {
+                                setEditingTeacherId(null);
+                                setEditingTeacherName("");
+                              }}
+                              className="p-1 rounded-lg bg-muted text-muted-foreground hover:bg-accent transition-colors"
+                              title="Hủy"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          </div>
+                        ) : (
+                          <span>{t.name}</span>
+                        )}
+                      </td>
+                      <td className="py-3 px-4 text-right space-x-2">
+                        {editingTeacherId !== t.id && (
+                          <button
+                            onClick={() => {
+                              setEditingTeacherId(t.id);
+                              setEditingTeacherName(t.name);
+                            }}
+                            className="p-1.5 text-primary hover:bg-primary/10 rounded-lg transition-colors"
+                            title="Sửa tên giáo viên"
+                          >
+                            <Edit2 className="w-4 h-4" />
+                          </button>
+                        )}
                         <button
                           onClick={() => handleDeleteItem("teachers", t.id)}
                           className="p-1.5 text-destructive hover:bg-destructive/10 rounded-lg transition-colors"
+                          title="Xóa giáo viên"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
@@ -340,6 +410,7 @@ export default function AdminDashboardPage() {
           </div>
         )}
 
+        {/* Students Tab */}
         {activeTab === "students" && (
           <div className="space-y-6">
             <div className="overflow-x-auto">
@@ -380,6 +451,7 @@ export default function AdminDashboardPage() {
           </div>
         )}
 
+        {/* Submissions Tab */}
         {activeTab === "submissions" && (
           <div className="space-y-6">
             <div className="overflow-x-auto">
@@ -403,52 +475,6 @@ export default function AdminDashboardPage() {
                       <td className="py-3 px-4 text-right">
                         <button
                           onClick={() => handleDeleteItem("submissions", sub.id)}
-                          className="p-1.5 text-destructive hover:bg-destructive/10 rounded-lg transition-colors"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-
-        {activeTab === "users" && (
-          <div className="space-y-6">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
-                <thead>
-                  <tr className="border-b border-border text-xs uppercase text-muted-foreground font-semibold">
-                    <th className="py-3 px-4">Username</th>
-                    <th className="py-3 px-4">Tên Hiển Thị</th>
-                    <th className="py-3 px-4">Vai Trò</th>
-                    <th className="py-3 px-4">Email</th>
-                    <th className="py-3 px-4 text-right">Thao Tác</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border/50">
-                  {users.map((u) => (
-                    <tr key={u.id} className="hover:bg-input/20">
-                      <td className="py-3 px-4 font-mono font-bold text-foreground">{u.username}</td>
-                      <td className="py-3 px-4 text-foreground">{u.displayName}</td>
-                      <td className="py-3 px-4">
-                        <span
-                          className={`px-2.5 py-0.5 rounded-full text-xs font-bold uppercase ${
-                            u.role === "admin"
-                              ? "bg-primary/10 text-primary"
-                              : "bg-secondary text-foreground"
-                          }`}
-                        >
-                          {u.role}
-                        </span>
-                      </td>
-                      <td className="py-3 px-4 text-muted-foreground">{u.email || "Chưa đặt"}</td>
-                      <td className="py-3 px-4 text-right">
-                        <button
-                          onClick={() => handleDeleteItem("users", u.id)}
                           className="p-1.5 text-destructive hover:bg-destructive/10 rounded-lg transition-colors"
                         >
                           <Trash2 className="w-4 h-4" />

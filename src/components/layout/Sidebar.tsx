@@ -42,26 +42,18 @@ export default function Sidebar({
         .from("profiles")
         .select("*")
         .eq("id", authUser.id)
-        .single();
+        .maybeSingle();
+
+      const realDisplayName = profile?.display_name || authUser.user_metadata?.display_name || authUser.email;
 
       setUser({
         id: authUser.id,
         email: authUser.email,
-        displayName: profile?.display_name || authUser.email,
+        displayName: realDisplayName,
         role: profile?.role || "admin",
       });
     } else {
-      // Check localStorage for mock/legacy fallback
-      const userStr = localStorage.getItem("user");
-      if (userStr) {
-        try {
-          setUser(JSON.parse(userStr));
-        } catch {
-          setUser(null);
-        }
-      } else {
-        setUser(null);
-      }
+      setUser(null);
     }
   };
 
@@ -96,10 +88,10 @@ export default function Sidebar({
   };
 
   const navLinks = [
-    { href: "/", label: "Trang chủ", icon: Home, showAlways: true },
-    { href: "/features", label: "Chức năng", icon: Info, showAlways: true },
-    { href: "/upload", label: "Nộp bài tập", icon: UploadCloud, guestOnly: true },
-    { href: "/submissions", label: "Lịch sử nộp", icon: History, guestOnly: true },
+    { href: "/", label: "Trang chủ", icon: Home },
+    { href: "/upload", label: "Nộp bài tập", icon: UploadCloud },
+    { href: "/submissions", label: "Lịch sử nộp", icon: History },
+    { href: "/features", label: "Chức năng", icon: Info },
     {
       href: "/admin",
       label: user?.role === "admin" ? "Quản trị hệ thống" : "Quản lý bài nộp",
@@ -149,7 +141,6 @@ export default function Sidebar({
         {/* Navigation Menu */}
         <nav className="flex-1 px-3 py-4 space-y-1.5 overflow-y-auto">
           {navLinks.map((link) => {
-            if (link.guestOnly && user) return null;
             if (link.authRequired && !user) return null;
 
             const Icon = link.icon;
