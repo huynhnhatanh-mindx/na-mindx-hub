@@ -14,17 +14,36 @@ export async function POST(request: NextRequest) {
 
     const supabase = await createClient();
 
-    // First try Supabase Auth email/password if input looks like email
-    const isEmail = username.includes("@");
-    const emailToUse = isEmail ? username : `${username.toLowerCase()}@namindx.hub`;
+    // Map username to email
+    let emailToUse = username;
+    if (!username.includes("@")) {
+      if (username.toLowerCase() === "admin") {
+        emailToUse = "admin@namindx.com";
+      } else {
+        emailToUse = `${username.toLowerCase()}@mindx.net.vn`;
+      }
+    }
 
-    const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+    // Try primary email sign in
+    let { data: authData, error: authError } = await supabase.auth.signInWithPassword({
       email: emailToUse,
       password: password,
     });
 
+    // Fallback try admin@namindx.com if username is admin
+    if (authError && username.toLowerCase() === "admin") {
+      const fallback = await supabase.auth.signInWithPassword({
+        email: "admin@namindx.com",
+        password: password,
+      });
+      if (!fallback.error && fallback.data?.user) {
+        authData = fallback.data;
+        authError = null;
+      }
+    }
+
     if (!authError && authData?.user) {
-      // Get associated profile
+      // Get profile
       const { data: profile } = await supabase
         .from("profiles")
         .select("*")
@@ -37,7 +56,7 @@ export async function POST(request: NextRequest) {
           id: authData.user.id,
           username: profile?.username || username,
           role: profile?.role || "admin",
-          displayName: profile?.display_name || username,
+          displayName: profile?.display_name || profile?.username || "Quản trị viên",
           email: profile?.email || authData.user.email,
           requiresGoogleAuth: false,
         },
