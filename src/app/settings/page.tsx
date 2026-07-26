@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { User, Mail, Lock, Moon, Sun, Save, CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
+import { User, Mail, Lock, Moon, Sun, Save, CheckCircle2, AlertCircle, Loader2, Unlink } from "lucide-react";
 import { useTheme } from "@/components/providers/ThemeProvider";
 import { useToast } from "@/components/providers/ToastProvider";
 
@@ -11,6 +11,7 @@ export default function SettingsPage() {
   const { theme, setTheme } = useTheme();
   const { showToast } = useToast();
 
+  const [username, setUsername] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [email, setEmail] = useState("");
   const [emailNotificationsEnabled, setEmailNotificationsEnabled] = useState(false);
@@ -18,6 +19,7 @@ export default function SettingsPage() {
   const [confirmPassword, setConfirmPassword] = useState("");
 
   const [isLoading, setIsLoading] = useState(false);
+  const [isUnlinking, setIsUnlinking] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
@@ -27,6 +29,7 @@ export default function SettingsPage() {
         const res = await fetch("/api/auth/profile");
         if (res.ok) {
           const data = await res.json();
+          setUsername(data.username || "");
           setDisplayName(data.displayName || "");
           setEmail(data.email || "");
           setEmailNotificationsEnabled(data.emailNotificationsEnabled || false);
@@ -37,6 +40,25 @@ export default function SettingsPage() {
     }
     loadProfile();
   }, []);
+
+  const handleUnlinkEmail = async () => {
+    if (!confirm("Bạn có chắc chắn muốn hủy liên kết Email hiện tại không?")) return;
+    setIsUnlinking(true);
+    try {
+      const res = await fetch("/api/auth/unlink-email", { method: "POST" });
+      if (res.ok) {
+        setEmail("");
+        showToast("Hủy liên kết Email thành công!", "success");
+      } else {
+        const data = await res.json();
+        showToast(data.error || "Hủy liên kết thất bại", "error");
+      }
+    } catch {
+      showToast("Có lỗi xảy ra khi hủy liên kết", "error");
+    } finally {
+      setIsUnlinking(false);
+    }
+  };
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -56,7 +78,6 @@ export default function SettingsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           displayName,
-          email,
           emailNotificationsEnabled,
           password: password || undefined,
         }),
@@ -67,7 +88,7 @@ export default function SettingsPage() {
         throw new Error(data.error || "Cập nhật thất bại.");
       }
 
-      setSuccess("Cập nhật thông tin tài khoản thành công!");
+      setSuccess("Cập nhật thông tin cá nhân thành công!");
       showToast("Đã lưu thông tin cài đặt!", "success");
       setPassword("");
       setConfirmPassword("");
@@ -85,7 +106,7 @@ export default function SettingsPage() {
           Cài Đặt Cá Nhân
         </h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Quản lý thông tin tài khoản, mật khẩu và giao diện hiển thị
+          Quản lý thông tin tài khoản, thông báo email, mật khẩu và giao diện hiển thị
         </p>
       </div>
 
@@ -126,6 +147,24 @@ export default function SettingsPage() {
 
         {/* Profile Info */}
         <div className="space-y-4">
+          {/* Username (Read-Only) */}
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium text-foreground flex items-center justify-between">
+              <span>Tên đăng nhập</span>
+              <span className="text-xs text-muted-foreground font-normal">(chỉ đọc)</span>
+            </label>
+            <div className="relative">
+              <input
+                type="text"
+                value={username}
+                readOnly
+                className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-muted/40 border border-border/70 text-muted-foreground text-sm cursor-not-allowed font-mono"
+              />
+              <User className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground opacity-60" />
+            </div>
+          </div>
+
+          {/* Display Name */}
           <div className="space-y-1.5">
             <label className="text-sm font-medium text-foreground">Tên hiển thị</label>
             <div className="relative">
@@ -141,26 +180,50 @@ export default function SettingsPage() {
             </div>
           </div>
 
+          {/* Email (Read-Only + Unlink button) */}
           <div className="space-y-1.5">
-            <label className="text-sm font-medium text-foreground">Email nhận thông báo</label>
-            <div className="relative">
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="email@example.com"
-                className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-input/50 border border-border text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all"
-              />
-              <Mail className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <label className="text-sm font-medium text-foreground flex items-center justify-between">
+              <span>Email liên kết</span>
+              <span className="text-xs text-muted-foreground font-normal">(chỉ đọc)</span>
+            </label>
+            <div className="flex gap-2">
+              <div className="relative flex-1">
+                <input
+                  type="email"
+                  value={email || "Chưa liên kết email"}
+                  readOnly
+                  className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-muted/40 border border-border/70 text-muted-foreground text-sm cursor-not-allowed font-mono"
+                />
+                <Mail className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground opacity-60" />
+              </div>
+
+              {email && (
+                <button
+                  type="button"
+                  onClick={handleUnlinkEmail}
+                  disabled={isUnlinking}
+                  className="px-4 py-2.5 rounded-xl bg-destructive/10 hover:bg-destructive hover:text-destructive-foreground text-destructive text-sm font-semibold border border-destructive/30 transition-all flex items-center gap-1.5 shrink-0 disabled:opacity-50"
+                  title="Hủy liên kết Email / Google OAuth"
+                >
+                  {isUnlinking ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <>
+                      <Unlink className="w-4 h-4" />
+                      <span>Hủy liên kết</span>
+                    </>
+                  )}
+                </button>
+              )}
             </div>
           </div>
 
-          {/* Email Notification Toggle */}
-          <div className="flex items-center justify-between p-3.5 rounded-xl bg-input/30 border border-border">
+          {/* Email Notifications Toggle */}
+          <div className="flex items-center justify-between p-4 rounded-xl bg-input/30 border border-border">
             <div>
               <p className="text-sm font-semibold text-foreground">Thông báo qua Email</p>
               <p className="text-xs text-muted-foreground">
-                Nhận email khi học viên nộp bài tập mới
+                Nhận email thông báo tự động khi học viên nộp bài mới
               </p>
             </div>
             <input
@@ -175,7 +238,7 @@ export default function SettingsPage() {
         {/* Change Password */}
         <div className="space-y-4 pt-4 border-t border-border">
           <label className="text-xs font-bold text-foreground uppercase tracking-wider block">
-            Đổi mật khẩu (bỏ qua nếu không đổi)
+            Thay đổi mật khẩu (bỏ qua nếu không đổi)
           </label>
 
           <div className="space-y-1.5">
@@ -229,7 +292,7 @@ export default function SettingsPage() {
           {isLoading ? (
             <>
               <Loader2 className="w-4 h-4 animate-spin" />
-              <span>Đang lưu thông tin...</span>
+              <span>Đang lưu cài đặt...</span>
             </>
           ) : (
             <>

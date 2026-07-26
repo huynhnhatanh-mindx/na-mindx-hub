@@ -229,14 +229,27 @@ export default function Sidebar({
               </button>
             </div>
           ) : (
-            <Link
-              href="/login"
-              onClick={onCloseMobile}
-              className="flex items-center justify-center gap-2 w-full py-2.5 px-4 rounded-xl bg-primary text-primary-foreground font-semibold text-sm shadow-md shadow-primary/20 hover:bg-primary/90 transition-all"
-            >
-              <LogIn className="w-4 h-4" />
-              {(!isCollapsed || isMobileOpen) && <span>Đăng nhập</span>}
-            </Link>
+            <div className="space-y-2">
+              {(!isCollapsed || isMobileOpen) && (
+                <div className="flex items-center gap-3 p-2 rounded-xl bg-input/30 border border-border/50">
+                  <div className="w-8 h-8 rounded-full bg-muted border border-border flex items-center justify-center text-muted-foreground font-bold text-xs shrink-0">
+                    G
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-semibold text-foreground truncate">Khách</p>
+                    <p className="text-[10px] text-muted-foreground">Chưa đăng nhập</p>
+                  </div>
+                </div>
+              )}
+              <Link
+                href="/login"
+                onClick={onCloseMobile}
+                className="flex items-center justify-center gap-2 w-full py-2.5 px-4 rounded-xl bg-primary text-primary-foreground font-semibold text-sm shadow-md shadow-primary/20 hover:bg-primary/90 transition-all"
+              >
+                <LogIn className="w-4 h-4" />
+                {(!isCollapsed || isMobileOpen) && <span>Đăng nhập</span>}
+              </Link>
+            </div>
           )}
         </div>
       </aside>
