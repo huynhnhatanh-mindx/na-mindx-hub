@@ -13,51 +13,63 @@ export async function POST(request: NextRequest) {
     }
 
     const supabase = await createClient();
+    const uname = username.trim().toLowerCase();
 
-    // Map username to email
-    let emailToUse = username;
-    if (!username.includes("@")) {
-      if (username.toLowerCase() === "admin") {
-        emailToUse = "admin@namindx.com";
-      } else {
-        emailToUse = `${username.toLowerCase()}@mindx.net.vn`;
-      }
+    // Map known usernames to their emails
+    const emailCandidateMap: Record<string, string[]> = {
+      admin: ["admin@namindx.com", "admin@mindx.net.vn"],
+      anhhn: ["huynhnhatanh@mindx.net.vn", "anhhn@mindx.net.vn"],
+      huanvm: ["huanvm@mindx.net.vn"],
+      kietnt3: ["kietnt3@mindx.net.vn"],
+      khangtt: ["khangtt@mindx.net.vn"],
+      vylnt: ["tuonviii.2404@gmail.com", "vylnt@mindx.net.vn"],
+      test1: ["anhhn.contact.work@gmail.com"],
+    };
+
+    let candidates: string[] = [];
+
+    if (uname.includes("@")) {
+      candidates = [uname];
+    } else if (emailCandidateMap[uname]) {
+      candidates = emailCandidateMap[uname];
+    } else {
+      candidates = [`${uname}@mindx.net.vn`, `${uname}@namindx.com`];
     }
 
-    // Try primary email sign in
-    let { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-      email: emailToUse,
-      password: password,
-    });
+    let authData: any = null;
+    let authError: any = null;
 
-    // Fallback try admin@namindx.com if username is admin
-    if (authError && username.toLowerCase() === "admin") {
-      const fallback = await supabase.auth.signInWithPassword({
-        email: "admin@namindx.com",
-        password: password,
+    for (const email of candidates) {
+      const result = await supabase.auth.signInWithPassword({
+        email,
+        password,
       });
-      if (!fallback.error && fallback.data?.user) {
-        authData = fallback.data;
+
+      if (!result.error && result.data?.user) {
+        authData = result.data;
         authError = null;
+        break;
+      } else {
+        authError = result.error;
       }
     }
 
     if (!authError && authData?.user) {
-      // Get profile
-      const { data: profile } = await supabase
+      // Get associated profile
+      const { data: userProfile } = await supabase
         .from("profiles")
         .select("*")
         .eq("id", authData.user.id)
-        .single();
+        .maybeSingle();
 
       return NextResponse.json({
         token: authData.session?.access_token,
         user: {
           id: authData.user.id,
-          username: profile?.username || username,
-          role: profile?.role || "admin",
-          displayName: profile?.display_name || profile?.username || "Quản trị viên",
-          email: profile?.email || authData.user.email,
+          username: userProfile?.username || username,
+          role: userProfile?.role || (uname === "admin" ? "admin" : "teacher"),
+          displayName: userProfile?.display_name || userProfile?.username || username,
+          email: userProfile?.email || authData.user.email,
           requiresGoogleAuth: false,
         },
       });
