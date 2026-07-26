@@ -10,3 +10,7 @@
 
 ## 3. Đọc skill trước khi làm việc
 - Trước khi thực hiện công việc đã được duyệt, **bắt buộc đọc các skill liên quan** trong `.agents/skills/` để đảm bảo tuân thủ đúng quy trình và best practices.
+
+## 4. Hỏi khi chưa rõ hoặc không chắc chắn
+- Nếu có bất kỳ điều gì **chưa chắc chắn**, không rõ yêu cầu, hoặc chưa biết câu trả lời, **bắt buộc phải hỏi ý kiến người dùng ngay** để nhận câu trả lời chắc chắn trước khi quyết định hoặc thực hiện.
+
