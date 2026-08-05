@@ -14,7 +14,7 @@ export async function GET() {
     ] = await Promise.all([
       supabase.from("students").select("*", { count: "exact", head: true }),
       supabase.from("classes").select("*", { count: "exact", head: true }),
-      supabase.from("teachers").select("*", { count: "exact", head: true }),
+      supabase.from("profiles").select("*", { count: "exact", head: true }).eq("role", "teacher"),
       supabase.from("submissions").select("*", { count: "exact", head: true }),
       supabase.from("visitors").select("count").limit(1).single(),
     ]);

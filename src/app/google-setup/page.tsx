@@ -2,10 +2,13 @@
 
 import { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Cloud, CheckCircle2, AlertTriangle, Loader2, ArrowRight } from "lucide-react";
+import { Cloud, CheckCircle2, AlertTriangle, Loader2, ArrowRight, LogOut } from "lucide-react";
 import { useToast } from "@/components/providers/ToastProvider";
+import { createClient } from "@/lib/supabase/client";
 
 export const dynamic = "force-dynamic";
+
+const OAUTH_CHANNEL_NAME = "mindx-google-oauth";
 
 function GoogleSetupContent() {
   const router = useRouter();
@@ -28,13 +31,35 @@ function GoogleSetupContent() {
 
       const timer = setTimeout(() => {
         router.push("/admin");
-      }, 3000);
+      }, 2500);
       return () => clearTimeout(timer);
     } else if (statusParam === "error") {
       setStatus("error");
       if (messageParam) setErrorMessage(messageParam);
     }
   }, [statusParam, emailParam, messageParam, router, showToast]);
+
+  // Listen for OAuth completion from the new tab via BroadcastChannel
+  useEffect(() => {
+    const channel = new BroadcastChannel(OAUTH_CHANNEL_NAME);
+    channel.onmessage = (event) => {
+      const data = event.data;
+      if (data?.type === "oauth-success") {
+        setStatus("success");
+        setGoogleEmail(data.email || "");
+        setIsLinking(false);
+        showToast("Liên kết tài khoản Google thành công!", "success");
+        setTimeout(() => {
+          router.push("/admin");
+        }, 2500);
+      } else if (data?.type === "oauth-error") {
+        setStatus("error");
+        setErrorMessage(data.message || "Có lỗi xảy ra khi liên kết Google Drive.");
+        setIsLinking(false);
+      }
+    };
+    return () => channel.close();
+  }, [router, showToast]);
 
   const handleLinkGoogle = async () => {
     setIsLinking(true);
@@ -46,7 +71,8 @@ function GoogleSetupContent() {
       if (!res.ok) throw new Error("Không lấy được link đăng nhập từ server.");
       const data = await res.json();
       if (data.url) {
-        window.location.href = data.url;
+        // Open OAuth in a new tab
+        window.open(data.url, "_blank", "noopener");
       } else {
         throw new Error("Link OAuth không hợp lệ.");
       }
@@ -57,14 +83,27 @@ function GoogleSetupContent() {
     }
   };
 
+  const handleLogout = async () => {
+    try {
+      const supabase = createClient();
+      await supabase.auth.signOut();
+    } catch (e) {
+      console.error(e);
+    }
+    localStorage.removeItem("token");
+    localStorage.removeItem("user");
+    showToast("Đã đăng xuất tài khoản", "info");
+    router.push("/login");
+  };
+
   return (
     <div className="max-w-md mx-auto py-8">
       <div className="text-center mb-8">
         <h1 className="text-3xl font-extrabold font-heading text-gradient-primary mb-2">
-          Liên Kết Google Drive
+          Liên Kết Google Drive Bắt Buộc
         </h1>
         <p className="text-sm text-muted-foreground">
-          Cần thiết lập liên kết Google OAuth để quản lý thư mục lưu trữ bài tập
+          Tài khoản của bạn chưa kết nối Google Drive. Vui lòng hoàn tất liên kết để tiếp tục sử dụng hệ thống.
         </p>
       </div>
 
@@ -82,18 +121,36 @@ function GoogleSetupContent() {
           </div>
         ) : (
           <div className="space-y-6">
-            <div className="w-16 h-16 rounded-2xl bg-primary/10 border border-primary/20 text-primary flex items-center justify-center mx-auto">
+            <div className="w-16 h-16 rounded-2xl bg-primary/10 border border-primary/20 text-primary flex items-center justify-center mx-auto animate-bounce">
               <Cloud className="w-8 h-8" />
             </div>
 
             <p className="text-sm text-muted-foreground leading-relaxed">
-              Vui lòng nhấp nút bên dưới để ủy quyền truy cập Google Drive nhằm tạo thư mục lưu trữ cho lớp học của bạn.
+              Nhấp nút bên dưới để ủy quyền truy cập Google Drive nhằm tạo thư mục lưu trữ cho lớp học của bạn.
             </p>
 
+            {isLinking && status !== "error" && (
+              <div className="p-3.5 rounded-xl bg-primary/5 border border-primary/20 text-primary text-sm flex items-center gap-2.5">
+                <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+                <span>Đang chờ bạn hoàn tất ủy quyền trong tab mới...</span>
+              </div>
+            )}
+
             {errorMessage && (
-              <div className="p-3.5 rounded-xl bg-destructive/10 border border-destructive/20 text-destructive text-sm flex items-center gap-2">
-                <AlertTriangle className="w-4 h-4 shrink-0" />
-                <span>{errorMessage}</span>
+              <div className="p-3.5 rounded-xl bg-destructive/10 border border-destructive/20 text-destructive text-sm text-left space-y-1">
+                <div className="flex items-center gap-2 font-semibold">
+                  <AlertTriangle className="w-4 h-4 shrink-0" />
+                  <span>Lỗi phản hồi từ Google OAuth:</span>
+                </div>
+                <p className="text-xs opacity-90">{errorMessage}</p>
+                {errorMessage.includes("redirect_uri_mismatch") && (
+                  <div className="mt-2 pt-2 border-t border-destructive/20 text-[11px] leading-relaxed">
+                    💡 <strong>Hướng dẫn sửa:</strong> Trong Google Cloud Console ➔ mục Credentials ➔ Thêm URI sau vào phần <strong>Authorized redirect URIs</strong>:
+                    <code className="block mt-1 p-1 bg-black/40 rounded text-foreground font-mono text-[10px] select-all">
+                      {typeof window !== "undefined" ? `${window.location.origin}/api/auth/google/callback` : "http://localhost:3000/api/auth/google/callback"}
+                    </code>
+                  </div>
+                )}
               </div>
             )}
 
@@ -114,6 +171,17 @@ function GoogleSetupContent() {
                 </>
               )}
             </button>
+
+            <div className="pt-4 border-t border-border">
+              <button
+                type="button"
+                onClick={handleLogout}
+                className="w-full py-2.5 px-4 rounded-xl bg-secondary/50 hover:bg-destructive/10 hover:text-destructive text-muted-foreground font-medium text-sm border border-border transition-all flex items-center justify-center gap-2"
+              >
+                <LogOut className="w-4 h-4" />
+                <span>Đăng xuất tài khoản</span>
+              </button>
+            </div>
           </div>
         )}
       </div>

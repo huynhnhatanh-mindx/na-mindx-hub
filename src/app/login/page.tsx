@@ -3,12 +3,13 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { User, Lock, ArrowRight, ShieldAlert, Loader2 } from "lucide-react";
+import { User, Lock, ArrowRight, ShieldAlert, Loader2, Eye, EyeOff } from "lucide-react";
 import { useToast } from "@/components/providers/ToastProvider";
 
 export default function LoginPage() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const router = useRouter();
@@ -45,7 +46,7 @@ export default function LoginPage() {
 
       showToast("Đăng nhập thành công!", "success");
 
-      if (data.user?.role === "teacher" && data.user?.requiresGoogleAuth) {
+      if (data.user?.requiresGoogleAuth) {
         router.push("/google-setup");
       } else {
         router.push("/");
@@ -64,7 +65,7 @@ export default function LoginPage() {
           Đăng Nhập Hệ Thống
         </h1>
         <p className="text-sm text-muted-foreground">
-          Dành cho Giáo viên và Ban quản trị hệ thống NA MindX Hub
+          Dành cho Giáo viên và Ban quản trị hệ thống MindX Hub
         </p>
       </div>
 
@@ -98,15 +99,23 @@ export default function LoginPage() {
             </div>
             <div className="relative">
               <input
-                type="password"
+                type={showPassword ? "text" : "password"}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="Nhập mật khẩu..."
-                className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-input/50 border border-border text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all"
+                className="w-full pl-10 pr-10 py-2.5 rounded-xl bg-input/50 border border-border text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all"
                 required
                 disabled={isLoading}
               />
               <Lock className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+              <button
+                type="button"
+                onClick={() => setShowPassword((prev) => !prev)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors p-1"
+                title={showPassword ? "Ẩn mật khẩu" : "Hiện mật khẩu"}
+              >
+                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
             </div>
           </div>
 

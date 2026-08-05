@@ -1,5 +1,5 @@
 {
-  "name": "na-mindx-hub",
+  "name": "mindx-hub",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -15,9 +15,10 @@
     "dotenv": "^17.4.2",
     "lucide-react": "^0.500.0",
     "mongodb": "^7.5.0",
-    "next": "16.2.12",
-    "react": "19.2.4",
-    "react-dom": "19.2.4",
+    "next": "^16.2.12",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "recharts": "^3.10.1",
     "tailwind-merge": "^3.6.0"
   },
   "devDependencies": {
@@ -26,8 +27,15 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
-    "eslint-config-next": "16.2.12",
+    "eslint-config-next": "^16.2.12",
     "tailwindcss": "^4",
     "typescript": "^5"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "sharp",
+      "unrs-resolver",
+      "@swc/core"
+    ]
   }
 }

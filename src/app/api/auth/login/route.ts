@@ -55,12 +55,40 @@ export async function POST(request: NextRequest) {
     }
 
     if (!authError && authData?.user) {
-      // Get associated profile
-      const { data: userProfile } = await supabase
-        .from("profiles")
-        .select("*")
-        .eq("id", authData.user.id)
-        .maybeSingle();
+      // Robust profile query: try ID first, then fallback to username
+      let userProfile: any = null;
+
+      if (authData.user.id && /^[0-9a-fA-F-]{36}$/.test(authData.user.id)) {
+        const { data } = await supabase
+          .from("profiles")
+          .select("*")
+          .eq("id", authData.user.id)
+          .maybeSingle();
+        userProfile = data;
+      }
+
+      if (!userProfile && uname) {
+        const { data } = await supabase
+          .from("profiles")
+          .select("*")
+          .eq("username", uname)
+          .maybeSingle();
+        userProfile = data;
+      }
+
+      // Check account status: Block inactive accounts
+      if (userProfile?.status === "inactive" || userProfile?.status === "ngừng hoạt động") {
+        return NextResponse.json(
+          { error: "Tài khoản của bạn đã bị ngừng hoạt động. Vui lòng liên hệ Quản trị viên." },
+          { status: 403 }
+        );
+      }
+
+      const finalDisplayName = userProfile?.display_name || userProfile?.username || username;
+      const requiresGoogleAuth =
+        userProfile?.status === "pending_oauth" ||
+        !userProfile?.google_refresh_token ||
+        userProfile.google_refresh_token === "";
 
       return NextResponse.json({
         token: authData.session?.access_token,
@@ -68,9 +96,11 @@ export async function POST(request: NextRequest) {
           id: authData.user.id,
           username: userProfile?.username || username,
           role: userProfile?.role || (uname === "admin" ? "admin" : "teacher"),
-          displayName: userProfile?.display_name || userProfile?.username || username,
-          email: userProfile?.email || authData.user.email,
-          requiresGoogleAuth: false,
+          displayName: finalDisplayName,
+          display_name: finalDisplayName,
+          email: userProfile?.email || null,
+          status: userProfile?.status || (requiresGoogleAuth ? "pending_oauth" : "active"),
+          requiresGoogleAuth: requiresGoogleAuth,
         },
       });
     }

@@ -5,11 +5,15 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const teacher = searchParams.get("teacher");
+    const q = searchParams.get("q") || searchParams.get("query");
 
     const supabase = await createClient();
     let query = supabase.from("submissions").select("*").order("created_at", { ascending: false });
 
     if (teacher) query = query.eq("teacher", teacher);
+    if (q) {
+      query = query.or(`student_code.ilike.%${q}%,full_name.ilike.%${q}%,class_name.ilike.%${q}%,teacher.ilike.%${q}%`);
+    }
 
     const { data, error } = await query;
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
@@ -20,6 +24,7 @@ export async function GET(request: NextRequest) {
       teacher: sub.teacher,
       className: sub.class_name,
       fullName: sub.full_name,
+      studentCode: sub.student_code,
       stage: sub.stage,
       session: sub.session,
       attemptNumber: sub.attempt_number,

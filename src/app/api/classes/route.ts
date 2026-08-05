@@ -7,24 +7,46 @@ export async function GET(request: NextRequest) {
     const teacherName = searchParams.get("teacher");
 
     const supabase = await createClient();
-    let query = supabase.from("classes").select("*").order("name", { ascending: true });
-
-    if (teacherName) {
-      query = query.eq("teacher_name", teacherName);
-    }
-
-    const { data, error } = await query;
+    const { data, error } = await supabase.from("classes").select("*").order("name", { ascending: true });
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
+    let filtered = data || [];
+    if (teacherName) {
+      filtered = filtered.filter((cls) => {
+        const rawTeacherStr = cls.teacher_names || cls.teacher_name || "";
+        const isExternal = cls.is_external || false;
+
+        if (isExternal) {
+          return cls.name === `Lớp Không Xác Định - GV ${teacherName}` || rawTeacherStr.includes(teacherName);
+        }
+
+        if (rawTeacherStr.startsWith("ALL_ACTIVE")) {
+          if (rawTeacherStr.startsWith("ALL_ACTIVE_EXCEPT:")) {
+            const excPart = rawTeacherStr.replace("ALL_ACTIVE_EXCEPT:", "");
+            const excludedList = excPart.split(",").map((s: string) => s.trim().toLowerCase());
+            return !excludedList.includes(teacherName.toLowerCase());
+          }
+          return true;
+        }
+
+        const tList = rawTeacherStr.split(",").map((s: string) => s.trim().toLowerCase());
+        return tList.includes(teacherName.toLowerCase());
+      });
+    }
+
     // Map column names to camelCase for frontend compatibility
-    const mapped = (data || []).map((cls) => ({
+    const mapped = filtered.map((cls) => ({
       _id: cls.id,
       id: cls.id,
       name: cls.name,
-      teacherName: cls.teacher_name,
+      teacherName: cls.teacher_names || cls.teacher_name,
+      isExternalClass: cls.is_external || false,
+      category: cls.category || "",
+      subjectName: cls.subject_name || "",
+      level: cls.level || "",
       startDate: cls.start_date,
       endDate: cls.end_date,
       startTime: cls.start_time,

@@ -10,15 +10,35 @@ export async function PUT(
     const body = await request.json();
     const supabase = await createClient();
 
+    let teacherNamesStr = "";
+    if (body.isAllActiveTeachers || body.isExternalClass) {
+      if (Array.isArray(body.excludedTeacherNames) && body.excludedTeacherNames.length > 0) {
+        teacherNamesStr = `ALL_ACTIVE_EXCEPT:${body.excludedTeacherNames.join(",")}`;
+      } else {
+        teacherNamesStr = "ALL_ACTIVE";
+      }
+    } else if (Array.isArray(body.teacherNames)) {
+      teacherNamesStr = body.teacherNames.join(", ");
+    } else if (typeof body.teacherNames === "string") {
+      teacherNamesStr = body.teacherNames;
+    } else if (body.teacherName) {
+      teacherNamesStr = body.teacherName;
+    }
+
     const { data, error } = await supabase
       .from("classes")
       .update({
         name: body.name,
-        teacher_name: body.teacherName,
-        start_date: body.startDate || null,
-        end_date: body.endDate || null,
-        start_time: body.startTime,
-        end_time: body.endTime,
+        teacher_name: teacherNamesStr,
+        teacher_names: teacherNamesStr,
+        is_external: body.isExternalClass || false,
+        category: body.category,
+        subject_name: body.subjectName,
+        level: body.level,
+        start_date: body.isExternalClass ? null : (body.startDate || null),
+        end_date: body.isExternalClass ? null : (body.endDate || null),
+        start_time: body.isExternalClass ? "00:00" : body.startTime,
+        end_time: body.isExternalClass ? "23:59" : body.endTime,
         checkpoint1_start_date: body.checkpoint1StartDate || null,
         checkpoint1_deadline: body.checkpoint1Deadline || null,
         checkpoint1_late_type: body.checkpoint1LateType,
@@ -43,6 +63,14 @@ export async function PUT(
       .single();
 
     if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+
+    if (Array.isArray(body.assignedStudentIds) && body.assignedStudentIds.length > 0) {
+      await supabase
+        .from("students")
+        .update({ class_name: body.name })
+        .in("id", body.assignedStudentIds);
+    }
+
     return NextResponse.json(data);
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });
@@ -56,8 +84,21 @@ export async function DELETE(
   try {
     const { id } = await params;
     const supabase = await createClient();
+
+    // Get target class name before deleting
+    const { data: targetClass } = await supabase.from("classes").select("name").eq("id", id).maybeSingle();
+
+    if (targetClass?.name) {
+      // Reassign students belonging to this class to 'Lớp Học Ngoại Lai'
+      await supabase
+        .from("students")
+        .update({ class_name: "Lớp Học Ngoại Lai" })
+        .eq("class_name", targetClass.name);
+    }
+
     const { error } = await supabase.from("classes").delete().eq("id", id);
     if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+
     return NextResponse.json({ success: true });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });

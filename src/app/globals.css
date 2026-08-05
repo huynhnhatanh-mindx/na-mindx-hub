@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 /* ============================================================
-   NA MindX Hub — Design System
+   MindX Hub — Design System
    Tông màu: Đỏ (primary) — Đen — Trắng
    Typography: Outfit (display) + Plus Jakarta Sans (body)
    Signature: Diagonal red glow on hero and primary elements
@@ -71,6 +71,9 @@
   --animate-scale-in: scale-in 0.2s ease-out;
   --animate-spin-slow: spin 3s linear infinite;
   --animate-pulse-glow: pulse-glow 2s ease-in-out infinite;
+  --animate-slide-up-bounce: slide-up-bounce 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+  --animate-shimmer: shimmer 2.5s linear infinite;
+  --animate-glow-ring: glow-ring 3s ease-in-out infinite;
 
   @keyframes fade-in {
     from { opacity: 0; }
@@ -100,6 +103,22 @@
   @keyframes pulse-glow {
     0%, 100% { opacity: 0.4; }
     50% { opacity: 0.8; }
+  }
+
+  @keyframes slide-up-bounce {
+    0% { transform: translateY(0.5rem) scale(0.97); opacity: 0; }
+    70% { transform: translateY(-0.1rem) scale(1.01); opacity: 1; }
+    100% { transform: translateY(0) scale(1); opacity: 1; }
+  }
+
+  @keyframes shimmer {
+    0% { background-position: -200% center; }
+    100% { background-position: 200% center; }
+  }
+
+  @keyframes glow-ring {
+    0%, 100% { box-shadow: 0 0 0 2px oklch(53% 0.2 25 / 0.1); }
+    50% { box-shadow: 0 0 0 3px oklch(53% 0.2 25 / 0.35), 0 0 12px oklch(53% 0.2 25 / 0.15); }
   }
 }
 

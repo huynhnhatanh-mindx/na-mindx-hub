@@ -58,7 +58,7 @@ export default function FeaturesPage() {
           <Zap className="w-3.5 h-3.5" /> Kiến Trúc & Tính Năng
         </div>
         <h1 className="text-3xl sm:text-4xl font-extrabold font-heading text-gradient-primary">
-          Tính Năng Nổi Bật NA MindX Hub
+          Tính Năng Nổi Bật MindX Hub
         </h1>
         <p className="text-sm sm:text-base text-muted-foreground leading-relaxed">
           Giải pháp toàn diện hỗ trợ tối ưu công tác giảng dạy, quản lý lớp học và bài tập tại MindX

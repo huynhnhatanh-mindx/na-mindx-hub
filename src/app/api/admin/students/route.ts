@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
       _id: s.id,
       id: s.id,
       name: s.name,
-      className: s.class_name,
+      className: s.class_name || "Lớp Học Ngoại Lai",
       studentCode: s.student_code,
       maxUploadSize: s.max_upload_size,
       status: s.status,
@@ -35,11 +35,15 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const supabase = await createClient();
 
+    const assignedClassName = body.className && body.className.trim()
+      ? body.className.trim()
+      : "Lớp Học Ngoại Lai";
+
     const { data, error } = await supabase
       .from("students")
       .insert({
         name: body.name,
-        class_name: body.className,
+        class_name: assignedClassName,
         student_code: body.studentCode,
         max_upload_size: body.maxUploadSize || 20,
         status: body.status || "active",

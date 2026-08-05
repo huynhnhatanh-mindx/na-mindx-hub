@@ -1,4 +1,4 @@
-# na-mindx-hub
+# mindx-hub
 
 Dự án ban đầu được thiết lập với cấu trúc Frontend và Backend riêng biệt.
 

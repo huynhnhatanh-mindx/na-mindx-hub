@@ -1,10 +1,10 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { uploadToTeacherDrive } from "@/lib/googleDriveHelper";
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { teacher, className, fullName, stage, session, fileUrl, notes } = body;
+    const { teacher, className, fullName, studentCode, stage, session, fileUrl, notes } = body;
 
     if (!teacher || !className || !fullName || !stage || !session || !fileUrl) {
       return NextResponse.json(
@@ -13,47 +13,22 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const supabase = await createClient();
-
-    // Check existing attempts
-    const { data: existing } = await supabase
-      .from("submissions")
-      .select("attempt_number")
-      .eq("teacher", teacher)
-      .eq("class_name", className)
-      .eq("full_name", fullName)
-      .eq("stage", stage)
-      .eq("session", session);
-
-    const attemptNumber = (existing?.length || 0) + 1;
-    const fileName = fileUrl.toLowerCase().includes("canva") ? "Canva Design Link" : "Google Drive Link";
-
-    const { data: inserted, error } = await supabase
-      .from("submissions")
-      .insert({
-        teacher,
-        class_name: className,
-        full_name: fullName,
-        stage,
-        session,
-        attempt_number: attemptNumber,
-        file_name: fileName,
-        file_url: fileUrl,
-        notes: notes || "",
-      })
-      .select()
-      .single();
-
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
-    }
+    const result = await uploadToTeacherDrive({
+      teacherName: teacher,
+      className,
+      fullName,
+      studentCode,
+      stage,
+      session,
+      fileUrl,
+      notes,
+    });
 
     return NextResponse.json({
-      success: true,
       message: "Nộp bài bằng đường liên kết thành công!",
-      submission: inserted,
+      ...result,
     });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    return NextResponse.json({ error: err.message || "Lỗi nộp bài tập" }, { status: 500 });
   }
 }

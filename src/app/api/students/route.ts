@@ -6,6 +6,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const className = searchParams.get("class");
     const search = searchParams.get("search");
+    const studentCode = searchParams.get("studentCode");
 
     const supabase = await createClient();
     let query = supabase
@@ -18,8 +19,12 @@ export async function GET(request: NextRequest) {
       query = query.eq("class_name", className);
     }
 
-    if (search) {
-      query = query.or(`name.ilike.%${search}%,student_code.ilike.%${search}%`);
+    if (studentCode) {
+      const codeClean = studentCode.trim();
+      query = query.ilike("student_code", `%${codeClean}%`);
+    } else if (search) {
+      const sClean = search.trim();
+      query = query.or(`name.ilike.*${sClean}*,student_code.ilike.*${sClean}*,class_name.ilike.*${sClean}*`);
     }
 
     const { data, error } = await query;

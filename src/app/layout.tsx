@@ -18,7 +18,7 @@ const plusJakartaSans = Plus_Jakarta_Sans({
 });
 
 export const metadata: Metadata = {
-  title: "NA MindX Hub - Hệ thống quản lý bài nộp học viên",
+  title: "MindX Hub - Hệ thống quản lý bài nộp học viên",
   description: "Trang thông tin và nộp bài tập học viên MindX HCM4",
 };
 

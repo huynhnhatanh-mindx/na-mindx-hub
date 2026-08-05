@@ -12,19 +12,29 @@ export async function GET() {
       return NextResponse.json({ error: "Chưa đăng nhập" }, { status: 401 });
     }
 
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("*")
-      .eq("id", user.id)
-      .single();
+    let profile: any = null;
+    if (user.id && /^[0-9a-fA-F-]{36}$/.test(user.id)) {
+      const { data } = await supabase.from("profiles").select("*").eq("id", user.id).maybeSingle();
+      profile = data;
+    }
+
+    if (!profile && user.email) {
+      const usernamePart = user.email.split("@")[0];
+      const { data } = await supabase.from("profiles").select("*").or(`username.eq.${usernamePart},email.eq.${user.email}`).maybeSingle();
+      profile = data;
+    }
+
+    const finalDisplayName = profile?.display_name || user.user_metadata?.full_name || user.user_metadata?.display_name || user.email;
 
     return NextResponse.json({
       id: user.id,
-      username: profile?.username || user.email,
+      username: profile?.username || user.email?.split("@")[0] || "user",
       role: profile?.role || "admin",
-      displayName: profile?.display_name || user.email,
-      email: profile?.email || user.email,
+      displayName: finalDisplayName,
+      display_name: finalDisplayName,
+      email: profile?.email || null,
       emailNotificationsEnabled: profile?.email_notifications_enabled || false,
+      defaultStudentMaxUploadSize: profile?.default_student_max_upload_size || 50,
     });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });
@@ -43,15 +53,29 @@ export async function PUT(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { displayName, email, emailNotificationsEnabled, password } = body;
+    const { displayName, email, emailNotificationsEnabled, defaultStudentMaxUploadSize, password } = body;
 
     const updates: any = {};
     if (displayName) updates.display_name = displayName;
     if (email !== undefined) updates.email = email;
     if (emailNotificationsEnabled !== undefined) updates.email_notifications_enabled = emailNotificationsEnabled;
+    if (defaultStudentMaxUploadSize !== undefined) updates.default_student_max_upload_size = Number(defaultStudentMaxUploadSize) || 50;
 
     if (Object.keys(updates).length > 0) {
-      await supabase.from("profiles").update(updates).eq("id", user.id);
+      let targetProfile: any = null;
+      if (user.id && /^[0-9a-fA-F-]{36}$/.test(user.id)) {
+        const { data } = await supabase.from("profiles").select("id").eq("id", user.id).maybeSingle();
+        targetProfile = data;
+      }
+      if (!targetProfile && user.email) {
+        const usernamePart = user.email.split("@")[0];
+        const { data } = await supabase.from("profiles").select("id").or(`username.eq.${usernamePart},email.eq.${user.email}`).maybeSingle();
+        targetProfile = data;
+      }
+
+      if (targetProfile?.id) {
+        await supabase.from("profiles").update(updates).eq("id", targetProfile.id);
+      }
     }
 
     if (password) {
